@@ -8,7 +8,7 @@ deren **PLZ oder Ort** in der Ortsliste der IB Thomée GmbH steht.
 
 1. Browser-Erweiterung **Tampermonkey** installieren (Firefox / Chrome / Edge).
 2. Installationslink öffnen – Tampermonkey zeigt den Installationsdialog:
-   `https://raw.githubusercontent.com/TheFishflap/tam-auto-annahme/main/tam-auto-annahme.user.js`
+   [tam-auto-annahme.user.js](https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js)
 3. **Installieren** klicken, TAM neu laden. Unten rechts erscheint das Bedienfeld.
 
 > Empfehlung: In Tampermonkey unter *Einstellungen → Userscript-Updates* „Updates prüfen“

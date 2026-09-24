@@ -1,15 +1,20 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée)
 // @namespace    ib-thomee
-// @version      0.10.0
+// @version      1.0.0
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://*/*
+// @homepageURL  https://github.com/TheFishflap/TamAuto
+// @updateURL    https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js
+// @downloadURL  https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_notification
+// @grant        GM_info
 // @connect      docs.google.com
 // @connect      googleusercontent.com
+// @connect      raw.githubusercontent.com
 // @run-at       document-idle
 // ==/UserScript==
 // TIPP: @match oben auf die echte TAM-Adresse einschränken (z. B. https://tam.xyz.de/*).
@@ -172,6 +177,36 @@
   function matches(order) {
     // Treffer, wenn PLZ ODER Ortsname in der Ortsliste steht
     return places.plz.includes((order.plz || '').trim()) || places.orte.includes(norm(order.ort));
+  }
+
+  // ------------------------------------------------------------------ Updates (GitHub)
+  const UPDATE_URL = 'https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js';
+  const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '0';
+
+  function newerVersion(a, b) { // true, wenn a > b
+    const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
+    const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+    }
+    return false;
+  }
+
+  function checkUpdate(manual = false) {
+    GM_setValue('lastUpdateCheck', Date.now());
+    GM_xmlhttpRequest({
+      method: 'GET', url: `${UPDATE_URL}?t=${Date.now()}`,
+      onload: (res) => {
+        const m = res.status === 200 && res.responseText.match(/@version\s+(\S+)/);
+        if (!m) { if (manual) log(`Update-Prüfung fehlgeschlagen (HTTP ${res.status}).`, 'err'); return; }
+        const upd = document.getElementById('tamauto-update');
+        if (newerVersion(m[1], VERSION)) {
+          log(`Update ${m[1]} verfügbar (installiert: ${VERSION}).`, 'ok');
+          if (upd) { upd.textContent = `⬆ Update ${m[1]} verfügbar – installieren`; upd.style.display = 'block'; }
+        } else if (manual) log(`Kein Update – ${VERSION} ist aktuell.`, 'ok');
+      },
+      onerror: () => { if (manual) log('Netzwerkfehler bei der Update-Prüfung.', 'err'); },
+    });
   }
 
   // ------------------------------------------------------------------ TAM-Oberfläche (GXT 2)
@@ -529,8 +564,9 @@
     p.id = 'tamauto';
     p.innerHTML = `
       <div id="tamauto-head" style="display:flex;justify-content:space-between;align-items:center;cursor:move">
-        <b>TAM Auto-Annahme</b><span id="tamauto-min" style="cursor:pointer;padding:0 4px">–</span></div>
+        <b>TAM Auto-Annahme v${VERSION}</b><span id="tamauto-min" style="cursor:pointer;padding:0 4px">–</span></div>
       <div id="tamauto-body">
+        <a id="tamauto-update" href="${UPDATE_URL}" target="_blank" style="display:none;font-weight:bold;color:#1a4d8f;margin:4px 0"></a>
         <div id="tamauto-mode" style="font-weight:bold;margin:4px 0"></div>
         <div id="tamauto-places"></div>
         <div id="tamauto-status" style="color:#555">bereit</div>
@@ -545,6 +581,7 @@
           <button id="tamauto-reset" title="Liste bereits bearbeiteter Aufträge leeren">Verlauf leeren</button>
           <button id="tamauto-diag" title="Zeigt Tab, Tabelle, Spalten und Ortsliste im Protokoll">Diagnose</button>
           <button id="tamauto-once" title="Nimmt den obersten Auftrag der Tabelle EINMAL verbindlich an – ohne Ortsliste">1 Auftrag testen</button>
+          <button id="tamauto-upd" title="Sucht auf GitHub nach einer neuen Version">Update prüfen</button>
         </div>
         <textarea id="tamauto-ta" placeholder="PLZ;Ort je Zeile (oder CSV mit Kopfzeile PLZ/Ort)" style="display:none;width:100%;height:80px"></textarea>
         <div id="tamauto-log" style="max-height:220px;overflow:auto;font:11px monospace;border-top:1px solid #ddd;padding-top:4px"></div>
@@ -607,7 +644,8 @@
         if (ok) { done.add(o.nr); (o.extra || []).forEach((x) => done.add(x)); GM_setValue('doneRefs', [...done].slice(-2000)); }
       } finally { busy = false; }
     };
-    $('tamauto-min').onclick = () => { const b = $('tamauto-body'); b.style.display = b.style.display === 'none' ? '' : 'none'; };
+    $('tamauto-upd').onclick = () => checkUpdate(true);
+    $('tamauto-min').onclick =() => { const b = $('tamauto-body'); b.style.display = b.style.display === 'none' ? '' : 'none'; };
 
     // verschiebbar
     const head = $('tamauto-head'); let dx, dy;
@@ -645,5 +683,8 @@
     if (age > 6 * 3600 * 1000) loadPlacesFromSheet(); // Liste max. 6 h alt
     restartTimer();
     startRefreshTimer();
+    // Update-Prüfung beim Start (max. alle 6 h) und danach alle 6 h
+    if (Date.now() - GM_getValue('lastUpdateCheck', 0) > 6 * 3600 * 1000) checkUpdate();
+    setInterval(checkUpdate, 6 * 3600 * 1000);
   });
 })();
