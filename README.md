@@ -102,7 +102,8 @@ wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt 
 (Standard **100 ms**, einstellbar), bei jedem Schritt neu gewürfelt.
 
 **Benachrichtigungston** (ebenfalls in „Erweiterte Einstellungen“, Standard **an**): Gong bei angenommenem
-oder fehlgeschlagenem Auftrag ein/aus; **▶ Test** spielt ihn einmal ab.
+oder fehlgeschlagenem Auftrag ein/aus; **▶ Test** spielt ihn einmal ab. **Popups** (Standard **an**):
+Desktop-Benachrichtigung bei Annahme ein/aus.
 
 **Console Log** (ebenfalls in „Erweiterte Einstellungen“, Standard **aus**): blendet das Protokoll des Scripts
 unten im Bedienfeld ein/aus. Das Script schreibt nichts in die Browser-Konsole.
@@ -199,6 +200,9 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.8.2 – 2026-09-24
+- „Erweiterte Einstellungen“: Checkbox **Popups** (Desktop-Benachrichtigungen, Standard an).
 
 ### 1.8.1 – 2026-09-24
 - „Erweiterte Einstellungen“: Checkbox **Benachrichtigungston** (Standard an) mit Button **▶ Test**.

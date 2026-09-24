@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.8.1
+// @version      1.8.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -57,7 +57,8 @@
     // Protokoll im Bedienfeld ("Console Log"), Standard aus. Neuer Schlüssel ab 1.6.1, damit ein früher
     // eingeschaltetes Log nach dem Update bei allen aus ist.
     consoleLog: GM_getValue('consoleLogV2', false),
-    sound: GM_getValue('sound', true), // Benachrichtigungston bei Annahme / fehlgeschlagener Annahme
+    sound: GM_getValue('sound', true),   // Benachrichtigungston bei Annahme / fehlgeschlagener Annahme
+    popups: GM_getValue('popups', true), // Desktop-Benachrichtigung (Popup) bei Annahme / fehlgeschlagener Annahme
     delayOn: GM_getValue('delayOn', false),       // Verzögerung vor jedem Klickschritt der Annahme
     delaySec: Math.min(1, Math.max(0.01, GM_getValue('delaySec', 0.17))), // 0,01–1,00 s in 0,01-s-Schritten, Standard 0,17
     delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung
@@ -119,7 +120,7 @@
   }
 
   function notify(title, body) {
-    try { GM_notification({ title, text: body, timeout: 15000, silent: !cfg.sound }); } catch (e) { /* ignore */ }
+    if (cfg.popups) { try { GM_notification({ title, text: body, timeout: 15000, silent: !cfg.sound }); } catch (e) { /* ignore */ } }
     if (cfg.sound) chime();
   }
 
@@ -1057,6 +1058,11 @@
                 <input type="checkbox" id="tamauto-sound"> <b>Benachrichtigungston</b></label>
               <button id="tamauto-sound-test" title="Ton einmal abspielen">▶ Test</button>
             </span>
+            <div style="margin-top:4px">
+              <label class="tamauto-chk" title="Desktop-Benachrichtigung bei angenommenem oder fehlgeschlagenem Auftrag">
+                <input type="checkbox" id="tamauto-popups"> <b>Popups</b></label>
+              <span style="color:#555"> – Desktop-Benachrichtigung bei Annahme</span>
+            </div>
           </div>
         </div>
         <div id="tamauto-page-info" style="display:none;margin:6px 0;line-height:1.5">
@@ -1282,6 +1288,10 @@
       cfg.sound = e.target.checked; GM_setValue('sound', cfg.sound); log(cfg.sound ? 'Benachrichtigungston an.' : 'Benachrichtigungston aus.');
     };
     $('tamauto-sound-test').onclick = () => chime();
+    $('tamauto-popups').checked = cfg.popups;
+    $('tamauto-popups').onchange = (e) => {
+      cfg.popups = e.target.checked; GM_setValue('popups', cfg.popups); log(cfg.popups ? 'Popups an.' : 'Popups aus.');
+    };
 
     // Excel-Sperrliste sofort neu laden (z. B. direkt nach einem Storno)
     $('tamauto-bl-reload').onclick = () => loadPlacesFromSheet(true);
