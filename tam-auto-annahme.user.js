@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.0.4
+// @version      1.1.0
 // @author       IB Thomée GmbH
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
@@ -30,7 +30,6 @@
     sheetId: '1VTkQpt7AFA_mzrG6Bpw0yrzoVcJhrSzh',
     sheetGid: '1524429178',
     intervalSec: 30,          // Prüf-/Refresh-Intervall (Sekunden)
-    dryRun: true,             // true = nur melden, NICHT annehmen
     enabled: false,
     maxPerCycle: 3,           // Sicherheitsbremse
     tabName: 'Veröffentlichte Aufträge',
@@ -42,8 +41,8 @@
   };
   const cfg = Object.assign({}, DEFAULTS, {
     intervalSec: GM_getValue('intervalSec', DEFAULTS.intervalSec),
-    dryRun: GM_getValue('dryRun', DEFAULTS.dryRun),
-    enabled: GM_getValue('enabled', DEFAULTS.enabled),
+    // eigener Schlüssel seit Wegfall des Testmodus: wer im Testmodus lief, startet nicht ungefragt live
+    enabled: GM_getValue('running', DEFAULTS.enabled),
     maxPerCycle: GM_getValue('maxPerCycle', DEFAULTS.maxPerCycle),
     autoRefresh: GM_getValue('autoRefresh', true),
   });
@@ -51,7 +50,6 @@
   let places = GM_getValue('places', { plz: [], orte: [], loadedAt: null, source: '' });
   let done = new Set(GM_getValue('doneRefs', [])); // bereits bearbeitete Aufträge
   let timer = null;
-  let refreshTimer = null;
   let lastRefreshOk = null;
   let busy = false;
   let recheck = false; // Tabelle hat sich geändert, während busy war
@@ -216,11 +214,6 @@
   }
 
   // ------------------------------------------------------------------ TAM-Oberfläche (GXT 2)
-  function activeTabName() {
-    const t = [...document.querySelectorAll('.x-tab-strip-active .x-tab-strip-text')].find(visible);
-    return text(t);
-  }
-
   // Ist der aktive Tab wirklich "Veröffentlichte Aufträge"?
   function onPublishedTab() {
     // Reiter des Tabs direkt über seine ID suchen (…__AgentVeroeffentlichteAuftraege)
@@ -336,12 +329,6 @@
 
   function setRefreshStatus(t) { const el = document.getElementById('tamauto-refresh'); if (el) el.textContent = t; }
 
-  function startRefreshTimer() {
-    clearInterval(refreshTimer);
-    if (!cfg.autoRefresh) { setRefreshStatus('Auto-Refresh aus'); return; }
-    setRefreshStatus(`Auto-Refresh alle ${cfg.intervalSec} s`);
-    refreshTimer = setInterval(() => { if (!busy && onPublishedTab()) refreshGrid(); }, cfg.intervalSec * 1000);
-  }
 
   function clickBtn(b) {
     const inner = b.querySelector('button') || b;
@@ -489,7 +476,8 @@
   }
 
   // ------------------------------------------------------------------ Hauptzyklus
-  async function cycle(fromObserver = false) {
+  // reason: Anlass für das Protokoll (Refresh, Tabelle aktualisiert, Reiterwechsel, Start …)
+  async function cycle(reason = 'Prüfung') {
     if (!cfg.enabled) return;
     if (busy) { recheck = true; return; } // läuft gerade etwas → danach erneut prüfen
     busy = true;
@@ -516,14 +504,11 @@
       setStatus(`${new Date().toLocaleTimeString('de-DE')}: ${all.length} in Tabelle · ${orders.length} offen · ` +
         `${hits.length} passend · ${old.length} bereits bearbeitet`);
 
-      // Protokoll: Zusammenfassung nur bei Änderung, jeden Auftrag einmalig mit Entscheidung
-      const summary = `Prüfung: ${all.length} Aufträge in Tabelle, ${orders.length} offen, ${hits.length} passend, ` +
-        `${old.length} bereits bearbeitet` + (noKey.length ? `, ${noKey.length} ohne AuftragsNr` : '');
-      if (summary !== lastSummary) {
-        log(summary);
-        if (noKey.length) log(lastColInfo, 'err');
-        lastSummary = summary;
-      }
+      // Protokoll: jeder Abgleich eine Zeile, jeden Auftrag einmalig mit Entscheidung
+      log(`${reason} → Abgleich: ${all.length} Aufträge in Tabelle, ${orders.length} offen, ${hits.length} passend, ` +
+        `${old.length} bereits bearbeitet` + (noKey.length ? `, ${noKey.length} ohne AuftragsNr` : ''), hits.length ? 'ok' : 'info');
+      if (noKey.length && lastSummary !== 'NOKEY') log(lastColInfo, 'err');
+      lastSummary = noKey.length ? 'NOKEY' : '';
       orders.forEach((o) => {
         if (seen.has(o.key)) return;
         seen.add(o.key);
@@ -535,25 +520,21 @@
       for (const o of hits) {
         if (n >= cfg.maxPerCycle) { log(`Limit ${cfg.maxPerCycle}/Zyklus erreicht.`); break; }
         const desc = `${o.nr || o.ref} · ${o.plz} ${o.ort} · ${o.dienst}${o.preis ? ' · ' + o.preis : ''}`;
-        if (cfg.dryRun) {
-          log(`[TEST] würde annehmen: ${desc}`, 'ok');
-          notify('TAM: passender Auftrag', desc);
-          done.add(o.key);
-        } else {
-          // Vor jeder Annahme erneut prüfen: richtiger Tab, Zeile noch in dieser Tabelle
-          if (!onPublishedTab() || visibleGrid() !== grid || !grid.contains(o.row)) {
-            log('Abbruch: Tab gewechselt oder Tabelle neu geladen – keine Annahme.', 'err'); break;
-          }
-          log(`Nehme an: ${desc}`);
-          const ok = await acceptOrder(o);
-          if (ok) {
-            const plus = (o.extra || []).length ? ` + ${o.extra.join(', ')} (0 km)` : '';
-            log(`Angenommen: ${desc}${plus}`, 'ok'); notify('TAM: Auftrag angenommen', desc + plus);
-            done.add(o.key); (o.extra || []).forEach((x) => done.add(x)); n++;
-          }
-          else { notify('TAM: Annahme fehlgeschlagen', desc); done.add(o.key); } // nicht endlos erneut versuchen
-          await sleep(1500);
+        // Vor jeder Annahme erneut prüfen: richtiger Tab, Zeile noch in dieser Tabelle
+        if (!onPublishedTab() || visibleGrid() !== grid || !grid.contains(o.row)) {
+          log('Abbruch: Tab gewechselt oder Tabelle neu geladen – keine Annahme.', 'err'); recheck = true; break;
         }
+        log(`Nehme an: ${desc}`);
+        const ok = await acceptOrder(o);
+        if (ok) {
+          const plus = (o.extra || []).length ? ` + ${o.extra.join(', ')} (0 km)` : '';
+          log(`Angenommen: ${desc}${plus}`, 'ok'); notify('TAM: Auftrag angenommen', desc + plus);
+          done.add(o.key); (o.extra || []).forEach((x) => done.add(x)); n++;
+        } else {
+          log(`Annahme fehlgeschlagen: ${desc}`, 'err');
+          notify('TAM: Annahme fehlgeschlagen', desc); done.add(o.key); // nicht endlos erneut versuchen
+        }
+        await sleep(1500);
       }
       GM_setValue('doneRefs', [...done].slice(-2000));
     } catch (e) {
@@ -561,9 +542,25 @@
     } finally { releaseBusy(); }
   }
 
+  // Ein Takt: erst Refresh der Website (falls Auto-Refresh an), danach Abgleich mit der Ortsliste
+  async function tick() {
+    if (busy || !onPublishedTab()) return;
+    let refreshed = false;
+    if (cfg.autoRefresh) {
+      busy = true; // eigene Tabellenänderungen beim Refresh nicht doppelt auswerten
+      try { refreshed = await refreshGrid(); } finally { busy = false; recheck = false; }
+    }
+    await cycle(refreshed ? 'Refresh' : 'Intervall');
+  }
+
+  function updateRefreshStatus() {
+    setRefreshStatus(cfg.autoRefresh ? `Auto-Refresh alle ${cfg.intervalSec} s` : 'Auto-Refresh aus');
+  }
+
   function restartTimer() {
     clearInterval(timer);
-    if (cfg.enabled) { timer = setInterval(cycle, cfg.intervalSec * 1000); cycle(); }
+    timer = setInterval(tick, cfg.intervalSec * 1000); // läuft immer: Auto-Refresh ist unabhängig von Start/Stop
+    updateRefreshStatus();
   }
 
   // ------------------------------------------------------------------ Bedienfeld
@@ -574,10 +571,6 @@
       (places.loadedAt ? ` (${places.source}, ${new Date(places.loadedAt).toLocaleString('de-DE')})` : ' – nicht geladen');
     const btn = document.getElementById('tamauto-toggle');
     if (btn) { btn.textContent = cfg.enabled ? '■ Stop' : '▶ Start'; btn.style.background = cfg.enabled ? '#c62828' : '#2e7d32'; }
-    const dr = document.getElementById('tamauto-dry'); if (dr) dr.checked = cfg.dryRun;
-    const mode = document.getElementById('tamauto-mode');
-    if (mode) { mode.textContent = cfg.dryRun ? 'TESTMODUS – nimmt nichts an' : 'LIVE – nimmt Aufträge an';
-      mode.style.color = cfg.dryRun ? '#b26a00' : '#c62828'; }
   }
 
   function buildPanel() {
@@ -588,7 +581,6 @@
         <b>TAM Auto-Annahme v${VERSION}</b><span id="tamauto-min" style="cursor:pointer;padding:0 4px">–</span></div>
       <div id="tamauto-body">
         <a id="tamauto-update" href="${UPDATE_URL}" target="_blank" style="display:none;font-weight:bold;color:#1a4d8f;margin:4px 0"></a>
-        <div id="tamauto-mode" style="font-weight:bold;margin:4px 0"></div>
         <div id="tamauto-places"></div>
         <div id="tamauto-status" style="color:#555">bereit</div>
         <div id="tamauto-refresh" style="color:#555"></div>
@@ -596,10 +588,8 @@
           <button id="tamauto-toggle"></button>
           <button id="tamauto-load">Ortsliste laden</button>
           <button id="tamauto-paste">Liste einfügen</button>
-          <label><input type="checkbox" id="tamauto-dry"> Testmodus</label>
           <label title="Klickt alle x Sekunden den Refresh-Pfeil der Tabelle – unabhängig von Start/Stop"><input type="checkbox" id="tamauto-ar"> Auto-Refresh</label>
           <label>alle <input id="tamauto-int" type="number" min="15" style="width:48px" value="${cfg.intervalSec}"> s</label>
-          <button id="tamauto-diag" title="Zeigt Tab, Tabelle, Spalten und Ortsliste im Protokoll">Diagnose</button>
           <button id="tamauto-once" title="Nimmt den obersten Auftrag der Tabelle EINMAL verbindlich an – ohne Ortsliste">Auftrag 1. Zeile annehmen</button>
           <button id="tamauto-upd" title="Sucht auf GitHub nach einer neuen Version">Update prüfen</button>
         </div>
@@ -616,15 +606,15 @@
 
     const $ = (id) => document.getElementById(id);
     $('tamauto-toggle').onclick = () => {
-      if (!cfg.enabled && !cfg.dryRun && !confirm('LIVE-Modus: Passende Aufträge werden verbindlich angenommen. Starten?')) return;
-      cfg.enabled = !cfg.enabled; GM_setValue('enabled', cfg.enabled);
-      log(cfg.enabled ? 'Gestartet' : 'Gestoppt'); renderStatus(); restartTimer();
+      if (!cfg.enabled && !confirm('Passende Aufträge werden verbindlich angenommen. Starten?')) return;
+      cfg.enabled = !cfg.enabled; GM_setValue('running', cfg.enabled);
+      log(cfg.enabled ? 'Gestartet' : 'Gestoppt'); renderStatus();
+      if (cfg.enabled) cycle('Start');
     };
     $('tamauto-ar').checked = cfg.autoRefresh;
-    $('tamauto-ar').onchange = (e) => { cfg.autoRefresh = e.target.checked; GM_setValue('autoRefresh', cfg.autoRefresh); lastRefreshOk = null; startRefreshTimer(); };
-    $('tamauto-dry').onchange = (e) => { cfg.dryRun = e.target.checked; GM_setValue('dryRun', cfg.dryRun); renderStatus(); };
+    $('tamauto-ar').onchange = (e) => { cfg.autoRefresh = e.target.checked; GM_setValue('autoRefresh', cfg.autoRefresh); lastRefreshOk = null; updateRefreshStatus(); };
     $('tamauto-int').onchange = (e) => {
-      cfg.intervalSec = Math.max(15, parseInt(e.target.value, 10) || 30); GM_setValue('intervalSec', cfg.intervalSec); restartTimer(); startRefreshTimer();
+      cfg.intervalSec = Math.max(15, parseInt(e.target.value, 10) || 30); GM_setValue('intervalSec', cfg.intervalSec); restartTimer();
     };
     $('tamauto-load').onclick = loadPlacesFromSheet;
     $('tamauto-paste').onclick = () => {
@@ -632,20 +622,7 @@
       if (ta.style.display === 'none') { ta.style.display = 'block'; $('tamauto-paste').textContent = 'Übernehmen'; }
       else { if (ta.value.trim()) loadPlacesFromText(ta.value); ta.style.display = 'none'; $('tamauto-paste').textContent = 'Liste einfügen'; }
     };
-    $('tamauto-diag').onclick = () => {
-      log('--- Diagnose ---');
-      log(`Aktiver Tab: "${activeTabName()}" → ${onPublishedTab() ? 'OK' : 'NICHT "Veröffentlichte Aufträge" – Script pausiert'}`);
-      const grid = visibleGrid();
-      if (!grid) { log('Keine Tabelle im aktiven Tab gefunden.', 'err'); return; }
-      const all = readOrders(grid);
-      log(`${all.length} Zeilen gelesen. ${lastColInfo}`);
-      all.forEach((o) => log(`  ${o.nr || '(keine Nr)'} · PLZ ${o.plz || '?'} · Ort "${o.ort || '?'}" → ` +
-        `${!o.valid ? 'UNPLAUSIBEL' : done.has(o.nr || o.ref) ? 'bereits bearbeitet' : matches(o) ? 'TREFFER' : 'kein Treffer'}`));
-      log(`Ortsliste: PLZ [${places.plz.slice(0, 10).join(', ')}${places.plz.length > 10 ? ', …' : ''}]`);
-      log(`Ortsliste: Orte [${places.orte.slice(0, 15).join(', ')}${places.orte.length > 15 ? ', …' : ''}]`);
-      log(`Modus: ${cfg.dryRun ? 'TEST' : 'LIVE'}, ${cfg.enabled ? 'läuft' : 'gestoppt'}, bereits bearbeitet: ${done.size}`);
-    };
-          $('tamauto-once').onclick = async () => {
+    $('tamauto-once').onclick = async () => {
       if (busy) { log('Script ist gerade beschäftigt – kurz warten.', 'err'); return; }
       if (!onPublishedTab()) { log('Bitte Tab "Veröffentlichte Aufträge" öffnen.', 'err'); return; }
       const grid = visibleGrid();
@@ -654,10 +631,10 @@
       if (!confirm(`Auftrag ${o.nr} (${o.plz} ${o.ort}) jetzt VERBINDLICH annehmen – unabhängig von der Ortsliste?`)) return;
       busy = true;
       try {
-        log(`TEST-Annahme gestartet: ${o.nr} · ${o.plz} ${o.ort}`);
+        log(`Annahme 1. Zeile gestartet: ${o.nr} · ${o.plz} ${o.ort}`);
         const ok = await acceptOrder(o);
         const plus = (o.extra || []).length ? ` + ${o.extra.join(', ')} (0 km)` : '';
-        log(ok ? `TEST-Annahme erfolgreich: ${o.nr}${plus}` : `TEST-Annahme fehlgeschlagen: ${o.nr}`, ok ? 'ok' : 'err');
+        log(ok ? `Annahme 1. Zeile erfolgreich: ${o.nr}${plus}` : `Annahme 1. Zeile fehlgeschlagen: ${o.nr}`, ok ? 'ok' : 'err');
         if (ok) { done.add(o.nr); (o.extra || []).forEach((x) => done.add(x)); GM_setValue('doneRefs', [...done].slice(-2000)); }
       } finally { releaseBusy(); }
     };
@@ -677,9 +654,9 @@
 
   // Sofort prüfen, sobald sich die Tabelle ändert (Auto-Refresh, TAM-Autoaktualisierung, manueller Refresh, Tabwechsel)
   let obsTimer = null;
-  function scheduleCheck() {
+  function scheduleCheck(reason = 'Nachprüfung') {
     clearTimeout(obsTimer);
-    obsTimer = setTimeout(() => cycle(true), 800);
+    obsTimer = setTimeout(() => cycle(reason), 800);
   }
   function watchGrid() {
     new MutationObserver((muts) => {
@@ -693,7 +670,7 @@
       if (!relevant && !tabSwitch) return;
       // Während einer Prüfung/Annahme nicht verwerfen, sondern direkt danach erneut prüfen
       if (busy) { recheck = true; return; }
-      scheduleCheck();
+      scheduleCheck(tabSwitch ? 'Reiterwechsel' : 'Tabelle aktualisiert');
     }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
   }
 
@@ -704,7 +681,7 @@
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;
     if (age > 6 * 3600 * 1000) loadPlacesFromSheet(); // Liste max. 6 h alt
     restartTimer();
-    startRefreshTimer();
+    if (cfg.enabled) cycle('Start');
     // Update-Prüfung beim Start (max. alle 6 h) und danach alle 6 h
     if (Date.now() - GM_getValue('lastUpdateCheck', 0) > 6 * 3600 * 1000) checkUpdate();
     setInterval(checkUpdate, 6 * 3600 * 1000);

@@ -54,15 +54,30 @@ Ein GitHub-Konto ist **nicht** nötig. Updates kommen danach automatisch (siehe 
 
 | Element | Funktion |
 |---|---|
-| **Start / Stop** | Automatische Prüfung und Annahme ein/aus |
-| **Testmodus** | Nur melden („[TEST] würde annehmen“), nichts annehmen |
+| **Start / Stop** | Automatische Prüfung und **verbindliche** Annahme ein/aus (Start mit Rückfrage) |
 | **Auto-Refresh** | Klickt alle *x* Sekunden den Refresh-Pfeil der Tabelle (unabhängig von Start/Stop) |
-| **alle … s** | Intervall für Prüfung und Refresh (Standard 30 s, min. 15 s) |
+| **alle … s** | Intervall für Refresh und Abgleich (Standard 30 s, min. 15 s) |
 | **Ortsliste laden** | Lädt die Ortsliste aus Google Sheets (automatisch, wenn älter als 6 h) |
 | **Liste einfügen** | Ortsliste manuell einfügen (`PLZ;Ort` je Zeile oder CSV mit Kopfzeile) |
-| **Diagnose** | Zeigt Tab-Erkennung, gelesene Zeilen, Spalten, Ortsliste im Protokoll |
 | **Update prüfen** | Sucht auf GitHub nach einer neuen Version |
 | **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
+
+## Abgleich und Protokoll
+
+Bei jedem Refresh der Tabelle wird die Liste neu mit der Ortsliste abgeglichen; passende Aufträge
+werden sofort angenommen. Das gilt für den Auto-Refresh des Scripts, die TAM-eigene Aktualisierung
+und einen manuellen Klick auf den Refresh-Pfeil. Jeder Abgleich steht mit Anlass im Protokoll, z. B.:
+
+```
+10:15:30  Refresh → Abgleich: 12 Aufträge in Tabelle, 1 offen, 1 passend, 11 bereits bearbeitet
+10:15:30  MW3191767 · 56218 Mülheim-Kärlich · … → TREFFER → wird angenommen
+10:15:31  Nehme an: MW3191767 · 56218 Mülheim-Kärlich · …
+10:15:36  Angenommen: MW3191767 · 56218 Mülheim-Kärlich · …
+```
+
+Anlässe: **Refresh** (Auto-Refresh des Scripts), **Tabelle aktualisiert** (TAM-Aktualisierung oder
+manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start**, **Nachprüfung**
+(Tabelle hat sich während einer Annahme geändert).
 
 ## Ablauf einer Annahme
 
@@ -80,7 +95,7 @@ Ein GitHub-Konto ist **nicht** nötig. Updates kommen danach automatisch (siehe 
 
 ## Sicherheit
 
-- Start immer im **Testmodus**; Live-Modus nur mit zusätzlicher Bestätigung.
+- **Kein Testmodus:** Nach **Start** werden passende Aufträge sofort verbindlich angenommen; Start nur mit Rückfrage.
 - Max. **3 Annahmen pro Durchlauf**; jeder Auftrag wird nur **einmal** versucht.
 - Abbruch, wenn Tab gewechselt, Tabelle neu geladen oder die falsche Auftragskarte geöffnet wurde.
 - **Hinweis:** Das Script bestätigt die hinterlegten Auftragsbedingungen (TAM-Auftragsbedingungen,
@@ -93,6 +108,13 @@ Ein GitHub-Konto ist **nicht** nötig. Updates kommen danach automatisch (siehe 
 - Test mit nachgebauter TAM-Oberfläche (jsdom): `npm i jsdom@24 && node test/mock-tam.test.js`
 
 ## Changelog
+
+### 1.1.0 – 2026-09-24
+- **Testmodus entfernt** – nach Start wird immer verbindlich angenommen. Nach dem Update ist das
+  Script einmalig gestoppt und muss neu gestartet werden.
+- Button **Diagnose** entfernt.
+- Jeder Refresh löst direkt einen Abgleich aus (Refresh und Abgleich laufen in einem Takt);
+  jeder Abgleich wird mit Anlass im Protokoll geschrieben.
 
 ### 1.0.4 – 2026-09-24
 - Fix: Tabellenänderungen während einer laufenden Prüfung/Annahme wurden verworfen – ein neuer

@@ -39,7 +39,7 @@ function bindDbl(el){el.addEventListener('dblclick',()=>{
   c.querySelector('#all').addEventListener('click',()=>{ if(c.querySelector('#all').checked) c.querySelectorAll('#wk input').forEach(i=>i.checked=true); });
 });}
 bindDbl(d.getElementById('r1'));
-w.GM_getValue=(k,d)=>({places:{plz:[],orte:['muelheim-kaerlich'],loadedAt:new Date().toISOString(),source:'t'},enabled:true,dryRun:false,intervalSec:15}[k]??d);
+w.GM_getValue=(k,d)=>({places:{plz:[],orte:['muelheim-kaerlich'],loadedAt:new Date().toISOString(),source:'t'},running:true,intervalSec:15}[k]??d);
 w.GM_setValue=()=>{};w.GM_xmlhttpRequest=()=>{};w.GM_notification=()=>{};
 w.eval(fs.readFileSync(require('path').join(__dirname,'..','tam-auto-annahme.user.js'),'utf8'));
 setTimeout(()=>{
