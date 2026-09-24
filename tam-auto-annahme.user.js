@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.3.1
+// @version      1.3.2
 // @author       IB Thomée GmbH
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
@@ -46,6 +46,7 @@
     enabled: GM_getValue('running', DEFAULTS.enabled),
     maxPerCycle: GM_getValue('maxPerCycle', DEFAULTS.maxPerCycle),
     autoRefresh: GM_getValue('autoRefresh', true),
+    debug: GM_getValue('debug', false), // Ausgaben zusätzlich in der Browser-Konsole
   });
 
   let places = GM_getValue('places', { plz: [], orte: [], loadedAt: null, source: '' });
@@ -89,7 +90,7 @@
 
   function log(msg, level = 'info') {
     const line = `${new Date().toLocaleTimeString('de-DE')}  ${msg}`;
-    console[level === 'err' ? 'error' : 'log']('[TAM-Auto]', msg);
+    if (cfg.debug) console[level === 'err' ? 'error' : 'log']('[TAM-Auto]', msg); // Konsole nur im Debug-Modus
     const box = document.getElementById('tamauto-log');
     if (box) {
       const d = document.createElement('div');
@@ -103,10 +104,24 @@
 
   function notify(title, body) {
     try { GM_notification({ title, text: body, timeout: 15000 }); } catch (e) { /* ignore */ }
+    chime();
+  }
+
+  // Sanfter Zwei-Ton-Gong (E5 → A5) mit weichem Ein- und Ausklingen statt hartem Piepton
+  function chime() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const o = ctx.createOscillator(); o.frequency.value = 880; o.connect(ctx.destination);
-      o.start(); o.stop(ctx.currentTime + 0.25);
+      const t0 = ctx.currentTime;
+      [[659.25, 0], [880, 0.18]].forEach(([freq, delay]) => {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = freq;
+        g.gain.setValueAtTime(0.0001, t0 + delay);
+        g.gain.exponentialRampToValueAtTime(0.18, t0 + delay + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + delay + 0.9);
+        o.connect(g).connect(ctx.destination);
+        o.start(t0 + delay); o.stop(t0 + delay + 0.95);
+      });
+      setTimeout(() => ctx.close(), 1500);
     } catch (e) { /* ignore */ }
   }
 
@@ -737,15 +752,21 @@
             <button id="tamauto-bl-clear">Alle freigeben</button>
           </div>
           <div id="tamauto-bl-list" style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"></div>
+          <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
+            <label class="tamauto-chk" title="Schreibt das Protokoll zusätzlich in die Browser-Konsole (F12)">
+              <input type="checkbox" id="tamauto-debug"> <b>Debug-Modus</b></label>
+            <span style="color:#555"> – Ausgaben zusätzlich in der Browser-Konsole (F12)</span>
+          </div>
         </div>
         <div id="tamauto-page-main" style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <button id="tamauto-toggle"></button>
           <button id="tamauto-load">Ortsliste laden</button>
           <button id="tamauto-paste">Liste einfügen</button>
-          <label title="Klickt alle x Sekunden den Refresh-Pfeil der Tabelle – unabhängig von Start/Stop"><input type="checkbox" id="tamauto-ar"> Auto-Refresh</label>
-          <label>alle <input id="tamauto-int" type="number" min="15" style="width:48px" value="${cfg.intervalSec}"> s</label>
+          <span class="tamauto-chk" title="Klickt alle x Sekunden den Refresh-Pfeil der Tabelle – unabhängig von Start/Stop">
+            <label class="tamauto-chk"><input type="checkbox" id="tamauto-ar"> Auto-Refresh</label>
+            alle <input id="tamauto-int" type="number" min="15" style="width:48px;margin:0" value="${cfg.intervalSec}"> s</span>
           <button id="tamauto-once" title="Nimmt den obersten Auftrag der Tabelle EINMAL verbindlich an – ohne Ortsliste">Auftrag 1. Zeile annehmen</button>
-          <button id="tamauto-upd" title="Sucht auf GitHub nach einer neuen Version">Update prüfen</button>
+          <button id="tamauto-upd" title="Sucht auf GitHub nach einer neuen Version">Softwareupdate</button>
         </div>
         <textarea id="tamauto-ta" placeholder="PLZ;Ort je Zeile (oder CSV mit Kopfzeile PLZ/Ort)" style="display:none;width:100%;height:80px"></textarea>
         <div id="tamauto-log" style="max-height:220px;overflow:auto;font:11px monospace;border-top:1px solid #ddd;padding-top:4px"></div>
@@ -755,6 +776,11 @@
       font: '12px Arial, sans-serif', boxShadow: '0 4px 14px rgba(0,0,0,.25)' });
     p.querySelectorAll('button').forEach((b) => Object.assign(b.style,
       { padding: '3px 8px', border: '1px solid #1a4d8f', borderRadius: '3px', background: '#e8f0fb', cursor: 'pointer' }));
+    // Checkbox und Text auf einer Linie (TAM-CSS verschiebt Checkboxen sonst nach oben)
+    p.querySelectorAll('.tamauto-chk').forEach((el) => Object.assign(el.style,
+      { display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', margin: '0', cursor: 'pointer' }));
+    p.querySelectorAll('input[type=checkbox]').forEach((cb) => Object.assign(cb.style,
+      { margin: '0', verticalAlign: 'middle', position: 'static', top: '0' }));
     document.body.appendChild(p);
     document.getElementById('tamauto-toggle').style.color = '#fff';
 
@@ -819,6 +845,11 @@
     };
     $('tamauto-bl-add').onclick = addBl;
     $('tamauto-bl-in').onkeydown = (e) => { if (e.key === 'Enter') addBl(); };
+    $('tamauto-debug').checked = cfg.debug;
+    $('tamauto-debug').onchange = (e) => {
+      cfg.debug = e.target.checked; GM_setValue('debug', cfg.debug);
+      log(cfg.debug ? 'Debug-Modus an – Ausgaben auch in der Browser-Konsole.' : 'Debug-Modus aus.');
+    };
     $('tamauto-bl-clear').onclick = () => {
       GM_setValue('blacklist', { date: today(), plz: [] }); log('Blacklist: alle PLZ freigegeben.', 'ok'); renderBlacklist();
     };

@@ -47,7 +47,7 @@ Ein GitHub-Konto ist **nicht** nötig. Updates kommen danach automatisch (siehe 
 
 - Tampermonkey aktualisiert über `@updateURL` / `@downloadURL` (Raw-Datei im Branch `main`).
 - Das Bedienfeld zeigt **„⬆ Update x.y.z verfügbar – installieren“**, sobald auf GitHub eine
-  neuere `@version` liegt. Button **„Update prüfen“** prüft sofort.
+  neuere `@version` liegt. Button **„Softwareupdate“** prüft sofort.
 - Neue Version veröffentlichen: `@version` im Script erhöhen, Changelog ergänzen, nach `main` pushen.
 
 ## Bedienfeld
@@ -60,7 +60,7 @@ Ein GitHub-Konto ist **nicht** nötig. Updates kommen danach automatisch (siehe 
 | **alle … s** | Intervall für Refresh und Abgleich (Standard 30 s, min. 15 s) |
 | **Ortsliste laden** | Lädt die Ortsliste (Excel in SharePoint, Blatt „annehmen“) – ohne Anmeldung; automatisch, wenn älter als 6 h |
 | **Liste einfügen** | Ortsliste manuell einfügen (`PLZ;Ort` je Zeile oder CSV mit Kopfzeile) |
-| **Update prüfen** | Sucht auf GitHub nach einer neuen Version |
+| **Softwareupdate** | Sucht auf GitHub nach einer neuen Version |
 | **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
 
 ### Reiter „Erweiterte Einstellungen“ – Tages-Blacklist
@@ -70,6 +70,9 @@ nicht erneut angenommen wird. Gleiche Logik wie in der Ortsliste: `44` sperrt al
 Die Liste leert sich **automatisch um Mitternacht**. Freigeben: auf den roten Eintrag klicken oder
 „Alle freigeben“. Solange etwas gesperrt ist, zeigt der Reiter die Anzahl an („1 gesperrt“).
 Gesperrte Treffer stehen im Protokoll („… heute gesperrt (Blacklist) → nicht angenommen“).
+
+**Debug-Modus** (ebenfalls in „Erweiterte Einstellungen“): schreibt das Protokoll zusätzlich in die
+Browser-Konsole (F12). Standardmäßig aus – ohne Debug-Modus schreibt das Script nichts in die Konsole.
 
 ## Abgleich und Protokoll
 
@@ -131,6 +134,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
   einstellige Werte werden automatisch zu `0x` ergänzt).
 
 ## Changelog
+
+### 1.3.2 – 2026-09-24
+- Konsolenausgaben nur noch mit Checkbox **Debug-Modus** (Reiter „Erweiterte Einstellungen“).
+- Angenehmerer Hinweiston: sanfter Zwei-Ton-Gong statt Piepton.
+- Button „Update prüfen“ heißt jetzt **„Softwareupdate“**.
+- Auto-Refresh-Checkbox, Text und Intervall stehen auf einer Linie.
 
 ### 1.3.1 – 2026-09-24
 - „Letzter Refresh“ wird auch bei Refresh von außen angezeigt – Klick auf den Refresh-Pfeil der Website
