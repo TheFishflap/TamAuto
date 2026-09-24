@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.3.2
+// @version      1.4.0
 // @author       IB Thomée GmbH
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
@@ -47,6 +47,8 @@
     maxPerCycle: GM_getValue('maxPerCycle', DEFAULTS.maxPerCycle),
     autoRefresh: GM_getValue('autoRefresh', true),
     debug: GM_getValue('debug', false), // Ausgaben zusätzlich in der Browser-Konsole
+    delayOn: GM_getValue('delayOn', false), // Verzögerung vor jedem Klickschritt der Annahme
+    delaySec: GM_getValue('delaySec', 1),   // 1–5 s (+ Streuung 0,02–0,64 s)
   });
 
   let places = GM_getValue('places', { plz: [], orte: [], loadedAt: null, source: '' });
@@ -512,6 +514,16 @@
     return cb.checked === want;
   }
 
+  // Verzögerung vor jedem Klickschritt der Annahme (Erweiterte Einstellungen):
+  // eingestellte Sekunden (1–5) + zufällige Streuung 0,02–0,64 s, bei jedem Schritt neu gewürfelt
+  const SPREAD_MIN = 0.02, SPREAD_MAX = 0.64;
+  async function humanDelay(step) {
+    if (!cfg.delayOn) return;
+    const s = cfg.delaySec + SPREAD_MIN + Math.random() * (SPREAD_MAX - SPREAD_MIN);
+    if (cfg.debug) log(`Verzögerung ${s.toFixed(2).replace('.', ',')} s vor: ${step}`);
+    await sleep(s * 1000);
+  }
+
   async function acceptOrder(order) {
     if (!onPublishedTab()) { log('Abbruch: nicht im Tab "Veröffentlichte Aufträge".', 'err'); return false; }
     const nr = (order.nr || '').trim();
@@ -521,6 +533,8 @@
     const before = new Set(visibleWindows());
     // sichtbare Zelle anklicken (die ersten Zellen sind im TAM ausgeblendete Spalten)
     const cell = [...order.row.querySelectorAll('td.x-grid3-cell')].find(visible) || order.row;
+    await humanDelay('Doppelklick auf Auftrag');
+    if (!order.row.isConnected) { log(`Abbruch: Zeile ${nr} während der Verzögerung verschwunden.`, 'err'); return false; }
     fire(cell, ['mousedown', 'mouseup', 'click']);
     await sleep(200);
     fire(cell, ['mousedown', 'mouseup', 'click', 'dblclick']);
@@ -538,6 +552,7 @@
     // 2) Erst "Aufträge in der Umgebung" mit 0 km je 1× anklicken (landen im Warenkorb) …
     const extra = [];
     for (const item of nearbyItems(card).filter((n) => n.kmNum === 0 && n.nr && n.nr !== nr.toUpperCase())) {
+      await humanDelay(`0-km-Auftrag ${item.nr}`);
       fire(item.el, ['mouseover', 'mousedown', 'mouseup', 'click']);
       const w = await waitFor(() => warenkorbItems(card).find((x) => x.nr === item.nr), 4000);
       if (w) { extra.push(item.nr); log(`+ ${item.nr} (0 km) in den Warenkorb`); }
@@ -549,6 +564,7 @@
     const selectAll = [...card.querySelectorAll('input.x-view-item-checkbox')]
       .find((cb) => !cb.closest('.x-view-item') && /warenkorb/i.test(text(cb.closest('.x-panel-header') || cb.parentElement)));
     if (!selectAll) { log('Checkbox "Warenkorb – alle auswählen" nicht gefunden.', 'err'); closeWindow(card); return false; }
+    await humanDelay('Warenkorb – alle auswählen');
     await setChecked(selectAll, true);
     const items = warenkorbItems(card);
     const unchecked = items.filter((w) => !w.cb.checked).map((w) => w.nr);
@@ -558,6 +574,7 @@
     // 3) "Annehmen" unten in der Auftragskarte
     const acceptBtn = findButton(cfg.acceptButton, card);
     if (!acceptBtn) { log('Button "Annehmen" nicht gefunden.', 'err'); closeWindow(card); return false; }
+    await humanDelay('Annehmen');
     clickBtn(acceptBtn);
 
     // 4) Dialog "Auftragsannahme bestätigen" (einmalig für alle): Haken setzen -> "Bestätigen"
@@ -570,6 +587,7 @@
       closeWindow(card); return false;
     }
     const termsCb = dlg.querySelector('input.x-form-checkbox, input[type=checkbox]');
+    if (termsCb) await humanDelay('Haken „Bedingungen bestätigen“');
     if (!termsCb || !(await setChecked(termsCb, true))) {
       log('Bedingungs-Haken ließ sich nicht setzen.', 'err');
       const cancel = findButton(/^abbrechen$/i, dlg); if (cancel) clickBtn(cancel);
@@ -584,6 +602,7 @@
       const cancel = findButton(/^abbrechen$/i, dlg); if (cancel) clickBtn(cancel);
       await sleep(300); closeWindow(card); return false;
     }
+    await humanDelay('Bestätigen');
     clickBtn(okBtn);
     await sleep(2500);
 
@@ -753,6 +772,17 @@
           </div>
           <div id="tamauto-bl-list" style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"></div>
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
+            <label class="tamauto-chk" title="Wartet vor jedem Klickschritt der Annahme">
+              <input type="checkbox" id="tamauto-delay-on"> <b>Verzögerung</b></label>
+            <span style="color:#555"> – vor jedem Klickschritt der Annahme</span>
+            <div class="tamauto-chk" style="margin-top:4px">
+              <input type="range" id="tamauto-delay" min="1" max="5" step="1" style="width:160px;margin:0">
+              <b id="tamauto-delay-val"></b>
+            </div>
+            <div style="color:#555;margin-top:2px">+ zufällig 0,02–0,64 s, bei jedem Schritt neu (z. B. 2 s → 2,02–2,64 s).
+              Eine Annahme hat 5–6 Schritte und dauert entsprechend länger.</div>
+          </div>
+          <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
             <label class="tamauto-chk" title="Schreibt das Protokoll zusätzlich in die Browser-Konsole (F12)">
               <input type="checkbox" id="tamauto-debug"> <b>Debug-Modus</b></label>
             <span style="color:#555"> – Ausgaben zusätzlich in der Browser-Konsole (F12)</span>
@@ -845,6 +875,24 @@
     };
     $('tamauto-bl-add').onclick = addBl;
     $('tamauto-bl-in').onkeydown = (e) => { if (e.key === 'Enter') addBl(); };
+    // Verzögerung: Checkbox + Slider 1–5 s
+    const renderDelay = () => {
+      $('tamauto-delay-on').checked = cfg.delayOn;
+      $('tamauto-delay').value = cfg.delaySec;
+      $('tamauto-delay').disabled = !cfg.delayOn;
+      $('tamauto-delay-val').textContent = cfg.delayOn
+        ? `${cfg.delaySec} s (${cfg.delaySec},02–${cfg.delaySec},64 s je Schritt)` : 'aus';
+    };
+    $('tamauto-delay-on').onchange = (e) => {
+      cfg.delayOn = e.target.checked; GM_setValue('delayOn', cfg.delayOn); renderDelay();
+      log(cfg.delayOn ? `Verzögerung an: ${cfg.delaySec} s + 0,02–0,64 s je Klickschritt.` : 'Verzögerung aus.');
+    };
+    $('tamauto-delay').oninput = (e) => { cfg.delaySec = Math.min(5, Math.max(1, +e.target.value || 1)); renderDelay(); };
+    $('tamauto-delay').onchange = () => {
+      GM_setValue('delaySec', cfg.delaySec); log(`Verzögerung: ${cfg.delaySec} s + 0,02–0,64 s je Klickschritt.`);
+    };
+    renderDelay();
+
     $('tamauto-debug').checked = cfg.debug;
     $('tamauto-debug').onchange = (e) => {
       cfg.debug = e.target.checked; GM_setValue('debug', cfg.debug);

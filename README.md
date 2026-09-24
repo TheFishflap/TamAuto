@@ -71,6 +71,11 @@ Die Liste leert sich **automatisch um Mitternacht**. Freigeben: auf den roten Ei
 „Alle freigeben“. Solange etwas gesperrt ist, zeigt der Reiter die Anzahl an („1 gesperrt“).
 Gesperrte Treffer stehen im Protokoll („… heute gesperrt (Blacklist) → nicht angenommen“).
 
+**Verzögerung** (ebenfalls in „Erweiterte Einstellungen“): Checkbox + Slider **1–5 s**. Vor jedem Klickschritt
+der Annahme (Doppelklick, 0-km-Aufträge, alle auswählen, Annehmen, Haken, Bestätigen) wird die eingestellte
+Zeit **plus eine zufällige Streuung von 0,02–0,64 s** gewartet, bei jedem Schritt neu gewürfelt
+(z. B. 2 s → 2,02–2,64 s). Die Streuung ist fest eingestellt. Eine Annahme dauert dadurch ca. 6 × länger.
+
 **Debug-Modus** (ebenfalls in „Erweiterte Einstellungen“): schreibt das Protokoll zusätzlich in die
 Browser-Konsole (F12). Standardmäßig aus – ohne Debug-Modus schreibt das Script nichts in die Konsole.
 
@@ -134,6 +139,10 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
   einstellige Werte werden automatisch zu `0x` ergänzt).
 
 ## Changelog
+
+### 1.4.0 – 2026-09-24
+- **Verzögerung** in „Erweiterte Einstellungen“: Checkbox + Slider 1–5 s, vor jedem Klickschritt der Annahme,
+  plus zufällige Streuung 0,02–0,64 s (fest). Im Debug-Modus steht jede Verzögerung im Protokoll.
 
 ### 1.3.2 – 2026-09-24
 - Konsolenausgaben nur noch mit Checkbox **Debug-Modus** (Reiter „Erweiterte Einstellungen“).
