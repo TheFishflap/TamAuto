@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.0.3
+// @version      1.0.4
 // @author       IB Thomée GmbH
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
@@ -54,6 +54,12 @@
   let refreshTimer = null;
   let lastRefreshOk = null;
   let busy = false;
+  let recheck = false; // Tabelle hat sich geändert, während busy war
+
+  function releaseBusy() {
+    busy = false;
+    if (recheck && cfg.enabled) { recheck = false; scheduleCheck(); }
+  }
   let lastSummary = '';
   const seen = new Set(); // in dieser Sitzung schon protokollierte Aufträge
 
@@ -484,8 +490,10 @@
 
   // ------------------------------------------------------------------ Hauptzyklus
   async function cycle(fromObserver = false) {
-    if (busy || !cfg.enabled) return;
+    if (!cfg.enabled) return;
+    if (busy) { recheck = true; return; } // läuft gerade etwas → danach erneut prüfen
     busy = true;
+    recheck = false; // Tabelle wird jetzt frisch gelesen
     try {
       if (!places.plz.length && !places.orte.length) { log('Keine Ortsliste geladen – übersprungen.', 'err'); return; }
       if (!onPublishedTab()) {
@@ -550,7 +558,7 @@
       GM_setValue('doneRefs', [...done].slice(-2000));
     } catch (e) {
       log(`Fehler: ${e.message}`, 'err');
-    } finally { busy = false; }
+    } finally { releaseBusy(); }
   }
 
   function restartTimer() {
@@ -651,7 +659,7 @@
         const plus = (o.extra || []).length ? ` + ${o.extra.join(', ')} (0 km)` : '';
         log(ok ? `TEST-Annahme erfolgreich: ${o.nr}${plus}` : `TEST-Annahme fehlgeschlagen: ${o.nr}`, ok ? 'ok' : 'err');
         if (ok) { done.add(o.nr); (o.extra || []).forEach((x) => done.add(x)); GM_setValue('doneRefs', [...done].slice(-2000)); }
-      } finally { busy = false; }
+      } finally { releaseBusy(); }
     };
     $('tamauto-upd').onclick = () => checkUpdate(true);
     $('tamauto-min').onclick =() => { const b = $('tamauto-body'); b.style.display = b.style.display === 'none' ? '' : 'none'; };
@@ -669,9 +677,13 @@
 
   // Sofort prüfen, sobald sich die Tabelle ändert (Auto-Refresh, TAM-Autoaktualisierung, manueller Refresh, Tabwechsel)
   let obsTimer = null;
+  function scheduleCheck() {
+    clearTimeout(obsTimer);
+    obsTimer = setTimeout(() => cycle(true), 800);
+  }
   function watchGrid() {
     new MutationObserver((muts) => {
-      if (busy || !cfg.enabled) return;
+      if (!cfg.enabled) return;
       const panel = document.getElementById(cfg.tabPanelId);
       if (!panel) return;
       const relevant = muts.some((m) => m.type === 'childList' && panel.contains(m.target) && m.target.closest &&
@@ -679,8 +691,9 @@
       const tabSwitch = muts.some((m) => m.type === 'attributes' && m.target.tagName === 'LI' &&
         m.target.id && m.target.id.endsWith('__' + cfg.tabPanelId));
       if (!relevant && !tabSwitch) return;
-      clearTimeout(obsTimer);
-      obsTimer = setTimeout(() => cycle(true), 800);
+      // Während einer Prüfung/Annahme nicht verwerfen, sondern direkt danach erneut prüfen
+      if (busy) { recheck = true; return; }
+      scheduleCheck();
     }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
   }
 

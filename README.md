@@ -94,6 +94,10 @@ Ein GitHub-Konto ist **nicht** nötig. Updates kommen danach automatisch (siehe 
 
 ## Changelog
 
+### 1.0.4 – 2026-09-24
+- Fix: Tabellenänderungen während einer laufenden Prüfung/Annahme wurden verworfen – ein neuer
+  Auftrag wurde dann erst beim nächsten Intervall (30 s) erkannt. Jetzt wird direkt danach erneut geprüft.
+
 ### 1.0.3 – 2026-09-24
 - Script-Name jetzt **„TAM Auto-Annahme (IB Thomée GmbH)“**.
 
