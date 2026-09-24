@@ -60,6 +60,11 @@ deren **PLZ oder Ort** in der Ortsliste der IB Thomée GmbH steht.
   Kundenstandards) automatisch und verbindlich. Die Nutzungsbedingungen von TÜV SÜD / TAM zur
   automatisierten Nutzung sind vor dem Live-Betrieb zu prüfen.
 
+## Entwicklung
+
+- Struktur- und Debug-Infos zur TAM-Oberfläche: [docs/TAM-DEBUG.md](docs/TAM-DEBUG.md)
+- Test mit nachgebauter TAM-Oberfläche (jsdom): `npm i jsdom@24 && node test/mock-tam.test.js`
+
 ## Changelog
 
 ### 1.0.0 – 2026-09-24

@@ -3,7 +3,7 @@
 // @namespace    ib-thomee
 // @version      1.0.0
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
-// @match        https://*/*
+// @match        https://tam.tuvsud.com/*
 // @homepageURL  https://github.com/TheFishflap/TamAuto
 // @updateURL    https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js
 // @downloadURL  https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js
@@ -17,7 +17,6 @@
 // @connect      raw.githubusercontent.com
 // @run-at       document-idle
 // ==/UserScript==
-// TIPP: @match oben auf die echte TAM-Adresse einschränken (z. B. https://tam.xyz.de/*).
 
 (function () {
   'use strict';
