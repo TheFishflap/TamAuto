@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.8.2
+// @version      1.8.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -59,6 +59,7 @@
     consoleLog: GM_getValue('consoleLogV2', false),
     sound: GM_getValue('sound', true),   // Benachrichtigungston bei Annahme / fehlgeschlagener Annahme
     popups: GM_getValue('popups', true), // Desktop-Benachrichtigung (Popup) bei Annahme / fehlgeschlagener Annahme
+    volume: GM_getValue('volume', 60),   // Lautstärke des Benachrichtigungstons in %
     delayOn: GM_getValue('delayOn', false),       // Verzögerung vor jedem Klickschritt der Annahme
     delaySec: Math.min(1, Math.max(0.01, GM_getValue('delaySec', 0.17))), // 0,01–1,00 s in 0,01-s-Schritten, Standard 0,17
     delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung
@@ -125,7 +126,10 @@
   }
 
   // Sanfter Zwei-Ton-Gong (E5 → A5) mit weichem Ein- und Ausklingen statt hartem Piepton
+  // Lautstärke 0–100 % (Drehregler in "Erweiterte Einstellungen"); 60 % entspricht dem bisherigen Pegel
   function chime() {
+    const peak = 0.3 * Math.max(0, Math.min(100, cfg.volume)) / 100;
+    if (peak <= 0) return;
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const t0 = ctx.currentTime;
@@ -133,7 +137,7 @@
         const o = ctx.createOscillator(); const g = ctx.createGain();
         o.type = 'sine'; o.frequency.value = freq;
         g.gain.setValueAtTime(0.0001, t0 + delay);
-        g.gain.exponentialRampToValueAtTime(0.18, t0 + delay + 0.02);
+        g.gain.exponentialRampToValueAtTime(peak, t0 + delay + 0.02);
         g.gain.exponentialRampToValueAtTime(0.0001, t0 + delay + 0.9);
         o.connect(g).connect(ctx.destination);
         o.start(t0 + delay); o.stop(t0 + delay + 0.95);
@@ -412,8 +416,8 @@
     });
     // Anzahl auch am Reiter zeigen, damit eine Sperre nicht übersehen wird
     const n = b.plz.length + xb.plz.length + xb.orte.length;
-    const tab = document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-adv"]');
-    if (tab) tab.textContent = `Erweiterte Einstellungen${n ? ` (${n} PLZ gesperrt)` : ''}`;
+    const tab = document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-main"]');
+    if (tab) tab.textContent = `Bedienung${n ? ` (${n} PLZ gesperrt)` : ''}`;
   }
 
   // ------------------------------------------------------------------ Updates (GitHub)
@@ -1022,19 +1026,7 @@
           <button class="tamauto-tabbtn" data-page="tamauto-page-info">Info</button>
         </div>
         <div id="tamauto-page-adv" style="display:none;margin:6px 0">
-          <b>Tages-Blacklist</b> <span style="color:#555">– gilt nur heute, um Mitternacht automatisch leer</span>
-          <div style="color:#555;margin:2px 0 4px">PLZ, die heute <b>nicht</b> angenommen werden, z. B. nach Storno
-            (sonst würde der Auftrag erneut angenommen). 2–5 Ziffern: „43“ sperrt alle 43xxx, „47877“ nur diese PLZ.</div>
-          <div style="display:flex;gap:6px;align-items:center">
-            <input id="tamauto-bl-in" placeholder="PLZ, z. B. 47877" maxlength="5" style="width:110px">
-            <button id="tamauto-bl-add">Sperren</button>
-            <button id="tamauto-bl-clear">Alle freigeben</button>
-          </div>
-          <div id="tamauto-bl-list" style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"></div>
-          <div style="margin-top:8px"><b>Aus Excel</b> <span style="color:#555">– Blatt „nicht annehmen“, ändern nur im Excel</span>
-            <button id="tamauto-bl-reload" style="margin-left:4px">Neu laden</button></div>
-          <div id="tamauto-bl-excel" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
-          <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
+          <div>
             <label class="tamauto-chk" title="Wartet vor jedem Klickschritt der Annahme">
               <input type="checkbox" id="tamauto-delay-on"> <b>Verzögerung</b></label>
             <span style="color:#555"> – vor jedem Klickschritt der Annahme</span>
@@ -1056,12 +1048,19 @@
             <span class="tamauto-chk">
               <label class="tamauto-chk" title="Gong bei angenommenem oder fehlgeschlagenem Auftrag">
                 <input type="checkbox" id="tamauto-sound"> <b>Benachrichtigungston</b></label>
+              <span id="tamauto-vol" tabindex="0" title="Lautstärke: ziehen (hoch/runter), Mausrad oder Pfeiltasten · Doppelklick = 60 %"
+                style="position:relative;display:inline-block;width:26px;height:26px;border-radius:50%;margin-left:6px;cursor:ns-resize;
+                background:radial-gradient(circle at 35% 30%,#fff,#c9d8ee);border:2px solid #1a4d8f;box-sizing:border-box;outline:none">
+                <span id="tamauto-vol-needle" style="position:absolute;left:50%;top:50%;width:2px;height:9px;margin-left:-1px;
+                  background:#1a4d8f;border-radius:1px;transform-origin:50% 0"></span></span>
+              <b id="tamauto-vol-val" style="min-width:34px"></b>
               <button id="tamauto-sound-test" title="Ton einmal abspielen">▶ Test</button>
             </span>
-            <div style="margin-top:4px">
+            <div style="margin-top:6px">
               <label class="tamauto-chk" title="Desktop-Benachrichtigung bei angenommenem oder fehlgeschlagenem Auftrag">
                 <input type="checkbox" id="tamauto-popups"> <b>Popups</b></label>
-              <span style="color:#555"> – Desktop-Benachrichtigung bei Annahme</span>
+              <span style="color:#555"> – Desktop-Benachrichtigung</span>
+              <button id="tamauto-popup-test" title="Test-Benachrichtigung anzeigen" style="margin-left:4px">▶ Test</button>
             </div>
           </div>
         </div>
@@ -1122,6 +1121,19 @@
             <span class="tamauto-help" title="Auto-Refresh lädt die Tabelle schneller neu, um neue Aufträge früher zu finden. Ein niedrigerer Wert bedeutet eine höhere Auslastung und sollte mit Bedacht gewählt werden, um Auffälligkeiten zu vermeiden. Standard: 30 s, Minimum: 10 s. Über 60 s schaltet sich der Auto-Refresh ab – der Abgleich läuft dann synchron mit der TAM-eigenen Aktualisierung (jede Minute).">?</span>
           </span>
           <button id="tamauto-once" title="Nimmt den obersten Auftrag der Tabelle EINMAL verbindlich an – ohne Ortsliste">Auftrag 1. Zeile annehmen</button>
+          <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">
+            <b>Tages-Blacklist</b>
+            <span class="tamauto-help" title="PLZ, die heute NICHT angenommen werden, z. B. nach einem Storno (sonst würde der Auftrag erneut angenommen). 2–5 Ziffern: „43“ sperrt alle 43xxx, „47877“ nur diese PLZ. Die Liste leert sich um Mitternacht automatisch. Freigeben: auf den roten Eintrag klicken.">?</span>
+            <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+              <input id="tamauto-bl-in" placeholder="PLZ, z. B. 47877" maxlength="5" style="width:110px">
+              <button id="tamauto-bl-add">Sperren</button>
+              <button id="tamauto-bl-clear">Alle freigeben</button>
+            </div>
+            <div id="tamauto-bl-list" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
+            <div style="margin-top:6px"><b>Sperrliste aus Excel</b> <span style="color:#555">– Blatt „nicht annehmen“</span>
+              <button id="tamauto-bl-reload" style="margin-left:4px">Neu laden</button></div>
+            <div id="tamauto-bl-excel" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
+          </div>
         </div>
         <textarea id="tamauto-ta" placeholder="Zusätzliche PLZ für 24 h – eine je Zeile, z. B.&#10;43&#10;47877" style="display:none;width:100%;height:80px"></textarea>
         <div id="tamauto-log" style="max-height:220px;overflow:auto;font:11px monospace;border-top:1px solid #ddd;padding-top:4px"></div>
@@ -1215,7 +1227,7 @@
           marginTop: '2px' });
       });
       if (id === 'tamauto-page-main') $('tamauto-ta').style.display = 'none';
-      if (id === 'tamauto-page-adv') renderBlacklist();
+      if (id === 'tamauto-page-main') renderBlacklist();
       if (id === 'tamauto-page-book') renderOrderbook();
     };
     p.querySelectorAll('.tamauto-tabbtn').forEach((b) => { b.onclick = () => showPage(b.dataset.page); });
@@ -1285,9 +1297,47 @@
     // Benachrichtigungston an/aus (+ Test)
     $('tamauto-sound').checked = cfg.sound;
     $('tamauto-sound').onchange = (e) => {
-      cfg.sound = e.target.checked; GM_setValue('sound', cfg.sound); log(cfg.sound ? 'Benachrichtigungston an.' : 'Benachrichtigungston aus.');
+      cfg.sound = e.target.checked; GM_setValue('sound', cfg.sound); renderVol();
+      log(cfg.sound ? 'Benachrichtigungston an.' : 'Benachrichtigungston aus.');
     };
     $('tamauto-sound-test').onclick = () => chime();
+
+    // Drehregler Lautstärke (0–100 %): Zeiger von -135° (0 %) bis +135° (100 %)
+    const knob = $('tamauto-vol');
+    const renderVol = () => {
+      $('tamauto-vol-needle').style.transform = `rotate(${180 - 135 + cfg.volume * 2.7}deg)`;
+      $('tamauto-vol-val').textContent = `${cfg.volume} %`;
+      knob.style.opacity = cfg.sound ? '1' : '.4';
+    };
+    let volSaveTimer = null;
+    const setVol = (v, preview = true) => {
+      cfg.volume = Math.round(Math.max(0, Math.min(100, v)));
+      renderVol();
+      clearTimeout(volSaveTimer); // erst nach dem Drehen speichern und einmal vorspielen
+      volSaveTimer = setTimeout(() => { GM_setValue('volume', cfg.volume); if (preview && cfg.sound) chime(); }, 350);
+    };
+    knob.addEventListener('mousedown', (e) => {
+      e.preventDefault(); e.stopPropagation(); // nicht das Bedienfeld verschieben / Größe ändern
+      const y0 = e.clientY, v0 = cfg.volume;
+      const mv = (ev) => setVol(v0 + (y0 - ev.clientY) * 0.8, false);
+      document.addEventListener('mousemove', mv);
+      document.addEventListener('mouseup', () => { document.removeEventListener('mousemove', mv); setVol(cfg.volume); }, { once: true });
+    });
+    knob.addEventListener('wheel', (e) => { e.preventDefault(); setVol(cfg.volume + (e.deltaY < 0 ? 5 : -5)); }, { passive: false });
+    knob.addEventListener('keydown', (e) => {
+      if (['ArrowUp', 'ArrowRight'].includes(e.key)) { e.preventDefault(); setVol(cfg.volume + 5); }
+      if (['ArrowDown', 'ArrowLeft'].includes(e.key)) { e.preventDefault(); setVol(cfg.volume - 5); }
+    });
+    knob.addEventListener('dblclick', () => setVol(60));
+    renderVol();
+
+    // Popup testen (unabhängig von der Checkbox, damit man die Browser-Berechtigung prüfen kann)
+    $('tamauto-popup-test').onclick = () => {
+      try {
+        GM_notification({ title: 'TAM Auto-Annahme – Test', text: 'So sieht eine Benachrichtigung bei einer Annahme aus.', timeout: 8000, silent: true });
+        log('Test-Popup gesendet. Erscheint nichts: Benachrichtigungen für den Browser/Tampermonkey in Windows erlauben.', 'ok');
+      } catch (e) { log(`Popup nicht möglich: ${e.message}`, 'err'); }
+    };
     $('tamauto-popups').checked = cfg.popups;
     $('tamauto-popups').onchange = (e) => {
       cfg.popups = e.target.checked; GM_setValue('popups', cfg.popups); log(cfg.popups ? 'Popups an.' : 'Popups aus.');

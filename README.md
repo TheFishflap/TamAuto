@@ -81,7 +81,7 @@ Browser genutzt wird, ist eine neue Aktivierung nötig.
 | **Liste einfügen** | PLZ **zusätzlich** zur geladenen Ortsliste annehmen (eine je Zeile, gleiche PLZ-Logik), wird **nach 24 h automatisch gelöscht**. Das Feld zeigt die aktuelle Zusatzliste; leer übernehmen = löschen. Anzeige „+ Zusätzlich: … (bis …)“. Erklärung über das **?** |
 | **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
 
-### Reiter „Erweiterte Einstellungen“ – Tages-Blacklist
+### Tages-Blacklist (Reiter „Bedienung“)
 
 PLZ eintragen, die **heute nicht** angenommen werden sollen – z. B. nach einem Storno, damit der Auftrag
 nicht erneut angenommen wird. Gleiche Logik wie in der Ortsliste: `44` sperrt alle 44xxx, `47877` nur diese PLZ.
@@ -101,9 +101,13 @@ Vor jedem Klickschritt der Annahme (Doppelklick, 0-km-Aufträge, alle auswählen
 wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt zufällig **0 bis x ms** dazu
 (Standard **100 ms**, einstellbar), bei jedem Schritt neu gewürfelt.
 
-**Benachrichtigungston** (ebenfalls in „Erweiterte Einstellungen“, Standard **an**): Gong bei angenommenem
-oder fehlgeschlagenem Auftrag ein/aus; **▶ Test** spielt ihn einmal ab. **Popups** (Standard **an**):
-Desktop-Benachrichtigung bei Annahme ein/aus.
+### Reiter „Erweiterte Einstellungen“
+
+**Benachrichtigungston** (Standard **an**): Gong bei angenommenem oder fehlgeschlagenem Auftrag ein/aus.
+**Drehregler** für die Lautstärke (0–100 %, Standard 60 %): hoch/runter ziehen, Mausrad oder Pfeiltasten,
+Doppelklick = 60 %; nach dem Drehen wird der Ton einmal vorgespielt. **▶ Test** spielt ihn ab.
+**Popups** (Standard **an**): Desktop-Benachrichtigung bei Annahme ein/aus; **▶ Test** zeigt eine
+Test-Benachrichtigung (erscheint nichts: Benachrichtigungen für Browser/Tampermonkey in Windows erlauben).
 
 **Console Log** (ebenfalls in „Erweiterte Einstellungen“, Standard **aus**): blendet das Protokoll des Scripts
 unten im Bedienfeld ein/aus. Das Script schreibt nichts in die Browser-Konsole.
@@ -200,6 +204,10 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.8.3 – 2026-09-24
+- Tages-Blacklist und Sperrliste aus Excel in den Reiter **Bedienung** verschoben („Bedienung (x PLZ gesperrt)“).
+- Benachrichtigungston mit **Drehregler für die Lautstärke**; **Popups** mit Test-Button.
 
 ### 1.8.2 – 2026-09-24
 - „Erweiterte Einstellungen“: Checkbox **Popups** (Desktop-Benachrichtigungen, Standard an).
