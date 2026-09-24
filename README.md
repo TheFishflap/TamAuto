@@ -54,10 +54,11 @@ Ein GitHub-Konto ist **nicht** nötig. Updates kommen danach automatisch (siehe 
 
 | Element | Funktion |
 |---|---|
-| **Start / Stop** | Automatische Prüfung und **verbindliche** Annahme ein/aus (Start mit Rückfrage) |
+| **Tab-Anzeige** | Aktiver Reiter und Bereitschaft: **Veröffentlichte Aufträge – ✔ bereit zum Annehmen** (grün), **Angenommene Aufträge – ⏸ Annahme pausiert** (orange), sonst pausiert |
+| **Start / Stop** | Automatische Prüfung und **verbindliche** Annahme ein/aus |
 | **Auto-Refresh** | Klickt alle *x* Sekunden den Refresh-Pfeil der Tabelle (unabhängig von Start/Stop) |
 | **alle … s** | Intervall für Refresh und Abgleich (Standard 30 s, min. 15 s) |
-| **Ortsliste laden** | Lädt die Ortsliste aus Google Sheets (automatisch, wenn älter als 6 h) |
+| **Ortsliste laden** | Lädt die Ortsliste (Excel in SharePoint, Blatt „annehmen“) – ohne Anmeldung; automatisch, wenn älter als 6 h |
 | **Liste einfügen** | Ortsliste manuell einfügen (`PLZ;Ort` je Zeile oder CSV mit Kopfzeile) |
 | **Update prüfen** | Sucht auf GitHub nach einer neuen Version |
 | **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
@@ -95,7 +96,8 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Sicherheit
 
-- **Kein Testmodus:** Nach **Start** werden passende Aufträge sofort verbindlich angenommen; Start nur mit Rückfrage.
+- **Kein Testmodus, keine Rückfrage:** Nach **Start** werden passende Aufträge sofort verbindlich angenommen.
+- Angenommen wird nur, wenn der Reiter **Veröffentlichte Aufträge** aktiv ist (siehe Tab-Anzeige).
 - Max. **3 Annahmen pro Durchlauf**; jeder Auftrag wird nur **einmal** versucht.
 - Abbruch, wenn Tab gewechselt, Tabelle neu geladen oder die falsche Auftragskarte geöffnet wurde.
 - **Hinweis:** Das Script bestätigt die hinterlegten Auftragsbedingungen (TAM-Auftragsbedingungen,
@@ -107,7 +109,24 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 - Struktur- und Debug-Infos zur TAM-Oberfläche: [docs/TAM-DEBUG.md](docs/TAM-DEBUG.md)
 - Test mit nachgebauter TAM-Oberfläche (jsdom): `npm i jsdom@24 && node test/mock-tam.test.js`
 
+## Ortsliste
+
+- Quelle: Excel-Datei in SharePoint (Freigabe-Link, **keine Anmeldung** nötig), Blatt **„annehmen“**,
+  Spalten **PLZ | Ort | SV**. Das Blatt „nicht annehmen“ wird nicht ausgewertet.
+- Treffer: Ort (normalisiert, ä→ae usw.) **oder** 5-stellige PLZ. Die zweistelligen PLZ-Bereiche (z. B. `21`)
+  werden derzeit nicht ausgewertet.
+- `Wuppertal - nur 42109` → nur die PLZ 42109 zählt, nicht ganz Wuppertal.
+- Einträge mit Zusatz (z. B. `Wetzlar, In der Murch`) passen **nicht** auf den TAM-Ort „Wetzlar“ und
+  werden daher nie angenommen.
+
 ## Changelog
+
+### 1.2.0 – 2026-09-24
+- Ortsliste aus **SharePoint (Excel)** statt Google Sheets – keine Google-Anmeldung mehr nötig.
+  Eine alte Google-Liste wird beim ersten Start automatisch ersetzt.
+- **Tab-Anzeige** im Bedienfeld (Veröffentlichte / Angenommene Aufträge, Bereitschaft zum Annehmen);
+  Tabwechsel stehen im Protokoll.
+- Rückfrage beim Start entfernt.
 
 ### 1.1.0 – 2026-09-24
 - **Testmodus entfernt** – nach Start wird immer verbindlich angenommen. Nach dem Update ist das

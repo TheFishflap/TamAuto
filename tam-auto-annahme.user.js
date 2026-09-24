@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.1.0
+// @version      1.2.0
 // @author       IB Thomée GmbH
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
@@ -13,8 +13,7 @@
 // @grant        GM_setValue
 // @grant        GM_notification
 // @grant        GM_info
-// @connect      docs.google.com
-// @connect      googleusercontent.com
+// @connect      thomee-my.sharepoint.com
 // @connect      raw.githubusercontent.com
 // @run-at       document-idle
 // ==/UserScript==
@@ -27,13 +26,15 @@
 
   // ------------------------------------------------------------------ Konfiguration
   const DEFAULTS = {
-    sheetId: '1VTkQpt7AFA_mzrG6Bpw0yrzoVcJhrSzh',
-    sheetGid: '1524429178',
+    // Ortsliste (Excel in SharePoint, per Link freigegeben – keine Anmeldung nötig), Blatt "annehmen"
+    placesUrl: 'https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQDymsXIGo99RJqOxxCvnsbUAfLN02JN2cvzn0qzlg_G4Uk',
+    placesSheet: 'annehmen',
     intervalSec: 30,          // Prüf-/Refresh-Intervall (Sekunden)
     enabled: false,
     maxPerCycle: 3,           // Sicherheitsbremse
     tabName: 'Veröffentlichte Aufträge',
     tabPanelId: 'AgentVeroeffentlichteAuftraege', // feste ID des Tabs im TAM
+    acceptedTabId: 'AgentEigeneAuftraege',        // Tab "Angenommene Aufträge"
     orderWindowTitle: /^auftragskarte/i,          // Fenster nach Doppelklick
     acceptButton: /^annehmen$/i,                  // Button unten in der Auftragskarte
     confirmDialogTitle: /auftragsannahme bestätigen/i,
@@ -136,30 +137,80 @@
     const ortCols = header.map((h, i) => (/^(ort|stadt|gemeinde)/.test(h) ? i : -1)).filter((i) => i >= 0);
     rows.slice(hIdx + 1).forEach((r) => {
       r.forEach((c, i) => {
-        const v = c.trim();
+        const v = String(c == null ? '' : c).trim();
         const m = v.match(/\b\d{5}\b/g);
         if (m) m.forEach((p) => plz.add(p));
-        if (ortCols.includes(i) && v && !/^\d+$/.test(v)) orte.add(norm(v.replace(/^\d{5}\s*/, '')));
+        if (!ortCols.includes(i) || !v || /^\d+$/.test(v)) return;
+        const ort = v.replace(/^\d{5}\s*/, '');
+        // "Wuppertal - nur 42109": Ort nur für diese PLZ → nicht als ganzer Ort übernehmen
+        if (!/\d{5}/.test(ort)) orte.add(norm(ort));
       });
     });
     return { plz: [...plz], orte: [...orte], loadedAt: new Date().toISOString(), source };
   }
 
+  // ---- Excel (.xlsx) lesen: ZIP-Container entpacken, Blatt als Zeilen-Array liefern
+  async function unzip(buf) {
+    const dv = new DataView(buf); const u8 = new Uint8Array(buf); const files = {};
+    let eocd = -1;
+    for (let i = buf.byteLength - 22; i >= 0; i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    if (eocd < 0) throw new Error('keine gültige Excel-Datei');
+    let p = dv.getUint32(eocd + 16, true);
+    for (let n = dv.getUint16(eocd + 10, true); n > 0; n--) {
+      const method = dv.getUint16(p + 10, true), size = dv.getUint32(p + 20, true);
+      const nameLen = dv.getUint16(p + 28, true), extraLen = dv.getUint16(p + 30, true), commLen = dv.getUint16(p + 32, true);
+      const local = dv.getUint32(p + 42, true);
+      const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nameLen));
+      const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+      const data = u8.subarray(start, start + size);
+      files[name] = method === 0 ? data : new Uint8Array(await new Response(
+        new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+      p += 46 + nameLen + extraLen + commLen;
+    }
+    return files;
+  }
+
+  async function readXlsxSheet(buf, sheetName) {
+    const files = await unzip(buf);
+    const xml = (n) => (files[n] ? new DOMParser().parseFromString(new TextDecoder().decode(files[n]), 'application/xml') : null);
+    const all = (doc, tag) => (doc ? [...doc.getElementsByTagName(tag)] : []);
+    const strings = all(xml('xl/sharedStrings.xml'), 'si').map((si) => all(si, 't').map((t) => t.textContent).join(''));
+    const sheets = all(xml('xl/workbook.xml'), 'sheet');
+    const sheet = sheets.find((s) => norm(s.getAttribute('name')) === norm(sheetName)) || sheets[0];
+    if (!sheet) throw new Error('kein Tabellenblatt gefunden');
+    const rel = all(xml('xl/_rels/workbook.xml.rels'), 'Relationship').find((r) => r.getAttribute('Id') === sheet.getAttribute('r:id'));
+    const target = rel ? rel.getAttribute('Target').replace(/^\/?(xl\/)?/, 'xl/') : 'xl/worksheets/sheet1.xml';
+    const col = (ref) => [...ref.replace(/\d+/g, '')].reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+    const rows = all(xml(target), 'row').map((row) => {
+      const out = [];
+      all(row, 'c').forEach((c) => {
+        const t = c.getAttribute('t'); const v = all(c, 'v')[0];
+        out[col(c.getAttribute('r'))] = t === 's' ? strings[+v.textContent] || ''
+          : t === 'inlineStr' ? all(c, 't').map((x) => x.textContent).join('') : (v ? v.textContent : '');
+      });
+      return Array.from(out, (x) => x || '');
+    });
+    return { rows, name: sheet.getAttribute('name') };
+  }
+
   function loadPlacesFromSheet() {
-    const url = `https://docs.google.com/spreadsheets/d/${cfg.sheetId}/export?format=csv&gid=${cfg.sheetGid}`;
-    log('Lade Ortsliste aus Google Sheets …');
+    log('Lade Ortsliste aus SharePoint …');
     return new Promise((resolve) => {
       GM_xmlhttpRequest({
-        method: 'GET', url, anonymous: false,
-        onload: (res) => {
-          if (res.status !== 200 || /<html/i.test(res.responseText.slice(0, 200))) {
-            log(`Ortsliste nicht ladbar (HTTP ${res.status}). Freigabe prüfen oder Liste manuell einfügen.`, 'err');
-            return resolve(false);
+        method: 'GET', url: cfg.placesUrl, responseType: 'arraybuffer', anonymous: true,
+        onload: async (res) => {
+          try {
+            if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
+            const { rows, name } = await readXlsxSheet(res.response, cfg.placesSheet);
+            const p = extractPlaces(rows, `SharePoint, Blatt "${name}"`);
+            if (!p.plz.length && !p.orte.length) throw new Error(`Blatt "${name}" enthält keine PLZ/Orte`);
+            places = p; GM_setValue('places', places);
+            log(`Ortsliste geladen: ${places.plz.length} PLZ, ${places.orte.length} Orte (Blatt "${name}")`, 'ok');
+            renderStatus(); resolve(true);
+          } catch (e) {
+            log(`Ortsliste nicht ladbar (${e.message}). Freigabe-Link prüfen oder Liste manuell einfügen.`, 'err');
+            resolve(false);
           }
-          places = extractPlaces(parseCSV(res.responseText), 'Google Sheets');
-          GM_setValue('places', places);
-          log(`Ortsliste geladen: ${places.plz.length} PLZ, ${places.orte.length} Orte`, 'ok');
-          renderStatus(); resolve(true);
         },
         onerror: () => { log('Netzwerkfehler beim Laden der Ortsliste.', 'err'); resolve(false); },
       });
@@ -221,6 +272,28 @@
     const panel = document.getElementById(cfg.tabPanelId);
     return !!li && li.classList.contains('x-tab-strip-active') &&
       !!panel && !panel.closest('.x-hide-display');
+  }
+
+  // Tab-Status im Bedienfeld: welcher Reiter ist aktiv, ist das Script bereit zum Annehmen?
+  let lastTabState = '';
+  function updateTabStatus() {
+    const el = document.getElementById('tamauto-tab');
+    if (!el) return;
+    const active = [...document.querySelectorAll('li.x-tab-strip-active[id*="__"]')].filter(visible);
+    const onAccepted = active.some((li) => li.id.endsWith('__' + cfg.acceptedTabId));
+    const other = text((active[0] || {}).querySelector?.('.x-tab-strip-text')).replace(/^\[.*?\]\s*/, '');
+    let state, color;
+    if (onPublishedTab()) {
+      [state, color] = cfg.enabled ? ['Veröffentlichte Aufträge – ✔ bereit zum Annehmen', '#2e7d32']
+        : ['Veröffentlichte Aufträge – gestoppt', '#555'];
+    } else if (onAccepted) {
+      [state, color] = ['Angenommene Aufträge – ⏸ Annahme pausiert', '#b26a00'];
+    } else {
+      [state, color] = [`${other || 'anderer Reiter'} – ⏸ Annahme pausiert`, '#b26a00'];
+    }
+    el.textContent = `Tab: ${state}`;
+    el.style.color = color;
+    if (state !== lastTabState) { if (lastTabState) log(`Tab: ${state}`); lastTabState = state; }
   }
 
   function activeTabPanel() {
@@ -485,7 +558,7 @@
     try {
       if (!places.plz.length && !places.orte.length) { log('Keine Ortsliste geladen – übersprungen.', 'err'); return; }
       if (!onPublishedTab()) {
-        setStatus(`Pausiert – Tab "${cfg.tabName}" ist nicht aktiv`); return;
+        setStatus(`Pausiert – Tab "${cfg.tabName}" ist nicht aktiv`); updateTabStatus(); return;
       }
       const grid = visibleGrid();
       if (!grid) { log('Keine Auftragstabelle im Tab "Veröffentlichte Aufträge" gefunden.', 'err'); return; }
@@ -571,6 +644,7 @@
       (places.loadedAt ? ` (${places.source}, ${new Date(places.loadedAt).toLocaleString('de-DE')})` : ' – nicht geladen');
     const btn = document.getElementById('tamauto-toggle');
     if (btn) { btn.textContent = cfg.enabled ? '■ Stop' : '▶ Start'; btn.style.background = cfg.enabled ? '#c62828' : '#2e7d32'; }
+    updateTabStatus();
   }
 
   function buildPanel() {
@@ -581,6 +655,7 @@
         <b>TAM Auto-Annahme v${VERSION}</b><span id="tamauto-min" style="cursor:pointer;padding:0 4px">–</span></div>
       <div id="tamauto-body">
         <a id="tamauto-update" href="${UPDATE_URL}" target="_blank" style="display:none;font-weight:bold;color:#1a4d8f;margin:4px 0"></a>
+        <div id="tamauto-tab" style="font-weight:bold;margin:4px 0"></div>
         <div id="tamauto-places"></div>
         <div id="tamauto-status" style="color:#555">bereit</div>
         <div id="tamauto-refresh" style="color:#555"></div>
@@ -606,7 +681,6 @@
 
     const $ = (id) => document.getElementById(id);
     $('tamauto-toggle').onclick = () => {
-      if (!cfg.enabled && !confirm('Passende Aufträge werden verbindlich angenommen. Starten?')) return;
       cfg.enabled = !cfg.enabled; GM_setValue('running', cfg.enabled);
       log(cfg.enabled ? 'Gestartet' : 'Gestoppt'); renderStatus();
       if (cfg.enabled) cycle('Start');
@@ -660,6 +734,9 @@
   }
   function watchGrid() {
     new MutationObserver((muts) => {
+      if (muts.some((m) => m.type === 'attributes' && m.target.tagName === 'LI' && (m.target.id || '').includes('__'))) {
+        updateTabStatus();
+      }
       if (!cfg.enabled) return;
       const panel = document.getElementById(cfg.tabPanelId);
       if (!panel) return;
@@ -679,7 +756,8 @@
     buildPanel();
     watchGrid();
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;
-    if (age > 6 * 3600 * 1000) loadPlacesFromSheet(); // Liste max. 6 h alt
+    // Liste max. 6 h alt; alte Google-Sheets-Liste sofort durch SharePoint ersetzen
+    if (age > 6 * 3600 * 1000 || /google/i.test(places.source || '')) loadPlacesFromSheet();
     restartTimer();
     if (cfg.enabled) cycle('Start');
     // Update-Prüfung beim Start (max. alle 6 h) und danach alle 6 h
