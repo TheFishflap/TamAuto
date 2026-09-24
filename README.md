@@ -4,12 +4,41 @@ Tampermonkey-Userscript für das **TÜV SÜD Auftragsmanagement (TAM)**. Es prü
 **„[Meine Aufträge] Veröffentlichte Aufträge“** regelmäßig und nimmt Aufträge automatisch an,
 deren **PLZ oder Ort** in der Ortsliste der IB Thomée GmbH steht.
 
+<p align="center">
+  <a href="https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js">
+    <img src="https://img.shields.io/badge/%E2%AC%87%20Script%20installieren-TAM%20Auto--Annahme-2e7d32?style=for-the-badge" alt="Script installieren">
+  </a>
+</p>
+
 ## Installation
 
-1. Browser-Erweiterung **Tampermonkey** installieren (Firefox / Chrome / Edge).
-2. Installationslink öffnen – Tampermonkey zeigt den Installationsdialog:
-   [tam-auto-annahme.user.js](https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js)
-3. **Installieren** klicken, TAM neu laden. Unten rechts erscheint das Bedienfeld.
+### Schritt 1 – Tampermonkey installieren (einmalig)
+
+Tampermonkey ist eine Browser-Erweiterung, die das Script im TAM ausführt. Link für den eigenen Browser öffnen
+und dort auf **„Hinzufügen“** bzw. **„Zu Firefox hinzufügen“** klicken:
+
+| Browser | Download |
+|---|---|
+| **Firefox** | [Tampermonkey für Firefox](https://addons.mozilla.org/de/firefox/addon/tampermonkey/) |
+| **Chrome** | [Tampermonkey für Chrome](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo) |
+| **Edge** | [Tampermonkey für Edge](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjjbdkfcflbeekkhoceijjpeceki) |
+
+> **Nur Chrome / Edge:** Nach der Installation in der Erweiterungsverwaltung (`chrome://extensions` bzw.
+> `edge://extensions`) bei Tampermonkey auf **Details** gehen und **„Nutzerskripts zulassen“** einschalten
+> (bei älteren Versionen oben rechts den **Entwicklermodus** aktivieren). Sonst läuft das Script nicht.
+
+### Schritt 2 – Script installieren
+
+1. Auf den grünen Button **[⬇ Script installieren](https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js)**
+   klicken (auch ganz oben auf dieser Seite).
+2. Tampermonkey öffnet eine Seite mit den Script-Infos. Dort auf **„Installieren“** klicken:
+
+   ![Tampermonkey: auf Installieren klicken](docs/img/tampermonkey-installieren.png)
+
+   *Ist das Script schon installiert, heißt der Button „Neu installieren“ bzw. „Aktualisieren“.*
+3. TAM neu laden (Taste **F5**). Unten rechts erscheint das Bedienfeld **„TAM Auto-Annahme“**.
+
+Ein GitHub-Konto ist **nicht** nötig. Updates kommen danach automatisch (siehe unten).
 
 > Empfehlung: In Tampermonkey unter *Einstellungen → Userscript-Updates* „Updates prüfen“
 > auf **täglich** stellen. Zusätzlich prüft das Script selbst alle 6 Stunden auf GitHub.
@@ -31,7 +60,6 @@ deren **PLZ oder Ort** in der Ortsliste der IB Thomée GmbH steht.
 | **alle … s** | Intervall für Prüfung und Refresh (Standard 30 s, min. 15 s) |
 | **Ortsliste laden** | Lädt die Ortsliste aus Google Sheets (automatisch, wenn älter als 6 h) |
 | **Liste einfügen** | Ortsliste manuell einfügen (`PLZ;Ort` je Zeile oder CSV mit Kopfzeile) |
-| **Verlauf leeren** | Vergisst bereits bearbeitete Aufträge |
 | **Diagnose** | Zeigt Tab-Erkennung, gelesene Zeilen, Spalten, Ortsliste im Protokoll |
 | **Update prüfen** | Sucht auf GitHub nach einer neuen Version |
 | **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
@@ -65,6 +93,11 @@ deren **PLZ oder Ort** in der Ortsliste der IB Thomée GmbH steht.
 - Test mit nachgebauter TAM-Oberfläche (jsdom): `npm i jsdom@24 && node test/mock-tam.test.js`
 
 ## Changelog
+
+### 1.0.2 – 2026-09-24
+- Autor **IB Thomée GmbH** im Script-Kopf (statt „unbekannt“).
+- Button **„Verlauf leeren“** entfernt.
+- README: Download-Links für Tampermonkey, großer Installations-Button, Bildanleitung.
 
 ### 1.0.1 – 2026-09-24
 - Button „1 Auftrag testen“ heißt jetzt **„Auftrag 1. Zeile annehmen“**.

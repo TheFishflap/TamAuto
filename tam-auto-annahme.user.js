@@ -1,7 +1,8 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée)
 // @namespace    ib-thomee
-// @version      1.0.1
+// @version      1.0.2
+// @author       IB Thomée GmbH
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
 // @homepageURL  https://github.com/TheFishflap/TamAuto
@@ -590,7 +591,6 @@
           <label><input type="checkbox" id="tamauto-dry"> Testmodus</label>
           <label title="Klickt alle x Sekunden den Refresh-Pfeil der Tabelle – unabhängig von Start/Stop"><input type="checkbox" id="tamauto-ar"> Auto-Refresh</label>
           <label>alle <input id="tamauto-int" type="number" min="15" style="width:48px" value="${cfg.intervalSec}"> s</label>
-          <button id="tamauto-reset" title="Liste bereits bearbeiteter Aufträge leeren">Verlauf leeren</button>
           <button id="tamauto-diag" title="Zeigt Tab, Tabelle, Spalten und Ortsliste im Protokoll">Diagnose</button>
           <button id="tamauto-once" title="Nimmt den obersten Auftrag der Tabelle EINMAL verbindlich an – ohne Ortsliste">Auftrag 1. Zeile annehmen</button>
           <button id="tamauto-upd" title="Sucht auf GitHub nach einer neuen Version">Update prüfen</button>
@@ -623,9 +623,6 @@
       const ta = $('tamauto-ta');
       if (ta.style.display === 'none') { ta.style.display = 'block'; $('tamauto-paste').textContent = 'Übernehmen'; }
       else { if (ta.value.trim()) loadPlacesFromText(ta.value); ta.style.display = 'none'; $('tamauto-paste').textContent = 'Liste einfügen'; }
-    };
-    $('tamauto-reset').onclick = () => {
-      done = new Set(); seen.clear(); lastSummary = ''; GM_setValue('doneRefs', []); log('Verlauf geleert');
     };
     $('tamauto-diag').onclick = () => {
       log('--- Diagnose ---');
