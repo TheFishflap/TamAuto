@@ -465,8 +465,7 @@
     closeWindow(card);
     await sleep(500);
     order.auftragsNr = nr;
-    // TAM springt nach der Annahme ggf. in einen anderen Reiter → nach 3 s zurück
-    await sleep(3000);
+    // TAM springt nach der Annahme ggf. in einen anderen Reiter → sofort zurück
     await switchToPublishedTab();
     return true;
   }
