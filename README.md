@@ -36,7 +36,7 @@ deren **PLZ oder Ort** in der Ortsliste der IB Thomée GmbH steht.
 | **Verlauf leeren** | Vergisst bereits bearbeitete Aufträge |
 | **Diagnose** | Zeigt Tab-Erkennung, gelesene Zeilen, Spalten, Ortsliste im Protokoll |
 | **Update prüfen** | Sucht auf GitHub nach einer neuen Version |
-| **1 Auftrag testen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
+| **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
 
 ## Ablauf einer Annahme
 
@@ -50,6 +50,7 @@ deren **PLZ oder Ort** in der Ortsliste der IB Thomée GmbH steht.
 7. **Annehmen** → Dialog **„Auftragsannahme bestätigen“** → Haken „Ja, hiermit bestätige ich die
    Bedingungen …“ → **Bestätigen**.
 8. Fehlermeldungen von TAM werden im Protokoll angezeigt, die Auftragskarte wird geschlossen.
+9. Nach erfolgreicher Annahme wird nach **3 s** wieder in den Reiter **Veröffentlichte Aufträge** gewechselt.
 
 ## Sicherheit
 
@@ -66,6 +67,10 @@ deren **PLZ oder Ort** in der Ortsliste der IB Thomée GmbH steht.
 - Test mit nachgebauter TAM-Oberfläche (jsdom): `npm i jsdom@24 && node test/mock-tam.test.js`
 
 ## Changelog
+
+### 1.0.1 – 2026-09-24
+- Button „1 Auftrag testen“ heißt jetzt **„Auftrag 1. Zeile annehmen“**.
+- Nach erfolgreicher Annahme nach 3 s automatisch zurück in den Reiter **Veröffentlichte Aufträge**.
 
 ### 1.0.0 – 2026-09-24
 - Erstes Release.

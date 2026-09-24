@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée)
 // @namespace    ib-thomee
-// @version      1.0.0
+// @version      1.0.1
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
 // @homepageURL  https://github.com/TheFishflap/TamAuto
@@ -465,7 +465,21 @@
     closeWindow(card);
     await sleep(500);
     order.auftragsNr = nr;
+    // TAM springt nach der Annahme ggf. in einen anderen Reiter → nach 3 s zurück
+    await sleep(3000);
+    await switchToPublishedTab();
     return true;
+  }
+
+  // Wechselt in den Reiter "Veröffentlichte Aufträge" (falls nicht schon aktiv)
+  async function switchToPublishedTab() {
+    if (onPublishedTab()) return true;
+    const li = document.querySelector(`li[id$="__${cfg.tabPanelId}"]`);
+    if (!li) { log(`Reiter "${cfg.tabName}" nicht gefunden.`, 'err'); return false; }
+    fire(li.querySelector('.x-tab-strip-text') || li, ['mouseover', 'mousedown', 'mouseup', 'click']);
+    const ok = await waitFor(onPublishedTab, 3000);
+    log(ok ? `Zurück im Reiter "${cfg.tabName}".` : `Wechsel in den Reiter "${cfg.tabName}" fehlgeschlagen.`, ok ? 'info' : 'err');
+    return !!ok;
   }
 
   // ------------------------------------------------------------------ Hauptzyklus
@@ -579,7 +593,7 @@
           <label>alle <input id="tamauto-int" type="number" min="15" style="width:48px" value="${cfg.intervalSec}"> s</label>
           <button id="tamauto-reset" title="Liste bereits bearbeiteter Aufträge leeren">Verlauf leeren</button>
           <button id="tamauto-diag" title="Zeigt Tab, Tabelle, Spalten und Ortsliste im Protokoll">Diagnose</button>
-          <button id="tamauto-once" title="Nimmt den obersten Auftrag der Tabelle EINMAL verbindlich an – ohne Ortsliste">1 Auftrag testen</button>
+          <button id="tamauto-once" title="Nimmt den obersten Auftrag der Tabelle EINMAL verbindlich an – ohne Ortsliste">Auftrag 1. Zeile annehmen</button>
           <button id="tamauto-upd" title="Sucht auf GitHub nach einer neuen Version">Update prüfen</button>
         </div>
         <textarea id="tamauto-ta" placeholder="PLZ;Ort je Zeile (oder CSV mit Kopfzeile PLZ/Ort)" style="display:none;width:100%;height:80px"></textarea>
