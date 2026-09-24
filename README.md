@@ -78,7 +78,7 @@ Browser genutzt wird, ist eine neue Aktivierung nötig.
 | **Adaptive Refresh** | Klickt alle *x* Sekunden den Refresh-Pfeil der Tabelle, um neue Aufträge früher zu finden (unabhängig von Start/Stop) |
 | **alle … s** | Intervall für Refresh und Abgleich – Standard **30 s**, Minimum **10 s**. Niedriger = höhere Auslastung, mit Bedacht wählen. **Über 60 s** schaltet sich Adaptive Refresh ab; der Abgleich läuft dann synchron mit der TAM-eigenen Aktualisierung (jede Minute, bleibt immer an). Erklärung auch über das **?** |
 | **Ortslisten laden** | Lädt **beide** Listen neu: Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) aus dem Excel in SharePoint – ohne Anmeldung; Ergebnis im Log; automatisch alle 30 min |
-| **Liste einfügen** | PLZ **zusätzlich** zur geladenen Ortsliste annehmen (eine je Zeile, gleiche PLZ-Logik), wird **nach 24 h automatisch gelöscht**. Das Feld zeigt die aktuelle Zusatzliste; leer übernehmen = löschen. Anzeige „+ Zusätzlich: … (bis …)“. Erklärung über das **?** |
+| **Liste einfügen** | **Bulk-Einfügen** – viele PLZ auf einmal (z. B. aus Excel kopiert) **zusätzlich** zur geladenen Ortsliste annehmen; für **einzelne** PLZ ist die **Tages-Annahmeliste** (nur 5-stellig) besser gedacht. (eine je Zeile, gleiche PLZ-Logik), wird **nach 24 h automatisch gelöscht**. Das Feld zeigt die aktuelle Zusatzliste; leer übernehmen = löschen. Anzeige „+ Zusätzlich: … (bis …)“. Erklärung über das **?** |
 | **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
 
 ### Tages-Blacklist (Reiter „Bedienung“)
@@ -247,6 +247,10 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Adaptive Refresh aus), **S
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.9.3 – 2026-09-24
+- „Liste einfügen“ als **Bulk**-Option gekennzeichnet (Hilfe und Eingabefeld) mit Hinweis, dass einzelne PLZ
+  besser über die Tages-Annahmeliste (nur 5-stellig) eingetragen werden.
 
 ### 1.9.2 – 2026-09-24
 - Neu: **Tages-Annahmeliste** im Reiter Bedienung – heute zusätzlich annehmen, nur 5-stellige PLZ, leert sich um Mitternacht.

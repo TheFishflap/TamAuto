@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.9.2
+// @version      1.9.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1245,7 +1245,9 @@
           <button id="tamauto-load" title="Lädt Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) neu">Ortslisten laden</button>
           <span class="tamauto-chk">
             <button id="tamauto-paste">Liste einfügen</button>
-            <span class="tamauto-help" title="Ortsliste manuell ergänzen: Die hier eingefügten PLZ (bzw. Orte) werden ZUSÄTZLICH zur geladenen Ortsliste angenommen. Gleiche Logik: „43“ = alle 43xxx, „47877“ = nur diese PLZ. Eine PLZ oder „PLZ;Ort“ je Zeile. Die zusätzliche Liste wird nach 24 Stunden automatisch gelöscht. Leer übernehmen = sofort löschen.">?</span>
+            <span class="tamauto-help" title="BULK-Einfügen: viele PLZ (bzw. Orte) auf einmal – z. B. aus Excel kopiert – ZUSÄTZLICH zur geladenen Ortsliste annehmen. Gleiche Logik: „43“ = alle 43xxx, „47877“ = nur diese PLZ. Eine PLZ oder „PLZ;Ort“ je Zeile. Wird nach 24 Stunden automatisch gelöscht. Leer übernehmen = sofort löschen.
+
+Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser gedacht – sie nimmt nur vollständige 5-stellige PLZ an, so wird nicht versehentlich ein ganzes Gebiet angenommen.">?</span>
           </span>
           <span class="tamauto-chk">
             <label class="tamauto-chk"><input type="checkbox" id="tamauto-ar"> Adaptive Refresh</label>
@@ -1280,7 +1282,7 @@
             <div id="tamauto-al-list" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
           </div>
         </div>
-        <textarea id="tamauto-ta" placeholder="Zusätzliche PLZ für 24 h – eine je Zeile, z. B.&#10;43&#10;47877" style="display:none;width:100%;height:80px"></textarea>
+        <textarea id="tamauto-ta" placeholder="Bulk: zusätzliche PLZ für 24 h – eine je Zeile, z. B.&#10;43        (= alle 43xxx!)&#10;47877&#10;&#10;Für einzelne PLZ besser die Tages-Annahmeliste nutzen (nur 5-stellig)." style="display:none;width:100%;height:96px"></textarea>
         <div id="tamauto-log" style="max-height:220px;overflow:auto;font:11px monospace;border-top:1px solid #ddd;padding-top:4px"></div>
       </div>`;
     // Bedienfeld: verschiebbar (Titelzeile) und in der Größe änderbar (Ecke unten rechts); beides wird gespeichert
