@@ -243,6 +243,11 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Adaptive Refresh aus), **S
 
 ## Changelog
 
+### 1.9.1 – 2026-09-24
+- Bedienfeld kann nicht mehr ganz aus dem Fenster rutschen: links/rechts bleiben mind. 80 px, oben/unten die
+  Titelzeile sichtbar. Zusätzlich lässt es sich am **äußeren Rand** (links/rechts/oben) greifen und verschieben.
+  Nach Änderung der Fenstergröße wird es automatisch in den sichtbaren Bereich geholt.
+
 ### 1.9.0 – 2026-09-24
 - Auto-Refresh heißt jetzt **Adaptive Refresh**.
 - TAM-Aktualisierung wird **mitgelesen** (Meldung „scheduling autorefreshing timer in X seconds“) statt geschätzt;

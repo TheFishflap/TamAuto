@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.9.0
+// @version      1.9.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1501,15 +1501,45 @@
         top: `${Math.max(0, Math.min(saved.top, innerHeight - r.height))}px` });
     }
 
-    // verschiebbar über die Titelzeile
-    const head = $('tamauto-head'); let dx, dy;
-    head.onmousedown = (e) => {
+    // Position begrenzen: Das Bedienfeld darf teilweise aus dem Fenster geschoben werden, aber immer bleiben
+    // mind. 80 px Breite und die ganze Titelzeile sichtbar – so lässt es sich jederzeit wieder zurückziehen.
+    const KEEP = 80;
+    const clampPos = (left, top) => {
+      const r = p.getBoundingClientRect();
+      const headH = $('tamauto-head').getBoundingClientRect().height + 24; // Titelzeile + Rand bequem greifbar
+      return {
+        left: Math.max(KEEP - r.width, Math.min(left, innerWidth - KEEP)),
+        top: Math.max(0, Math.min(top, innerHeight - headH)),
+      };
+    };
+    const applyPos = (left, top) => {
+      const c = clampPos(left, top);
+      Object.assign(p.style, { left: `${c.left}px`, top: `${c.top}px`, right: 'auto', bottom: 'auto' });
+    };
+    const startDrag = (e) => {
+      e.preventDefault();
       anchorTopLeft();
-      dx = e.clientX - p.offsetLeft; dy = e.clientY - p.offsetTop;
-      const mv = (ev) => Object.assign(p.style, { left: `${ev.clientX - dx}px`, top: `${ev.clientY - dy}px`, right: 'auto', bottom: 'auto' });
+      const dx = e.clientX - p.offsetLeft, dy = e.clientY - p.offsetTop;
+      const mv = (ev) => applyPos(ev.clientX - dx, ev.clientY - dy);
       document.addEventListener('mousemove', mv);
       document.addEventListener('mouseup', () => { document.removeEventListener('mousemove', mv); saveRect(); }, { once: true });
     };
+    // Randzone (6 px links/rechts/oben) ist ebenfalls ein Griff – falls die Titelzeile schlecht erreichbar ist
+    const EDGE = 6;
+    const edgeHit = (e) => {
+      const r = p.getBoundingClientRect();
+      if (e.clientX >= r.right - 18 && e.clientY >= r.bottom - 18) return false; // Ecke unten rechts = Größe ändern
+      return e.clientX - r.left < EDGE || r.right - e.clientX < EDGE || e.clientY - r.top < EDGE;
+    };
+
+    // verschiebbar über die Titelzeile …
+    $('tamauto-head').onmousedown = (e) => { if (e.target.id !== 'tamauto-min') { e.stopPropagation(); startDrag(e); } };
+    // … oder über den äußeren Rand; Mauszeiger zeigt das an
+    p.addEventListener('mousemove', (e) => { p.style.cursor = edgeHit(e) ? 'move' : ''; });
+    p.addEventListener('mousedown', (e) => { if (edgeHit(e)) startDrag(e); });
+    // Fenstergröße geändert → Bedienfeld wieder in den sichtbaren Bereich holen
+    addEventListener('resize', () => { if (p.style.left) { const r = p.getBoundingClientRect(); applyPos(r.left, r.top); } });
+
     // Größe ändern über die Ecke unten rechts
     p.addEventListener('mousedown', (e) => {
       const r = p.getBoundingClientRect();
