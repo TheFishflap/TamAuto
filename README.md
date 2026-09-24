@@ -66,7 +66,7 @@ Browser genutzt wird, ist eine neue Aktivierung nötig.
 
 - Tampermonkey aktualisiert über `@updateURL` / `@downloadURL` (Raw-Datei im Branch `main`).
 - Das Bedienfeld zeigt **„⬆ Update x.y.z verfügbar – installieren“**, sobald auf GitHub eine
-  neuere `@version` liegt. Button **„Softwareupdate“** prüft sofort.
+  neuere `@version` liegt. Button **„Softwareupdate“** (Reiter **Info**) prüft sofort.
 - Neue Version veröffentlichen: `@version` im Script erhöhen, Changelog ergänzen, nach `main` pushen.
 
 ## Bedienfeld
@@ -79,7 +79,6 @@ Browser genutzt wird, ist eine neue Aktivierung nötig.
 | **alle … s** | Intervall für Refresh und Abgleich – Standard **30 s**, Minimum **10 s**. Niedriger = höhere Auslastung, mit Bedacht wählen. **Über 60 s** schaltet sich Auto-Refresh ab; der Abgleich läuft dann synchron mit der TAM-eigenen Aktualisierung (jede Minute, bleibt immer an). Erklärung auch über das **?** |
 | **Ortslisten laden** | Lädt **beide** Listen neu: Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) aus dem Excel in SharePoint – ohne Anmeldung; Ergebnis im Log; automatisch alle 30 min |
 | **Liste einfügen** | PLZ **zusätzlich** zur geladenen Ortsliste annehmen (eine je Zeile, gleiche PLZ-Logik), wird **nach 24 h automatisch gelöscht**. Das Feld zeigt die aktuelle Zusatzliste; leer übernehmen = löschen. Anzeige „+ Zusätzlich: … (bis …)“. Erklärung über das **?** |
-| **Softwareupdate** | Sucht auf GitHub nach einer neuen Version; zeigt am Button „✓ Alles auf dem neuesten Stand“ oder „⬆ Update … verfügbar“ |
 | **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
 
 ### Reiter „Erweiterte Einstellungen“ – Tages-Blacklist
@@ -96,17 +95,18 @@ Gesperrte Treffer stehen im Protokoll („Treffer, aber gesperrt: … → nicht 
 werden im Reiter angezeigt (braun), ändern nur im Excel. Fehlt das Blatt, ist die Sperrliste leer –
 das Blatt „annehmen“ wird nie als Sperrliste verwendet.
 
-**Verzögerung** (ebenfalls in „Erweiterte Einstellungen“): Checkbox + Slider **0,0–2,0 s** in 0,1-s-Schritten.
+**Verzögerung** (ebenfalls in „Erweiterte Einstellungen“): Checkbox + Slider **0,01–1,00 s** in 0,01-s-Schritten.
 Vor jedem Klickschritt der Annahme (Doppelklick, 0-km-Aufträge, alle auswählen, Annehmen, Haken, Bestätigen)
 wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt zufällig **0 bis x ms** dazu
-(Standard **180 ms**, einstellbar), bei jedem Schritt neu gewürfelt.
+(Standard **100 ms**, einstellbar), bei jedem Schritt neu gewürfelt.
 
 **Console Log** (ebenfalls in „Erweiterte Einstellungen“, Standard **aus**): blendet das Protokoll des Scripts
 unten im Bedienfeld ein/aus. Das Script schreibt nichts in die Browser-Konsole.
 
 ### Reiter „Info“
 
-Version, Lizenz (lizenziert für, gültig bis, Installations-ID), Copyright der IB Thomée GmbH,
+Version, Button **Softwareupdate** (zeigt „✓ Alles auf dem neuesten Stand“, „⬆ Update … verfügbar“ oder
+„✗ GitHub nicht erreichbar – aktueller Stand: v…“), Lizenz (lizenziert für, gültig bis, Installations-ID), Copyright der IB Thomée GmbH,
 Kurzfassung der Lizenzbedingungen mit Link auf [LICENSE](LICENSE) und Haftungshinweis.
 
 ### Reiter „Auftragsbuch“
@@ -182,6 +182,11 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.7.5 – 2026-09-24
+- Softwareupdate: Ist GitHub oder das Repo nicht erreichbar (Netzwerk, Zeitüberschreitung, Fehlerseite),
+  zeigt der Button „✗ GitHub nicht erreichbar – aktueller Stand: v…“. Button in den Reiter **Info** verschoben.
+- Verzögerung: Slider 0,01–1,00 s (0,01-s-Schritte), Randomizer standardmäßig 100 ms.
 
 ### 1.7.4 – 2026-09-24
 - Bedienfeld **in der Größe änderbar** (Ecke unten rechts ziehen); Größe und Position werden gespeichert,

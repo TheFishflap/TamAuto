@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.7.4
+// @version      1.7.5
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -58,9 +58,9 @@
     // eingeschaltetes Log nach dem Update bei allen aus ist.
     consoleLog: GM_getValue('consoleLogV2', false),
     delayOn: GM_getValue('delayOn', false),       // Verzögerung vor jedem Klickschritt der Annahme
-    delaySec: Math.min(2, GM_getValue('delaySec', 0.5)), // 0,0–2,0 s in 0,1-s-Schritten
+    delaySec: Math.min(1, Math.max(0.01, GM_getValue('delaySec', 0.3))), // 0,01–1,00 s in 0,01-s-Schritten
     delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung
-    delayRandomMs: GM_getValue('delayRandomMs', 180), // Streuung 0 … x ms
+    delayRandomMs: GM_getValue('delayRandomMsV2', 100), // Streuung 0 … x ms (Standard 100 ms)
   });
 
   let places = GM_getValue('places', { plz: [], orte: [], loadedAt: null, source: '' });
@@ -433,20 +433,22 @@
     if (!b) return;
     clearTimeout(b._reset);
     b.textContent = text; b.style.color = color || '';
-    b._reset = setTimeout(() => { b.textContent = 'Softwareupdate'; b.style.color = ''; }, 6000);
+    b._reset = setTimeout(() => { b.textContent = 'Softwareupdate'; b.style.color = ''; }, 10000);
   }
 
   function checkUpdate(manual = false) {
     GM_setValue('lastUpdateCheck', Date.now());
     if (manual) updateButtonFeedback('Prüfe …');
+    // GitHub/Repo nicht erreichbar (Netzwerk, Timeout, Repo privat/gelöscht, Datei fehlt)
+    const unreachable = (why) => {
+      log(`Update-Prüfung: GitHub nicht erreichbar (${why}) – aktueller Stand: v${VERSION}.`, manual ? 'err' : 'debug');
+      if (manual) updateButtonFeedback(`✗ GitHub nicht erreichbar – aktueller Stand: v${VERSION}`, '#c62828');
+    };
     GM_xmlhttpRequest({
-      method: 'GET', url: `${UPDATE_URL}?t=${Date.now()}`, nocache: true,
+      method: 'GET', url: `${UPDATE_URL}?t=${Date.now()}`, nocache: true, timeout: 10000,
       onload: (res) => {
         const m = res.status === 200 && res.responseText.match(/@version\s+(\S+)/);
-        if (!m) {
-          if (manual) { log(`Update-Prüfung fehlgeschlagen (HTTP ${res.status}).`, 'err'); updateButtonFeedback('✗ Prüfung fehlgeschlagen', '#c62828'); }
-          return;
-        }
+        if (!m) { unreachable(res.status === 200 ? 'keine Versionsangabe' : `HTTP ${res.status}`); return; }
         const upd = document.getElementById('tamauto-update');
         if (newerVersion(m[1], VERSION)) {
           log(`Update ${m[1]} verfügbar (installiert: ${VERSION}).`, 'ok');
@@ -454,12 +456,11 @@
           if (manual) updateButtonFeedback(`⬆ Update ${m[1]} verfügbar`, '#1a4d8f');
         } else if (manual) {
           log(`Kein Update – ${VERSION} ist aktuell.`, 'ok');
-          updateButtonFeedback('✓ Alles auf dem neuesten Stand', '#2e7d32');
+          updateButtonFeedback(`✓ Alles auf dem neuesten Stand (v${VERSION})`, '#2e7d32');
         }
       },
-      onerror: () => {
-        if (manual) { log('Netzwerkfehler bei der Update-Prüfung.', 'err'); updateButtonFeedback('✗ Keine Verbindung', '#c62828'); }
-      },
+      onerror: () => unreachable('keine Verbindung'),
+      ontimeout: () => unreachable('Zeitüberschreitung'),
     });
   }
 
@@ -677,7 +678,7 @@
   }
 
   // Verzögerung vor jedem Klickschritt der Annahme (Erweiterte Einstellungen):
-  // eingestellte Sekunden (0,0–2,0) + optional Randomizer (zufällig 0 … x ms), bei jedem Schritt neu gewürfelt.
+  // eingestellte Sekunden (0,01–1,00) + optional Randomizer (zufällig 0 … x ms), bei jedem Schritt neu gewürfelt.
   async function humanDelay(step) {
     if (!cfg.delayOn) return;
     const spread = cfg.delayRandom ? Math.random() * cfg.delayRandomMs / 1000 : 0;
@@ -969,7 +970,7 @@
               <input type="checkbox" id="tamauto-delay-on"> <b>Verzögerung</b></label>
             <span style="color:#555"> – vor jedem Klickschritt der Annahme</span>
             <div class="tamauto-chk" style="margin-top:4px">
-              <input type="range" id="tamauto-delay" min="0" max="2" step="0.1" style="width:140px;margin:0">
+              <input type="range" id="tamauto-delay" min="0.01" max="1" step="0.01" style="width:140px;margin:0">
               <b id="tamauto-delay-val"></b>
             </div>
             <div class="tamauto-chk" style="margin-top:4px">
@@ -986,6 +987,7 @@
         <div id="tamauto-page-info" style="display:none;margin:6px 0;line-height:1.5">
           <div style="font-size:14px;font-weight:bold;color:#1a4d8f">TAM Auto-Annahme</div>
           <div style="color:#555">Version ${VERSION} · automatische Auftragsannahme im TÜV SÜD TAM</div>
+          <div style="margin-top:4px"><button id="tamauto-upd" title="Sucht auf GitHub nach einer neuen Version">Softwareupdate</button></div>
           <table style="border-collapse:collapse;margin-top:6px">
             <tr><td style="padding:1px 8px 1px 0;color:#555">Lizenziert für</td><td id="tamauto-info-name"></td></tr>
             <tr><td style="padding:1px 8px 1px 0;color:#555">Gültig bis</td><td id="tamauto-info-exp"></td></tr>
@@ -1039,7 +1041,6 @@
             <span class="tamauto-help" title="Auto-Refresh lädt die Tabelle schneller neu, um neue Aufträge früher zu finden. Ein niedrigerer Wert bedeutet eine höhere Auslastung und sollte mit Bedacht gewählt werden, um Auffälligkeiten zu vermeiden. Standard: 30 s, Minimum: 10 s. Über 60 s schaltet sich der Auto-Refresh ab – der Abgleich läuft dann synchron mit der TAM-eigenen Aktualisierung (jede Minute).">?</span>
           </span>
           <button id="tamauto-once" title="Nimmt den obersten Auftrag der Tabelle EINMAL verbindlich an – ohne Ortsliste">Auftrag 1. Zeile annehmen</button>
-          <button id="tamauto-upd" title="Sucht auf GitHub nach einer neuen Version">Softwareupdate</button>
         </div>
         <textarea id="tamauto-ta" placeholder="Zusätzliche PLZ für 24 h – eine je Zeile, z. B.&#10;43&#10;47877" style="display:none;width:100%;height:80px"></textarea>
         <div id="tamauto-log" style="max-height:220px;overflow:auto;font:11px monospace;border-top:1px solid #ddd;padding-top:4px"></div>
@@ -1152,7 +1153,7 @@
     $('tamauto-bl-add').onclick = addBl;
     $('tamauto-bl-in').onkeydown = (e) => { if (e.key === 'Enter') addBl(); };
     // Verzögerung: Checkbox + Slider 1,0–5,0 s (0,1-s-Schritte) + Randomizer (Streuung nicht angezeigt)
-    const fmtSec = (v) => `${v.toFixed(1).replace('.', ',')} s`;
+    const fmtSec = (v) => `${v.toFixed(2).replace('.', ',')} s`;
     const renderDelay = () => {
       $('tamauto-delay-on').checked = cfg.delayOn;
       $('tamauto-delay').value = cfg.delaySec;
@@ -1169,7 +1170,7 @@
       log(cfg.delayOn ? `An: ${delayInfo()}` : 'Verzögerung aus.');
     };
     $('tamauto-delay').oninput = (e) => {
-      cfg.delaySec = Math.round(Math.min(2, Math.max(0, +e.target.value || 0)) * 10) / 10; renderDelay();
+      cfg.delaySec = Math.round(Math.min(1, Math.max(0.01, +e.target.value || 0.01)) * 100) / 100; renderDelay();
     };
     $('tamauto-delay').onchange = () => { GM_setValue('delaySec', cfg.delaySec); log(delayInfo()); };
     $('tamauto-delay-rnd').onchange = (e) => {
@@ -1177,7 +1178,7 @@
     };
     $('tamauto-delay-ms').onchange = (e) => {
       cfg.delayRandomMs = Math.round(Math.min(2000, Math.max(0, +e.target.value || 0)));
-      GM_setValue('delayRandomMs', cfg.delayRandomMs); renderDelay(); log(delayInfo());
+      GM_setValue('delayRandomMsV2', cfg.delayRandomMs); renderDelay(); log(delayInfo());
     };
     renderDelay();
 
