@@ -50,7 +50,9 @@ Ohne Lizenz zeigt das Bedienfeld nur **„Lizenz erforderlich“** und eine **In
 
 Die Lizenz gilt nur für diese eine Installation und **bis zum 31.12. des laufenden Jahres**.
 Ab 30 Tagen vor Ablauf erscheint ein roter Hinweis; danach ist eine neue Lizenz nötig.
-Wird Tampermonkey neu installiert oder werden seine Daten gelöscht, entsteht eine neue ID.
+Bei **Updates und Neuinstallation des Scripts** bleibt die Aktivierung erhalten (ID und Schlüssel sind
+zusätzlich im Browser gesichert). Nur wenn die Browserdaten der TAM-Seite gelöscht werden oder ein anderer
+Browser genutzt wird, ist eine neue Aktivierung nötig.
 
 > Empfehlung: In Tampermonkey unter *Einstellungen → Userscript-Updates* „Updates prüfen“
 > auf **täglich** stellen. Zusätzlich prüft das Script selbst alle 6 Stunden auf GitHub.
@@ -68,11 +70,11 @@ Wird Tampermonkey neu installiert oder werden seine Daten gelöscht, entsteht ei
 |---|---|
 | **Tab-Anzeige** | Aktiver Reiter und Bereitschaft: **Veröffentlichte Aufträge – ✔ bereit zum Annehmen** (grün), **Angenommene Aufträge – ⏸ Annahme pausiert** (orange), sonst pausiert |
 | **Start / Stop** | Automatische Prüfung und **verbindliche** Annahme ein/aus |
-| **Auto-Refresh** | Klickt alle *x* Sekunden den Refresh-Pfeil der Tabelle (unabhängig von Start/Stop) |
-| **alle … s** | Intervall für Refresh und Abgleich (Standard 30 s, min. 15 s) |
+| **Auto-Refresh** | Klickt alle *x* Sekunden den Refresh-Pfeil der Tabelle, um neue Aufträge früher zu finden (unabhängig von Start/Stop) |
+| **alle … s** | Intervall für Refresh und Abgleich – Standard **30 s**, Minimum **10 s**. Niedriger = höhere Auslastung, mit Bedacht wählen. **Über 60 s** schaltet sich Auto-Refresh ab; der Abgleich läuft dann synchron mit der TAM-eigenen Aktualisierung (jede Minute, bleibt immer an). Erklärung auch über das **?** |
 | **Ortslisten laden** | Lädt **beide** Listen neu: Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) aus dem Excel in SharePoint – ohne Anmeldung; Ergebnis im Log; automatisch alle 30 min |
-| **Liste einfügen** | Ortsliste manuell einfügen (`PLZ;Ort` je Zeile oder CSV mit Kopfzeile) |
-| **Softwareupdate** | Sucht auf GitHub nach einer neuen Version |
+| **Liste einfügen** | PLZ **zusätzlich** zur geladenen Ortsliste annehmen (eine je Zeile, gleiche PLZ-Logik), wird **nach 24 h automatisch gelöscht**. Das Feld zeigt die aktuelle Zusatzliste; leer übernehmen = löschen. Anzeige „+ Zusätzlich: … (bis …)“. Erklärung über das **?** |
+| **Softwareupdate** | Sucht auf GitHub nach einer neuen Version; zeigt am Button „✓ Alles auf dem neuesten Stand“ oder „⬆ Update … verfügbar“ |
 | **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
 
 ### Reiter „Erweiterte Einstellungen“ – Tages-Blacklist
@@ -170,6 +172,14 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.7.0 – 2026-09-24
+- Lizenz bleibt bei Updates und Neuinstallation erhalten (Sicherung im Browser-Speicher der TAM-Seite).
+- „Softwareupdate“ zeigt das Ergebnis am Button („✓ Alles auf dem neuesten Stand“).
+- „Liste einfügen“: zusätzliche PLZ zur geladenen Ortsliste, 24 h gültig; Erklärung per **?**.
+- Auto-Refresh-Intervall ab 10 s (Standard 30 s), Erklärung per **?**; über 60 s Auto-Refresh aus,
+  Abgleich synchron mit der TAM-Aktualisierung.
+- Reiter heißt „Erweiterte Einstellungen (x PLZ gesperrt)“.
 
 ### 1.6.1 – 2026-09-24
 - Console Log ist nach dem Update bei allen aus (auch wenn es vorher eingeschaltet war).

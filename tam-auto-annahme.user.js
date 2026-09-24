@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.6.1
+// @version      1.7.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -266,17 +266,35 @@
     });
   }
 
+  // Zusätzliche Liste ("Liste einfügen"): wird ZUSÄTZLICH zur geladenen Ortsliste angenommen
+  // und nach 24 h automatisch gelöscht. Die Excel-Listen bleiben unverändert.
+  const EXTRA_TTL = 24 * 3600 * 1000;
+  function extraPlaces() {
+    const e = GM_getValue('extraPlaces', null);
+    if (e && Date.now() - e.at < EXTRA_TTL) return e;
+    if (e) GM_setValue('extraPlaces', null); // abgelaufen
+    return { plz: [], orte: [], at: 0 };
+  }
+
   function loadPlacesFromText(t) {
-    places = Object.assign(extractPlaces(parseCSV(t), 'manuell'), { block: places.block }); // Excel-Sperrliste behalten
-    GM_setValue('places', places);
-    log(`Manuelle Liste übernommen: ${places.plz.length} PLZ, ${places.orte.length} Orte`, 'ok');
+    const x = extractPlaces(parseCSV(t), 'manuell');
+    if (!x.plz.length && !x.orte.length) {
+      GM_setValue('extraPlaces', null);
+      log('Zusätzliche Liste geleert.', 'ok');
+    } else {
+      GM_setValue('extraPlaces', { plz: x.plz, orte: x.orte, at: Date.now() });
+      log(`Zusätzliche Liste übernommen: ${x.plz.length} PLZ, ${x.orte.length} Orte – gilt 24 h zusätzlich zur Ortsliste.`, 'ok');
+    }
     renderStatus();
   }
 
   function matches(order) {
-    // Treffer, wenn die PLZ mit einem Listeneintrag beginnt ODER der Ort (Listenzeile ohne PLZ) passt
+    // Treffer, wenn die PLZ mit einem Listeneintrag beginnt ODER der Ort (Listenzeile ohne PLZ) passt –
+    // in der geladenen Ortsliste oder in der zusätzlichen 24-h-Liste
     const p = (order.plz || '').trim();
-    return places.plz.some((x) => p.startsWith(x)) || places.orte.includes(norm(order.ort));
+    const ex = extraPlaces();
+    return places.plz.some((x) => p.startsWith(x)) || places.orte.includes(norm(order.ort)) ||
+      ex.plz.some((x) => p.startsWith(x)) || ex.orte.includes(norm(order.ort));
   }
 
   // ------------------------------------------------------------------ Auftragsbuch
@@ -393,7 +411,7 @@
     // Anzahl auch am Reiter zeigen, damit eine Sperre nicht übersehen wird
     const n = b.plz.length + xb.plz.length + xb.orte.length;
     const tab = document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-adv"]');
-    if (tab) tab.textContent = `Erweiterte Einstellungen${n ? ` (${n} gesperrt)` : ''}`;
+    if (tab) tab.textContent = `Erweiterte Einstellungen${n ? ` (${n} PLZ gesperrt)` : ''}`;
   }
 
   // ------------------------------------------------------------------ Updates (GitHub)
@@ -409,20 +427,39 @@
     return false;
   }
 
+  // Ergebnis der manuellen Prüfung direkt am Button "Softwareupdate" zeigen (Log ist meist ausgeblendet)
+  function updateButtonFeedback(text, color) {
+    const b = document.getElementById('tamauto-upd');
+    if (!b) return;
+    clearTimeout(b._reset);
+    b.textContent = text; b.style.color = color || '';
+    b._reset = setTimeout(() => { b.textContent = 'Softwareupdate'; b.style.color = ''; }, 6000);
+  }
+
   function checkUpdate(manual = false) {
     GM_setValue('lastUpdateCheck', Date.now());
+    if (manual) updateButtonFeedback('Prüfe …');
     GM_xmlhttpRequest({
-      method: 'GET', url: `${UPDATE_URL}?t=${Date.now()}`,
+      method: 'GET', url: `${UPDATE_URL}?t=${Date.now()}`, nocache: true,
       onload: (res) => {
         const m = res.status === 200 && res.responseText.match(/@version\s+(\S+)/);
-        if (!m) { if (manual) log(`Update-Prüfung fehlgeschlagen (HTTP ${res.status}).`, 'err'); return; }
+        if (!m) {
+          if (manual) { log(`Update-Prüfung fehlgeschlagen (HTTP ${res.status}).`, 'err'); updateButtonFeedback('✗ Prüfung fehlgeschlagen', '#c62828'); }
+          return;
+        }
         const upd = document.getElementById('tamauto-update');
         if (newerVersion(m[1], VERSION)) {
           log(`Update ${m[1]} verfügbar (installiert: ${VERSION}).`, 'ok');
           if (upd) { upd.textContent = `⬆ Update ${m[1]} verfügbar – installieren`; upd.style.display = 'block'; }
-        } else if (manual) log(`Kein Update – ${VERSION} ist aktuell.`, 'ok');
+          if (manual) updateButtonFeedback(`⬆ Update ${m[1]} verfügbar`, '#1a4d8f');
+        } else if (manual) {
+          log(`Kein Update – ${VERSION} ist aktuell.`, 'ok');
+          updateButtonFeedback('✓ Alles auf dem neuesten Stand', '#2e7d32');
+        }
       },
-      onerror: () => { if (manual) log('Netzwerkfehler bei der Update-Prüfung.', 'err'); },
+      onerror: () => {
+        if (manual) { log('Netzwerkfehler bei der Update-Prüfung.', 'err'); updateButtonFeedback('✗ Keine Verbindung', '#c62828'); }
+      },
     });
   }
 
@@ -826,9 +863,10 @@
   async function tick() {
     if (license && license.exp < today()) { location.reload(); return; } // Lizenz abgelaufen → Aktivierungsfeld
     renderBlacklist(); // nach Mitternacht Anzeige leeren
+    renderStatus();    // abgelaufene Zusatzliste ausblenden
     if (busy || !onPublishedTab()) return;
     let refreshed = false;
-    if (cfg.autoRefresh) {
+    if (cfg.autoRefresh && cfg.intervalSec <= 60) {
       busy = true; // eigene Tabellenänderungen beim Refresh nicht doppelt auswerten
       ownRefresh = true;
       try { refreshed = await refreshGrid(); } finally { busy = false; recheck = false; ownRefresh = false; }
@@ -837,7 +875,8 @@
   }
 
   function updateRefreshStatus() {
-    setRefreshStatus(cfg.autoRefresh ? `Auto-Refresh alle ${cfg.intervalSec} s` : 'Auto-Refresh aus');
+    setRefreshStatus(cfg.intervalSec > 60 ? 'Auto-Refresh aus – Abgleich synchron mit TAM-Aktualisierung (jede Minute)'
+      : cfg.autoRefresh ? `Auto-Refresh alle ${cfg.intervalSec} s` : 'Auto-Refresh aus');
   }
 
   function restartTimer() {
@@ -854,6 +893,14 @@
     if (el) el.textContent = `Ortsliste: ${places.plz.length} PLZ / ${places.orte.length} Orte · ` +
       `Sperrliste: ${xb.plz.length + xb.orte.length}` +
       (places.loadedAt ? ` (geladen ${new Date(places.loadedAt).toLocaleString('de-DE')})` : ' – nicht geladen');
+    const ex = extraPlaces();
+    const exEl = document.getElementById('tamauto-extra');
+    if (exEl) {
+      const n = ex.plz.length + ex.orte.length;
+      exEl.textContent = n ? `+ Zusätzlich: ${[...ex.plz, ...ex.orte].join(', ')} (bis ${new Date(ex.at + EXTRA_TTL)
+        .toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })})` : '';
+      exEl.style.display = n ? '' : 'none';
+    }
     const btn = document.getElementById('tamauto-toggle');
     if (btn) { btn.textContent = cfg.enabled ? '■ Stop' : '▶ Start'; btn.style.background = cfg.enabled ? '#c62828' : '#2e7d32'; }
     updateTabStatus();
@@ -869,6 +916,7 @@
         <a id="tamauto-update" href="${UPDATE_URL}" target="_blank" style="display:none;font-weight:bold;color:#1a4d8f;margin:4px 0"></a>
         <div id="tamauto-tab" style="font-weight:bold;margin:4px 0"></div>
         <div id="tamauto-places"></div>
+        <div id="tamauto-extra" style="color:#1a4d8f;display:none"></div>
         <div id="tamauto-status" style="color:#555">bereit</div>
         <div id="tamauto-refresh" style="color:#555"></div>
         <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:6px;border-bottom:2px solid #1a4d8f">
@@ -931,14 +979,19 @@
         <div id="tamauto-page-main" style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <button id="tamauto-toggle"></button>
           <button id="tamauto-load" title="Lädt Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) neu">Ortslisten laden</button>
-          <button id="tamauto-paste">Liste einfügen</button>
-          <span class="tamauto-chk" title="Klickt alle x Sekunden den Refresh-Pfeil der Tabelle – unabhängig von Start/Stop">
+          <span class="tamauto-chk">
+            <button id="tamauto-paste">Liste einfügen</button>
+            <span class="tamauto-help" title="Ortsliste manuell ergänzen: Die hier eingefügten PLZ (bzw. Orte) werden ZUSÄTZLICH zur geladenen Ortsliste angenommen. Gleiche Logik: „43“ = alle 43xxx, „47877“ = nur diese PLZ. Eine PLZ oder „PLZ;Ort“ je Zeile. Die zusätzliche Liste wird nach 24 Stunden automatisch gelöscht. Leer übernehmen = sofort löschen.">?</span>
+          </span>
+          <span class="tamauto-chk">
             <label class="tamauto-chk"><input type="checkbox" id="tamauto-ar"> Auto-Refresh</label>
-            alle <input id="tamauto-int" type="number" min="15" style="width:48px;margin:0" value="${cfg.intervalSec}"> s</span>
+            alle <input id="tamauto-int" type="number" min="10" style="width:48px;margin:0" value="${cfg.intervalSec}"> s
+            <span class="tamauto-help" title="Auto-Refresh lädt die Tabelle schneller neu, um neue Aufträge früher zu finden. Ein niedrigerer Wert bedeutet eine höhere Auslastung und sollte mit Bedacht gewählt werden, um Auffälligkeiten zu vermeiden. Standard: 30 s, Minimum: 10 s. Über 60 s schaltet sich der Auto-Refresh ab – der Abgleich läuft dann synchron mit der TAM-eigenen Aktualisierung (jede Minute).">?</span>
+          </span>
           <button id="tamauto-once" title="Nimmt den obersten Auftrag der Tabelle EINMAL verbindlich an – ohne Ortsliste">Auftrag 1. Zeile annehmen</button>
           <button id="tamauto-upd" title="Sucht auf GitHub nach einer neuen Version">Softwareupdate</button>
         </div>
-        <textarea id="tamauto-ta" placeholder="PLZ;Ort je Zeile (oder CSV mit Kopfzeile PLZ/Ort)" style="display:none;width:100%;height:80px"></textarea>
+        <textarea id="tamauto-ta" placeholder="Zusätzliche PLZ für 24 h – eine je Zeile, z. B.&#10;43&#10;47877" style="display:none;width:100%;height:80px"></textarea>
         <div id="tamauto-log" style="max-height:220px;overflow:auto;font:11px monospace;border-top:1px solid #ddd;padding-top:4px"></div>
       </div>`;
     Object.assign(p.style, { position: 'fixed', right: '12px', bottom: '12px', width: '420px', zIndex: 99999,
@@ -951,6 +1004,10 @@
       { display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', margin: '0', cursor: 'pointer' }));
     p.querySelectorAll('input[type=checkbox]').forEach((cb) => Object.assign(cb.style,
       { margin: '0', verticalAlign: 'middle', position: 'static', top: '0' }));
+    // "?"-Hilfen: kleiner Kreis, Erklärung beim Darüberfahren (title)
+    p.querySelectorAll('.tamauto-help').forEach((h) => Object.assign(h.style, {
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '16px', height: '16px',
+      borderRadius: '50%', background: '#1a4d8f', color: '#fff', fontSize: '11px', fontWeight: 'bold', cursor: 'help' }));
     document.body.appendChild(p);
     document.getElementById('tamauto-toggle').style.color = '#fff';
 
@@ -960,16 +1017,36 @@
       log(cfg.enabled ? 'Gestartet' : 'Gestoppt'); renderStatus();
       if (cfg.enabled) cycle('Start');
     };
-    $('tamauto-ar').checked = cfg.autoRefresh;
-    $('tamauto-ar').onchange = (e) => { cfg.autoRefresh = e.target.checked; GM_setValue('autoRefresh', cfg.autoRefresh); lastRefreshOk = null; updateRefreshStatus(); };
-    $('tamauto-int').onchange = (e) => {
-      cfg.intervalSec = Math.max(15, parseInt(e.target.value, 10) || 30); GM_setValue('intervalSec', cfg.intervalSec); restartTimer();
+    // Auto-Refresh: über 60 s aus (TAM aktualisiert selbst jede Minute → Abgleich synchron damit)
+    const renderAr = () => {
+      const over = cfg.intervalSec > 60;
+      $('tamauto-ar').checked = cfg.autoRefresh && !over;
+      $('tamauto-ar').disabled = over;
+      $('tamauto-int').value = cfg.intervalSec;
     };
+    $('tamauto-ar').onchange = (e) => {
+      cfg.autoRefresh = e.target.checked; GM_setValue('autoRefresh', cfg.autoRefresh); lastRefreshOk = null; updateRefreshStatus();
+    };
+    $('tamauto-int').onchange = (e) => {
+      cfg.intervalSec = Math.max(10, parseInt(e.target.value, 10) || 30); GM_setValue('intervalSec', cfg.intervalSec);
+      if (cfg.intervalSec > 60 && cfg.autoRefresh) {
+        cfg.autoRefresh = false; GM_setValue('autoRefresh', false);
+        log('Intervall über 60 s: Auto-Refresh aus – Abgleich läuft synchron mit der TAM-Aktualisierung.', 'ok');
+      }
+      renderAr(); restartTimer();
+    };
+    renderAr();
     $('tamauto-load').onclick = () => loadPlacesFromSheet(true);
+    // Zusätzliche Liste: Feld zeigt die aktuelle Zusatzliste zum Bearbeiten; leer übernehmen = löschen
     $('tamauto-paste').onclick = () => {
       const ta = $('tamauto-ta');
-      if (ta.style.display === 'none') { ta.style.display = 'block'; $('tamauto-paste').textContent = 'Übernehmen'; }
-      else { if (ta.value.trim()) loadPlacesFromText(ta.value); ta.style.display = 'none'; $('tamauto-paste').textContent = 'Liste einfügen'; }
+      if (ta.style.display === 'none') {
+        const ex = extraPlaces();
+        ta.value = [...ex.plz, ...ex.orte].join('\n');
+        ta.style.display = 'block'; $('tamauto-paste').textContent = 'Übernehmen'; ta.focus();
+      } else {
+        loadPlacesFromText(ta.value); ta.style.display = 'none'; $('tamauto-paste').textContent = 'Liste einfügen';
+      }
     };
     $('tamauto-once').onclick = async () => {
       if (busy) { log('Script ist gerade beschäftigt – kurz warten.', 'err'); return; }
@@ -1123,16 +1200,27 @@
     x: '4MkRZl6c7clzD5iIL8m0nwsN0Y6IJRnpJ_C6bcHE64Q', y: '9ymeLeXvTLNSUCWqYVZzLrbSTSEkQFHdbV7WKnIhxlc' };
   let license = null; // gültige Lizenzdaten nach der Prüfung
 
+  // ID und Schlüssel liegen doppelt: im Tampermonkey-Speicher und als Sicherung im Browser-Speicher der
+  // TAM-Seite. So bleibt die Aktivierung auch erhalten, wenn das Script neu installiert wird (z. B. über den
+  // Installationslink statt per Update). Nur ein Löschen der Browserdaten erfordert eine neue Aktivierung.
+  const backupGet = (k) => { try { return localStorage.getItem(`tamauto.${k}`) || ''; } catch (e) { return ''; } };
+  const backupSet = (k, v) => { try { localStorage.setItem(`tamauto.${k}`, v); } catch (e) { /* ignore */ } };
+  const ID_RE = /^[A-Z2-7]{4}(-[A-Z2-7]{4}){3}$/;
+
   function installId() {
     let id = GM_getValue('installId', '');
-    if (!/^[A-Z2-7]{4}(-[A-Z2-7]{4}){3}$/.test(id)) {
+    if (!ID_RE.test(id)) id = backupGet('installId');
+    if (!ID_RE.test(id)) {
       const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
       const r = crypto.getRandomValues(new Uint8Array(16));
       id = [...r].map((b) => abc[b % 32]).join('').replace(/(.{4})(?!$)/g, '$1-');
-      GM_setValue('installId', id);
     }
+    if (GM_getValue('installId', '') !== id) GM_setValue('installId', id);
+    if (backupGet('installId') !== id) backupSet('installId', id);
     return id;
   }
+  const getLicenseKey = () => GM_getValue('licenseKey', '') || backupGet('licenseKey');
+  const setLicenseKey = (k) => { GM_setValue('licenseKey', k); backupSet('licenseKey', k); };
 
   const fromB64Url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
   const fmtDate = (iso) => iso.split('-').reverse().join('.');
@@ -1182,7 +1270,7 @@
       const key = $('tamauto-lic-key').value.trim();
       const res = await checkLicense(key);
       if (!res.ok) { $('tamauto-lic-msg').textContent = res.reason; return; }
-      GM_setValue('licenseKey', key);
+      setLicenseKey(key);
       $('tamauto-lic-msg').style.color = '#2e7d32';
       $('tamauto-lic-msg').textContent = `Aktiviert für ${res.lic.name}, gültig bis ${fmtDate(res.lic.exp)} – lade neu …`;
       setTimeout(() => location.reload(), 1200);
@@ -1191,7 +1279,9 @@
 
   // ------------------------------------------------------------------ Start
   waitFor(() => document.querySelector('.x-viewport'), 30000).then(async () => {
-    const lc = await checkLicense(GM_getValue('licenseKey', ''));
+    const storedKey = getLicenseKey();
+    const lc = await checkLicense(storedKey);
+    if (lc.ok) setLicenseKey(storedKey); // Sicherung/Tampermonkey-Speicher gegenseitig auffüllen
     if (!lc.ok) {
       buildLicensePanel(lc.reason);
       checkUpdate(); // Updates auch ohne Lizenz
