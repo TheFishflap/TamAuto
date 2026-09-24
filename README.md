@@ -58,7 +58,7 @@ Ein GitHub-Konto ist **nicht** nötig. Updates kommen danach automatisch (siehe 
 | **Start / Stop** | Automatische Prüfung und **verbindliche** Annahme ein/aus |
 | **Auto-Refresh** | Klickt alle *x* Sekunden den Refresh-Pfeil der Tabelle (unabhängig von Start/Stop) |
 | **alle … s** | Intervall für Refresh und Abgleich (Standard 30 s, min. 15 s) |
-| **Ortsliste laden** | Lädt die Ortsliste (Excel in SharePoint, Blatt „annehmen“) – ohne Anmeldung; automatisch, wenn älter als 6 h |
+| **Ortsliste laden** | Lädt die Ortsliste (Excel in SharePoint, Blätter „annehmen“ und „nicht annehmen“) – ohne Anmeldung; automatisch alle 30 min |
 | **Liste einfügen** | Ortsliste manuell einfügen (`PLZ;Ort` je Zeile oder CSV mit Kopfzeile) |
 | **Softwareupdate** | Sucht auf GitHub nach einer neuen Version |
 | **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
@@ -69,15 +69,29 @@ PLZ eintragen, die **heute nicht** angenommen werden sollen – z. B. nach einem
 nicht erneut angenommen wird. Gleiche Logik wie in der Ortsliste: `44` sperrt alle 44xxx, `47877` nur diese PLZ.
 Die Liste leert sich **automatisch um Mitternacht**. Freigeben: auf den roten Eintrag klicken oder
 „Alle freigeben“. Solange etwas gesperrt ist, zeigt der Reiter die Anzahl an („1 gesperrt“).
-Gesperrte Treffer stehen im Protokoll („… heute gesperrt (Blacklist) → nicht angenommen“).
+Gesperrte Treffer stehen im Protokoll („Treffer, aber gesperrt: … → nicht angenommen“).
 
-**Verzögerung** (ebenfalls in „Erweiterte Einstellungen“): Checkbox + Slider **1–5 s**. Vor jedem Klickschritt
-der Annahme (Doppelklick, 0-km-Aufträge, alle auswählen, Annehmen, Haken, Bestätigen) wird die eingestellte
-Zeit **plus eine zufällige Streuung von 0,02–0,64 s** gewartet, bei jedem Schritt neu gewürfelt
-(z. B. 2 s → 2,02–2,64 s). Die Streuung ist fest eingestellt. Eine Annahme dauert dadurch ca. 6 × länger.
+**Sperrliste aus Excel:** Zusätzlich gilt das Blatt **„nicht annehmen“** derselben Excel-Datei
+(gleiche Spalten und PLZ-Logik wie „annehmen“). Einträge dort gelten, **solange sie im Excel stehen**
+(nicht nur heute). Das Excel wird alle 30 min neu geladen, sofort per **„Neu laden“**. Die Einträge
+werden im Reiter angezeigt (braun), ändern nur im Excel. Fehlt das Blatt, ist die Sperrliste leer –
+das Blatt „annehmen“ wird nie als Sperrliste verwendet.
 
-**Debug-Modus** (ebenfalls in „Erweiterte Einstellungen“): schreibt das Protokoll zusätzlich in die
-Browser-Konsole (F12). Standardmäßig aus – ohne Debug-Modus schreibt das Script nichts in die Konsole.
+**Verzögerung** (ebenfalls in „Erweiterte Einstellungen“): Checkbox + Slider **1,0–5,0 s** in 0,1-s-Schritten.
+Vor jedem Klickschritt der Annahme (Doppelklick, 0-km-Aufträge, alle auswählen, Annehmen, Haken, Bestätigen)
+wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt eine zufällige Streuung dazu
+(fest im Code, wird nicht angezeigt). Eine Annahme dauert dadurch ca. 6 × länger.
+
+**Console Log** (ebenfalls in „Erweiterte Einstellungen“): blendet das Protokoll des Scripts unten im
+Bedienfeld ein/aus. Das Script schreibt nichts in die Browser-Konsole.
+
+### Reiter „Auftragsbuch“
+
+Liste aller vom Script angenommenen Aufträge (Datum, AuftragsNr, PLZ, Ort, Euro – Dienstleistung als Tooltip),
+Zeitraum wählbar (Heute / letzte 7 Tage / dieser Monat / alle). Unten: **Anzahl Aufträge, Anzahl PLZ,
+Summe gesamt in Euro** sowie Aufträge je PLZ. 0-km-Aufträge aus der Umgebung stehen mit drin, haben aber
+keinen Preis (steht nicht in der Tabelle). „Liste leeren“ löscht das Auftragsbuch (mit Rückfrage).
+Das Auftragsbuch wird nur in diesem Browser gespeichert.
 
 ## Abgleich und Protokoll
 
@@ -129,7 +143,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 ## Ortsliste
 
 - Quelle: Excel-Datei in SharePoint (Freigabe-Link, **keine Anmeldung** nötig), Blatt **„annehmen“**,
-  Spalten **PLZ | Ort | SV**. Das Blatt „nicht annehmen“ wird nicht ausgewertet.
+  Spalten **PLZ | Ort | SV**. Blatt **„nicht annehmen“** = Sperrliste (siehe oben). Neu laden alle 30 min.
 - **PLZ-Logik:** mindestens 2, höchstens 5 Ziffern – der Eintrag ist der **Anfang** der PLZ.
   - `43` (oder `43***`) → alles, was mit 43 beginnt, also die ganze Umgebung.
   - `47877` → nur genau diese PLZ.
@@ -139,6 +153,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
   einstellige Werte werden automatisch zu `0x` ergänzt).
 
 ## Changelog
+
+### 1.5.0 – 2026-09-24
+- Neuer Reiter **Auftragsbuch**: alle angenommenen Aufträge, Anzahl PLZ, Summe gesamt in Euro.
+- Sperrliste zusätzlich aus dem Excel-Blatt **„nicht annehmen“**; Excel wird alle 30 min neu geladen.
+- Verzögerung: Slider in 0,1-s-Schritten (1,0–5,0 s), eigene Checkbox **Randomizer** (Streuung nicht im UI).
+- **Console Log** statt Debug-Modus: blendet das Script-Protokoll ein/aus; keine Browser-Konsole mehr.
 
 ### 1.4.0 – 2026-09-24
 - **Verzögerung** in „Erweiterte Einstellungen“: Checkbox + Slider 1–5 s, vor jedem Klickschritt der Annahme,

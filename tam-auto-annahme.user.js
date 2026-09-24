@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.4.0
+// @version      1.5.0
 // @author       IB Thomée GmbH
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
@@ -29,6 +29,8 @@
     // Ortsliste (Excel in SharePoint, per Link freigegeben – keine Anmeldung nötig), Blatt "annehmen"
     placesUrl: 'https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQDymsXIGo99RJqOxxCvnsbUAfLN02JN2cvzn0qzlg_G4Uk',
     placesSheet: 'annehmen',
+    blockSheet: 'nicht annehmen', // Sperrliste im selben Excel
+    placesReloadMin: 30,          // Excel alle 30 min neu laden (Sperrliste zeitnah aktuell)
     intervalSec: 30,          // Prüf-/Refresh-Intervall (Sekunden)
     enabled: false,
     maxPerCycle: 3,           // Sicherheitsbremse
@@ -46,9 +48,10 @@
     enabled: GM_getValue('running', DEFAULTS.enabled),
     maxPerCycle: GM_getValue('maxPerCycle', DEFAULTS.maxPerCycle),
     autoRefresh: GM_getValue('autoRefresh', true),
-    debug: GM_getValue('debug', false), // Ausgaben zusätzlich in der Browser-Konsole
-    delayOn: GM_getValue('delayOn', false), // Verzögerung vor jedem Klickschritt der Annahme
-    delaySec: GM_getValue('delaySec', 1),   // 1–5 s (+ Streuung 0,02–0,64 s)
+    consoleLog: GM_getValue('consoleLog', true), // Protokoll im Bedienfeld anzeigen ("Console Log")
+    delayOn: GM_getValue('delayOn', false),       // Verzögerung vor jedem Klickschritt der Annahme
+    delaySec: GM_getValue('delaySec', 1),         // 1,0–5,0 s in 0,1-s-Schritten
+    delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung (Werte fest im Code)
   });
 
   let places = GM_getValue('places', { plz: [], orte: [], loadedAt: null, source: '' });
@@ -90,15 +93,16 @@
     return null;
   }
 
+  // Protokoll im Bedienfeld ("Console Log", ein-/ausblendbar). level 'debug' = Details wie Verzögerungen.
   function log(msg, level = 'info') {
     const line = `${new Date().toLocaleTimeString('de-DE')}  ${msg}`;
-    if (cfg.debug) console[level === 'err' ? 'error' : 'log']('[TAM-Auto]', msg); // Konsole nur im Debug-Modus
     const box = document.getElementById('tamauto-log');
     if (box) {
       const d = document.createElement('div');
       d.textContent = line;
       if (level === 'err') d.style.color = '#c62828';
       if (level === 'ok') d.style.color = '#2e7d32';
+      if (level === 'debug') d.style.color = '#888';
       box.prepend(d);
       while (box.childNodes.length > 200) box.lastChild.remove();
     }
@@ -193,14 +197,16 @@
     return files;
   }
 
-  async function readXlsxSheet(buf, sheetName) {
+  // strict: Blatt muss genau so heißen (sonst null) – wichtig für "nicht annehmen", damit nie
+  // versehentlich das Blatt "annehmen" als Sperrliste gelesen wird
+  async function readXlsxSheet(buf, sheetName, strict = false) {
     const files = await unzip(buf);
     const xml = (n) => (files[n] ? new DOMParser().parseFromString(new TextDecoder().decode(files[n]), 'application/xml') : null);
     const all = (doc, tag) => (doc ? [...doc.getElementsByTagName(tag)] : []);
     const strings = all(xml('xl/sharedStrings.xml'), 'si').map((si) => all(si, 't').map((t) => t.textContent).join(''));
     const sheets = all(xml('xl/workbook.xml'), 'sheet');
-    const sheet = sheets.find((s) => norm(s.getAttribute('name')) === norm(sheetName)) || sheets[0];
-    if (!sheet) throw new Error('kein Tabellenblatt gefunden');
+    const sheet = sheets.find((s) => norm(s.getAttribute('name')) === norm(sheetName)) || (strict ? null : sheets[0]);
+    if (!sheet) { if (strict) return null; throw new Error('kein Tabellenblatt gefunden'); }
     const rel = all(xml('xl/_rels/workbook.xml.rels'), 'Relationship').find((r) => r.getAttribute('Id') === sheet.getAttribute('r:id'));
     const target = rel ? rel.getAttribute('Target').replace(/^\/?(xl\/)?/, 'xl/') : 'xl/worksheets/sheet1.xml';
     const col = (ref) => [...ref.replace(/\d+/g, '')].reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - 1;
@@ -217,7 +223,7 @@
   }
 
   function loadPlacesFromSheet() {
-    log('Lade Ortsliste aus SharePoint …');
+    log('Lade Ortsliste aus SharePoint …', 'debug');
     return new Promise((resolve) => {
       GM_xmlhttpRequest({
         method: 'GET', url: cfg.placesUrl, responseType: 'arraybuffer', anonymous: true,
@@ -227,9 +233,18 @@
             const { rows, name } = await readXlsxSheet(res.response, cfg.placesSheet);
             const p = extractPlaces(rows, `SharePoint, Blatt "${name}"`);
             if (!p.plz.length && !p.orte.length) throw new Error(`Blatt "${name}" enthält keine PLZ/Orte`);
+            // Sperrliste aus Blatt "nicht annehmen" (gleiche PLZ-/Ort-Logik); fehlt das Blatt → leer
+            const bl = await readXlsxSheet(res.response, cfg.blockSheet, true);
+            const b = bl ? extractPlaces(bl.rows, '') : { plz: [], orte: [] };
+            p.block = { plz: b.plz, orte: b.orte };
+            const changed = JSON.stringify([p.plz, p.orte, p.block]) !== JSON.stringify([places.plz, places.orte, places.block]);
             places = p; GM_setValue('places', places);
-            log(`Ortsliste geladen: ${places.plz.length} PLZ, ${places.orte.length} Orte (Blatt "${name}")`, 'ok');
-            renderStatus(); resolve(true);
+            if (changed) {
+              log(`Ortsliste geladen: ${places.plz.length} PLZ, ${places.orte.length} Orte (Blatt "${name}"); ` +
+                `Sperrliste "${cfg.blockSheet}": ${b.plz.length} PLZ, ${b.orte.length} Orte` +
+                (bl ? '' : ' (Blatt nicht gefunden)'), 'ok');
+            } else log('Ortsliste unverändert.', 'debug');
+            renderStatus(); renderBlacklist(); resolve(true);
           } catch (e) {
             log(`Ortsliste nicht ladbar (${e.message}). Freigabe-Link prüfen oder Liste manuell einfügen.`, 'err');
             resolve(false);
@@ -241,7 +256,7 @@
   }
 
   function loadPlacesFromText(t) {
-    places = extractPlaces(parseCSV(t), 'manuell');
+    places = Object.assign(extractPlaces(parseCSV(t), 'manuell'), { block: places.block }); // Excel-Sperrliste behalten
     GM_setValue('places', places);
     log(`Manuelle Liste übernommen: ${places.plz.length} PLZ, ${places.orte.length} Orte`, 'ok');
     renderStatus();
@@ -253,6 +268,60 @@
     return places.plz.some((x) => p.startsWith(x)) || places.orte.includes(norm(order.ort));
   }
 
+  // ------------------------------------------------------------------ Auftragsbuch
+  // Alle vom Script angenommenen Aufträge (inkl. 0-km-Aufträge aus der Umgebung), dauerhaft gespeichert
+  const parseEuro = (s) => {
+    const t = String(s || '').replace(/[^\d,.-]/g, '');
+    if (!t) return null;
+    const v = parseFloat(t.replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'));
+    return Number.isFinite(v) ? v : null;
+  };
+  const fmtEuro = (v) => v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+
+  function recordOrder(o) {
+    const book = GM_getValue('orderbook', []);
+    const ts = new Date().toISOString();
+    book.push({ ts, nr: o.nr, plz: o.plz, ort: o.ort, dienst: o.dienst, preis: parseEuro(o.preis) });
+    // 0-km-Aufträge: gleicher Ort, Preis steht in der Tabelle nicht zur Verfügung
+    (o.extra || []).forEach((x) => book.push({ ts, nr: x, plz: o.plz, ort: o.ort, dienst: `0 km zu ${o.nr}`, preis: null }));
+    GM_setValue('orderbook', book.slice(-5000));
+    renderOrderbook();
+  }
+
+  function renderOrderbook() {
+    const tbody = document.getElementById('tamauto-ob-rows');
+    if (!tbody) return;
+    const range = (document.getElementById('tamauto-ob-range') || {}).value || 'today';
+    const from = { today: new Date(new Date().setHours(0, 0, 0, 0)), week: new Date(Date.now() - 7 * 864e5),
+      month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), all: new Date(0) }[range];
+    const rows = GM_getValue('orderbook', []).filter((e) => new Date(e.ts) >= from).reverse();
+    tbody.innerHTML = '';
+    rows.forEach((e) => {
+      const tr = document.createElement('tr');
+      const d = new Date(e.ts);
+      [`${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`,
+        e.nr, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis)].forEach((v, i) => {
+        const td = document.createElement('td');
+        td.textContent = v;
+        Object.assign(td.style, { padding: '1px 4px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap', textAlign: i === 4 ? 'right' : 'left' });
+        tr.appendChild(td);
+      });
+      tr.title = e.dienst || '';
+      tbody.appendChild(tr);
+    });
+    if (!rows.length) tbody.innerHTML = '<tr><td colspan="5" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
+    // Unten: Anzahl Aufträge, Anzahl PLZ (mit Aufträgen je PLZ), Summe Euro
+    const perPlz = {};
+    rows.forEach((e) => { perPlz[e.plz] = (perPlz[e.plz] || 0) + 1; });
+    const sum = rows.reduce((a, e) => a + (e.preis || 0), 0);
+    const noPrice = rows.filter((e) => e.preis == null).length;
+    document.getElementById('tamauto-ob-sum').innerHTML =
+      `<b>${rows.length} Aufträge</b> · <b>${Object.keys(perPlz).length} PLZ</b> · Summe gesamt <b>${fmtEuro(sum)}</b>` +
+      (noPrice ? ` <span style="color:#555">(${noPrice} ohne Preis)</span>` : '');
+    document.getElementById('tamauto-ob-plz').textContent = Object.entries(perPlz)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([p, c]) => `${p} (${c})`).join(' · ');
+  }
+
   // ------------------------------------------------------------------ Tages-Blacklist
   // PLZ (2–5 Ziffern, Anfang der PLZ), die heute nicht angenommen werden – z. B. nach Storno.
   // Gilt nur bis Mitternacht, danach automatisch leer.
@@ -262,9 +331,37 @@
     if (b.date !== today()) { b = { date: today(), plz: [] }; GM_setValue('blacklist', b); }
     return b;
   }
-  const blocked = (order) => blacklist().plz.find((x) => (order.plz || '').trim().startsWith(x)) || '';
+  // Gesperrt? Liefert den Grund als Text (für das Protokoll) oder ''.
+  // Quellen: Tages-Blacklist (manuell, bis Mitternacht) und Excel-Blatt "nicht annehmen" (solange dort eingetragen)
+  function blocked(order) {
+    const p = (order.plz || '').trim();
+    const day = blacklist().plz.find((x) => p.startsWith(x));
+    if (day) return `PLZ ${day}${day.length < 5 ? '…' : ''} (Tages-Blacklist)`;
+    const xb = places.block || { plz: [], orte: [] };
+    const xp = xb.plz.find((x) => p.startsWith(x));
+    if (xp) return `PLZ ${xp}${xp.length < 5 ? '…' : ''} (Excel „${cfg.blockSheet}“)`;
+    if (xb.orte.includes(norm(order.ort))) return `Ort ${order.ort} (Excel „${cfg.blockSheet}“)`;
+    return '';
+  }
+
+  function chipEl(label, color, bg) {
+    const chip = document.createElement('span');
+    chip.textContent = label;
+    Object.assign(chip.style, { padding: '2px 6px', background: bg, border: `1px solid ${color}`,
+      borderRadius: '10px', color });
+    return chip;
+  }
 
   function renderBlacklist() {
+    // Excel-Sperrliste (nur Anzeige – ändern im Excel, Blatt "nicht annehmen")
+    const xl = document.getElementById('tamauto-bl-excel');
+    const xb = places.block || { plz: [], orte: [] };
+    if (xl) {
+      xl.innerHTML = '';
+      const entries = [...xb.plz.map((x) => `${x}${x.length < 5 ? '…' : ''}`), ...xb.orte];
+      if (!entries.length) xl.textContent = 'Keine Einträge.';
+      entries.forEach((x) => xl.appendChild(chipEl(x, '#6d4c41', '#efebe9')));
+    }
     const list = document.getElementById('tamauto-bl-list');
     if (!list) return;
     const b = blacklist();
@@ -283,8 +380,9 @@
       list.appendChild(chip);
     });
     // Anzahl auch am Reiter zeigen, damit eine Sperre nicht übersehen wird
+    const n = b.plz.length + xb.plz.length + xb.orte.length;
     const tab = document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-adv"]');
-    if (tab) tab.textContent = `Erweiterte Einstellungen${b.plz.length ? ` (${b.plz.length} gesperrt)` : ''}`;
+    if (tab) tab.textContent = `Erweiterte Einstellungen${n ? ` (${n} gesperrt)` : ''}`;
   }
 
   // ------------------------------------------------------------------ Updates (GitHub)
@@ -515,12 +613,14 @@
   }
 
   // Verzögerung vor jedem Klickschritt der Annahme (Erweiterte Einstellungen):
-  // eingestellte Sekunden (1–5) + zufällige Streuung 0,02–0,64 s, bei jedem Schritt neu gewürfelt
-  const SPREAD_MIN = 0.02, SPREAD_MAX = 0.64;
+  // eingestellte Sekunden (1,0–5,0) + optional zufällige Streuung, bei jedem Schritt neu gewürfelt.
+  // Die Streuung ist fest im Code und wird bewusst nicht im Bedienfeld angezeigt.
+  const SPREAD_MIN = 0.02, SPREAD_MAX = 0.5;
   async function humanDelay(step) {
     if (!cfg.delayOn) return;
-    const s = cfg.delaySec + SPREAD_MIN + Math.random() * (SPREAD_MAX - SPREAD_MIN);
-    if (cfg.debug) log(`Verzögerung ${s.toFixed(2).replace('.', ',')} s vor: ${step}`);
+    const spread = cfg.delayRandom ? SPREAD_MIN + Math.random() * (SPREAD_MAX - SPREAD_MIN) : 0;
+    const s = cfg.delaySec + spread;
+    log(`Verzögerung vor: ${step}`, 'debug');
     await sleep(s * 1000);
   }
 
@@ -680,7 +780,7 @@
         const key = bl ? `${o.key}|bl` : o.key; // Sperre separat protokollieren (z. B. nach Entsperren erneut)
         if (seen.has(key)) return;
         seen.add(key);
-        const why = bl ? `Treffer, aber PLZ ${bl}… heute gesperrt (Blacklist) → nicht angenommen`
+        const why = bl ? `Treffer, aber gesperrt: ${bl} → nicht angenommen`
           : matches(o) ? 'TREFFER → wird angenommen'
             : `kein Treffer (PLZ ${o.plz || '?'} und Ort "${o.ort || '?'}" nicht in Ortsliste)`;
         log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, bl ? 'err' : matches(o) ? 'ok' : 'info');
@@ -699,6 +799,7 @@
           const plus = (o.extra || []).length ? ` + ${o.extra.join(', ')} (0 km)` : '';
           log(`Angenommen: ${desc}${plus}`, 'ok'); notify('TAM: Auftrag angenommen', desc + plus);
           done.add(o.key); (o.extra || []).forEach((x) => done.add(x)); n++;
+          recordOrder(o);
         } else {
           log(`Annahme fehlgeschlagen: ${desc}`, 'err');
           notify('TAM: Annahme fehlgeschlagen', desc); done.add(o.key); // nicht endlos erneut versuchen
@@ -757,9 +858,10 @@
         <div id="tamauto-places"></div>
         <div id="tamauto-status" style="color:#555">bereit</div>
         <div id="tamauto-refresh" style="color:#555"></div>
-        <div style="display:flex;gap:2px;margin-top:6px;border-bottom:2px solid #1a4d8f">
+        <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:6px;border-bottom:2px solid #1a4d8f">
           <button class="tamauto-tabbtn" data-page="tamauto-page-main">Bedienung</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-adv">Erweiterte Einstellungen</button>
+          <button class="tamauto-tabbtn" data-page="tamauto-page-book">Auftragsbuch</button>
         </div>
         <div id="tamauto-page-adv" style="display:none;margin:6px 0">
           <b>Tages-Blacklist</b> <span style="color:#555">– gilt nur heute, um Mitternacht automatisch leer</span>
@@ -771,22 +873,43 @@
             <button id="tamauto-bl-clear">Alle freigeben</button>
           </div>
           <div id="tamauto-bl-list" style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"></div>
+          <div style="margin-top:8px"><b>Aus Excel</b> <span style="color:#555">– Blatt „nicht annehmen“, ändern nur im Excel</span>
+            <button id="tamauto-bl-reload" style="margin-left:4px">Neu laden</button></div>
+          <div id="tamauto-bl-excel" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
             <label class="tamauto-chk" title="Wartet vor jedem Klickschritt der Annahme">
               <input type="checkbox" id="tamauto-delay-on"> <b>Verzögerung</b></label>
             <span style="color:#555"> – vor jedem Klickschritt der Annahme</span>
             <div class="tamauto-chk" style="margin-top:4px">
-              <input type="range" id="tamauto-delay" min="1" max="5" step="1" style="width:160px;margin:0">
+              <input type="range" id="tamauto-delay" min="1" max="5" step="0.1" style="width:160px;margin:0">
               <b id="tamauto-delay-val"></b>
+              <label class="tamauto-chk" style="margin-left:8px"><input type="checkbox" id="tamauto-delay-rnd"> Randomizer</label>
             </div>
-            <div style="color:#555;margin-top:2px">+ zufällig 0,02–0,64 s, bei jedem Schritt neu (z. B. 2 s → 2,02–2,64 s).
-              Eine Annahme hat 5–6 Schritte und dauert entsprechend länger.</div>
           </div>
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
-            <label class="tamauto-chk" title="Schreibt das Protokoll zusätzlich in die Browser-Konsole (F12)">
-              <input type="checkbox" id="tamauto-debug"> <b>Debug-Modus</b></label>
-            <span style="color:#555"> – Ausgaben zusätzlich in der Browser-Konsole (F12)</span>
+            <label class="tamauto-chk" title="Zeigt das Protokoll des Scripts unten im Bedienfeld">
+              <input type="checkbox" id="tamauto-consolelog"> <b>Console Log</b></label>
+            <span style="color:#555"> – Protokoll des Scripts unten im Bedienfeld anzeigen</span>
           </div>
+        </div>
+        <div id="tamauto-page-book" style="display:none;margin:6px 0">
+          <div class="tamauto-chk" style="justify-content:space-between;width:100%">
+            <span>Zeitraum <select id="tamauto-ob-range">
+              <option value="today">Heute</option><option value="week">Letzte 7 Tage</option>
+              <option value="month">Dieser Monat</option><option value="all">Alle</option></select></span>
+            <button id="tamauto-ob-clear" title="Auftragsbuch vollständig löschen">Liste leeren</button>
+          </div>
+          <div style="max-height:180px;overflow:auto;margin-top:4px;border:1px solid #ddd">
+            <table style="border-collapse:collapse;width:100%;font-size:11px">
+              <thead><tr style="background:#e8f0fb;position:sticky;top:0">
+                <th style="text-align:left;padding:2px 4px">Datum</th><th style="text-align:left;padding:2px 4px">AuftragsNr</th>
+                <th style="text-align:left;padding:2px 4px">PLZ</th><th style="text-align:left;padding:2px 4px">Ort</th>
+                <th style="text-align:right;padding:2px 4px">Euro</th></tr></thead>
+              <tbody id="tamauto-ob-rows"></tbody>
+            </table>
+          </div>
+          <div id="tamauto-ob-sum" style="margin-top:4px;padding-top:4px;border-top:2px solid #1a4d8f"></div>
+          <div id="tamauto-ob-plz" style="color:#555;margin-top:2px"></div>
         </div>
         <div id="tamauto-page-main" style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <button id="tamauto-toggle"></button>
@@ -844,7 +967,7 @@
         const ok = await acceptOrder(o);
         const plus = (o.extra || []).length ? ` + ${o.extra.join(', ')} (0 km)` : '';
         log(ok ? `Annahme 1. Zeile erfolgreich: ${o.nr}${plus}` : `Annahme 1. Zeile fehlgeschlagen: ${o.nr}`, ok ? 'ok' : 'err');
-        if (ok) { done.add(o.nr); (o.extra || []).forEach((x) => done.add(x)); GM_setValue('doneRefs', [...done].slice(-2000)); }
+        if (ok) { done.add(o.nr); (o.extra || []).forEach((x) => done.add(x)); GM_setValue('doneRefs', [...done].slice(-2000)); recordOrder(o); }
       } finally { releaseBusy(); }
     };
     $('tamauto-upd').onclick = () => checkUpdate(true);
@@ -859,6 +982,7 @@
       });
       if (id === 'tamauto-page-main') $('tamauto-ta').style.display = 'none';
       if (id === 'tamauto-page-adv') renderBlacklist();
+      if (id === 'tamauto-page-book') renderOrderbook();
     };
     p.querySelectorAll('.tamauto-tabbtn').forEach((b) => { b.onclick = () => showPage(b.dataset.page); });
     showPage('tamauto-page-main');
@@ -875,28 +999,43 @@
     };
     $('tamauto-bl-add').onclick = addBl;
     $('tamauto-bl-in').onkeydown = (e) => { if (e.key === 'Enter') addBl(); };
-    // Verzögerung: Checkbox + Slider 1–5 s
+    // Verzögerung: Checkbox + Slider 1,0–5,0 s (0,1-s-Schritte) + Randomizer (Streuung nicht angezeigt)
+    const fmtSec = (v) => `${v.toFixed(1).replace('.', ',')} s`;
     const renderDelay = () => {
       $('tamauto-delay-on').checked = cfg.delayOn;
       $('tamauto-delay').value = cfg.delaySec;
       $('tamauto-delay').disabled = !cfg.delayOn;
-      $('tamauto-delay-val').textContent = cfg.delayOn
-        ? `${cfg.delaySec} s (${cfg.delaySec},02–${cfg.delaySec},64 s je Schritt)` : 'aus';
+      $('tamauto-delay-rnd').checked = cfg.delayRandom;
+      $('tamauto-delay-rnd').disabled = !cfg.delayOn;
+      $('tamauto-delay-val').textContent = cfg.delayOn ? fmtSec(cfg.delaySec) : 'aus';
     };
+    const delayInfo = () => `Verzögerung ${fmtSec(cfg.delaySec)} je Klickschritt${cfg.delayRandom ? ' + Randomizer' : ''}.`;
     $('tamauto-delay-on').onchange = (e) => {
       cfg.delayOn = e.target.checked; GM_setValue('delayOn', cfg.delayOn); renderDelay();
-      log(cfg.delayOn ? `Verzögerung an: ${cfg.delaySec} s + 0,02–0,64 s je Klickschritt.` : 'Verzögerung aus.');
+      log(cfg.delayOn ? `An: ${delayInfo()}` : 'Verzögerung aus.');
     };
-    $('tamauto-delay').oninput = (e) => { cfg.delaySec = Math.min(5, Math.max(1, +e.target.value || 1)); renderDelay(); };
-    $('tamauto-delay').onchange = () => {
-      GM_setValue('delaySec', cfg.delaySec); log(`Verzögerung: ${cfg.delaySec} s + 0,02–0,64 s je Klickschritt.`);
+    $('tamauto-delay').oninput = (e) => {
+      cfg.delaySec = Math.round(Math.min(5, Math.max(1, +e.target.value || 1)) * 10) / 10; renderDelay();
+    };
+    $('tamauto-delay').onchange = () => { GM_setValue('delaySec', cfg.delaySec); log(delayInfo()); };
+    $('tamauto-delay-rnd').onchange = (e) => {
+      cfg.delayRandom = e.target.checked; GM_setValue('delayRandom', cfg.delayRandom); log(delayInfo());
     };
     renderDelay();
 
-    $('tamauto-debug').checked = cfg.debug;
-    $('tamauto-debug').onchange = (e) => {
-      cfg.debug = e.target.checked; GM_setValue('debug', cfg.debug);
-      log(cfg.debug ? 'Debug-Modus an – Ausgaben auch in der Browser-Konsole.' : 'Debug-Modus aus.');
+    // Console Log: Protokoll des Scripts ein-/ausblenden (keine Ausgaben in die Browser-Konsole)
+    const renderConsole = () => { $('tamauto-consolelog').checked = cfg.consoleLog; $('tamauto-log').style.display = cfg.consoleLog ? '' : 'none'; };
+    $('tamauto-consolelog').onchange = (e) => { cfg.consoleLog = e.target.checked; GM_setValue('consoleLog', cfg.consoleLog); renderConsole(); };
+    renderConsole();
+
+    // Excel-Sperrliste sofort neu laden (z. B. direkt nach einem Storno)
+    $('tamauto-bl-reload').onclick = loadPlacesFromSheet;
+
+    // Auftragsbuch
+    $('tamauto-ob-range').onchange = renderOrderbook;
+    $('tamauto-ob-clear').onclick = () => {
+      if (!confirm('Auftragsbuch vollständig löschen?')) return;
+      GM_setValue('orderbook', []); log('Auftragsbuch geleert.'); renderOrderbook();
     };
     $('tamauto-bl-clear').onclick = () => {
       GM_setValue('blacklist', { date: today(), plz: [] }); log('Blacklist: alle PLZ freigegeben.', 'ok'); renderBlacklist();
@@ -946,8 +1085,10 @@
     buildPanel();
     watchGrid();
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;
-    // Liste max. 6 h alt; Liste im alten Format (vor PLZ-Bereichen) sofort neu laden
-    if (age > 6 * 3600 * 1000 || places.v !== 2) loadPlacesFromSheet();
+    // Excel (Ortsliste + Sperrliste) beim Start laden, wenn älter als 30 min oder altes Format, danach alle 30 min
+    const reloadMs = cfg.placesReloadMin * 60 * 1000;
+    if (age > reloadMs || places.v !== 2 || !places.block) loadPlacesFromSheet();
+    setInterval(loadPlacesFromSheet, reloadMs);
     restartTimer();
     if (cfg.enabled) cycle('Start');
     // Update-Prüfung beim Start (max. alle 6 h) und danach alle 6 h
