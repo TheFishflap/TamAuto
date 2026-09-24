@@ -19,8 +19,6 @@ deren **PLZ oder Ort** in der Ortsliste der IB Thomée GmbH steht.
 - Tampermonkey aktualisiert über `@updateURL` / `@downloadURL` (Raw-Datei im Branch `main`).
 - Das Bedienfeld zeigt **„⬆ Update x.y.z verfügbar – installieren“**, sobald auf GitHub eine
   neuere `@version` liegt. Button **„Update prüfen“** prüft sofort.
-- Voraussetzung: Das Repository ist **öffentlich** (Raw-Dateien privater Repos sind ohne Token
-  nicht abrufbar).
 - Neue Version veröffentlichen: `@version` im Script erhöhen, Changelog ergänzen, nach `main` pushen.
 
 ## Bedienfeld
