@@ -63,6 +63,14 @@ Ein GitHub-Konto ist **nicht** nötig. Updates kommen danach automatisch (siehe 
 | **Update prüfen** | Sucht auf GitHub nach einer neuen Version |
 | **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
 
+### Reiter „Erweiterte Einstellungen“ – Tages-Blacklist
+
+PLZ eintragen, die **heute nicht** angenommen werden sollen – z. B. nach einem Storno, damit der Auftrag
+nicht erneut angenommen wird. Gleiche Logik wie in der Ortsliste: `44` sperrt alle 44xxx, `47877` nur diese PLZ.
+Die Liste leert sich **automatisch um Mitternacht**. Freigeben: auf den roten Eintrag klicken oder
+„Alle freigeben“. Solange etwas gesperrt ist, zeigt der Reiter die Anzahl an („1 gesperrt“).
+Gesperrte Treffer stehen im Protokoll („… heute gesperrt (Blacklist) → nicht angenommen“).
+
 ## Abgleich und Protokoll
 
 Bei jedem Refresh der Tabelle wird die Liste neu mit der Ortsliste abgeglichen; passende Aufträge
@@ -85,7 +93,8 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 1. Nur wenn der Tab **Veröffentlichte Aufträge** aktiv ist (feste TAM-ID `AgentVeroeffentlichteAuftraege`).
 2. Spalten werden über ihre Spalten-ID erkannt – Reihenfolge und ausgeblendete Spalten sind egal.
    Pflicht: Spalten **PLZ** und **Ort** vorhanden, PLZ 5-stellig.
-3. Treffer, wenn PLZ **oder** Ort in der Ortsliste steht.
+3. Treffer, wenn die PLZ mit einem Eintrag der Ortsliste **beginnt** (siehe [Ortsliste](#ortsliste))
+   und nicht auf der Tages-Blacklist steht.
 4. Doppelklick auf den Auftrag → **Auftragskarte zu MW…** (Titel wird gegen die AuftragsNr geprüft).
 5. Aufträge unter **„Aufträge in der Umgebung“ mit 0 km** je einmal anklicken (→ Warenkorb).
 6. Danach **„Warenkorb – alle auswählen“** anhaken.
@@ -113,13 +122,21 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 - Quelle: Excel-Datei in SharePoint (Freigabe-Link, **keine Anmeldung** nötig), Blatt **„annehmen“**,
   Spalten **PLZ | Ort | SV**. Das Blatt „nicht annehmen“ wird nicht ausgewertet.
-- Treffer: Ort (normalisiert, ä→ae usw.) **oder** 5-stellige PLZ. Die zweistelligen PLZ-Bereiche (z. B. `21`)
-  werden derzeit nicht ausgewertet.
-- `Wuppertal - nur 42109` → nur die PLZ 42109 zählt, nicht ganz Wuppertal.
-- Einträge mit Zusatz (z. B. `Wetzlar, In der Murch`) passen **nicht** auf den TAM-Ort „Wetzlar“ und
-  werden daher nie angenommen.
+- **PLZ-Logik:** mindestens 2, höchstens 5 Ziffern – der Eintrag ist der **Anfang** der PLZ.
+  - `43` (oder `43***`) → alles, was mit 43 beginnt, also die ganze Umgebung.
+  - `47877` → nur genau diese PLZ.
+- Die Spalte **Ort** ist bei Zeilen mit PLZ nur zur Info. Nur Zeilen **ohne** PLZ werden über den
+  Ortsnamen abgeglichen (normalisiert, ä→ae usw.).
+- PLZ mit führender 0 in Excel als **Text** eintragen (sonst macht Excel aus `01` eine `1`;
+  einstellige Werte werden automatisch zu `0x` ergänzt).
 
 ## Changelog
+
+### 1.3.0 – 2026-09-24
+- **PLZ-Logik:** Einträge mit 2–5 Ziffern gelten als PLZ-Anfang (`43` → alle 43xxx, `47877` → nur diese).
+  Ortsnamen zählen nur noch bei Listenzeilen ohne PLZ. Die Ortsliste wird nach dem Update einmal neu geladen.
+- Neuer Reiter **„Erweiterte Einstellungen“** mit **Tages-Blacklist** für PLZ (z. B. nach Storno),
+  leert sich um Mitternacht.
 
 ### 1.2.0 – 2026-09-24
 - Ortsliste aus **SharePoint (Excel)** statt Google Sheets – keine Google-Anmeldung mehr nötig.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.2.0
+// @version      1.3.0
 // @author       IB Thomée GmbH
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
@@ -128,25 +128,31 @@
     return rows;
   }
 
+  // PLZ aus der Liste: 2–5 Ziffern = Anfang der PLZ ("43" → alle 43xxx, "47877" → genau diese).
+  // "43***" wird wie "43" behandelt; 1 Ziffer = von Excel verschluckte führende 0 ("1" → "01").
+  function normPlz(v) {
+    const s = String(v == null ? '' : v).trim().replace(/\*+$/, '');
+    if (!/^\d{1,5}$/.test(s)) return '';
+    return s.length === 1 ? '0' + s : s;
+  }
+
+  // Je Zeile: steht eine PLZ drin, gilt die PLZ-Regel; nur Zeilen ohne PLZ werden über den Ortsnamen abgeglichen.
   function extractPlaces(rows, source) {
     const plz = new Set(); const orte = new Set();
-    if (!rows.length) return { plz: [], orte: [], loadedAt: new Date().toISOString(), source };
+    const cell = (r, i) => String(r[i] == null ? '' : r[i]).trim();
     // Kopfzeile suchen: erste Zeile, die "ort" oder "plz" enthält
-    let hIdx = rows.findIndex((r) => r.some((c) => /^(plz|ort|stadt|gemeinde|postleitzahl)/i.test(c.trim())));
-    const header = hIdx >= 0 ? rows[hIdx].map((c) => c.trim().toLowerCase()) : [];
-    const ortCols = header.map((h, i) => (/^(ort|stadt|gemeinde)/.test(h) ? i : -1)).filter((i) => i >= 0);
+    const hIdx = rows.findIndex((r) => r.some((c) => /^(plz|ort|stadt|gemeinde|postleitzahl)$/i.test(String(c).trim())));
+    const header = hIdx >= 0 ? rows[hIdx].map((c) => String(c).trim().toLowerCase()) : [];
+    const plzCol = header.findIndex((h) => /^(plz|postleitzahl)$/.test(h));
+    const ortCol = header.findIndex((h) => /^(ort|stadt|gemeinde)$/.test(h));
     rows.slice(hIdx + 1).forEach((r) => {
-      r.forEach((c, i) => {
-        const v = String(c == null ? '' : c).trim();
-        const m = v.match(/\b\d{5}\b/g);
-        if (m) m.forEach((p) => plz.add(p));
-        if (!ortCols.includes(i) || !v || /^\d+$/.test(v)) return;
-        const ort = v.replace(/^\d{5}\s*/, '');
-        // "Wuppertal - nur 42109": Ort nur für diese PLZ → nicht als ganzer Ort übernehmen
-        if (!/\d{5}/.test(ort)) orte.add(norm(ort));
-      });
+      const cells = r.map((c, i) => cell(r, i));
+      const p = plzCol >= 0 ? normPlz(cells[plzCol]) : normPlz(cells.find((c) => /^\d{1,5}\**$/.test(c)));
+      if (p.length >= 2) { plz.add(p); return; }
+      const ort = ortCol >= 0 ? cells[ortCol] : cells.find((c) => c && !/^\d+$/.test(c));
+      if (ort) orte.add(norm(ort));
     });
-    return { plz: [...plz], orte: [...orte], loadedAt: new Date().toISOString(), source };
+    return { v: 2, plz: [...plz], orte: [...orte], loadedAt: new Date().toISOString(), source };
   }
 
   // ---- Excel (.xlsx) lesen: ZIP-Container entpacken, Blatt als Zeilen-Array liefern
@@ -219,19 +225,49 @@
 
   function loadPlacesFromText(t) {
     places = extractPlaces(parseCSV(t), 'manuell');
-    // Falls keine Kopfzeile: jede Zeile ohne PLZ als Ort übernehmen
-    if (!places.orte.length) {
-      t.split(/\r?\n/).map((l) => l.replace(/\b\d{5}\b/g, '').replace(/[;,]/g, ' ').trim())
-        .filter(Boolean).forEach((o) => places.orte.push(norm(o)));
-    }
     GM_setValue('places', places);
     log(`Manuelle Liste übernommen: ${places.plz.length} PLZ, ${places.orte.length} Orte`, 'ok');
     renderStatus();
   }
 
   function matches(order) {
-    // Treffer, wenn PLZ ODER Ortsname in der Ortsliste steht
-    return places.plz.includes((order.plz || '').trim()) || places.orte.includes(norm(order.ort));
+    // Treffer, wenn die PLZ mit einem Listeneintrag beginnt ODER der Ort (Listenzeile ohne PLZ) passt
+    const p = (order.plz || '').trim();
+    return places.plz.some((x) => p.startsWith(x)) || places.orte.includes(norm(order.ort));
+  }
+
+  // ------------------------------------------------------------------ Tages-Blacklist
+  // PLZ (2–5 Ziffern, Anfang der PLZ), die heute nicht angenommen werden – z. B. nach Storno.
+  // Gilt nur bis Mitternacht, danach automatisch leer.
+  const today = () => new Date().toLocaleDateString('sv-SE'); // JJJJ-MM-TT, lokale Zeit
+  function blacklist() {
+    let b = GM_getValue('blacklist', { date: today(), plz: [] });
+    if (b.date !== today()) { b = { date: today(), plz: [] }; GM_setValue('blacklist', b); }
+    return b;
+  }
+  const blocked = (order) => blacklist().plz.find((x) => (order.plz || '').trim().startsWith(x)) || '';
+
+  function renderBlacklist() {
+    const list = document.getElementById('tamauto-bl-list');
+    if (!list) return;
+    const b = blacklist();
+    list.innerHTML = '';
+    if (!b.plz.length) list.textContent = 'Keine PLZ gesperrt.';
+    b.plz.forEach((x) => {
+      const chip = document.createElement('span');
+      chip.textContent = `${x}${x.length < 5 ? '…' : ''} ✕`;
+      chip.title = 'Klicken zum Freigeben';
+      Object.assign(chip.style, { padding: '2px 6px', background: '#fdecea', border: '1px solid #c62828',
+        borderRadius: '10px', color: '#c62828', cursor: 'pointer' });
+      chip.onclick = () => {
+        const cur = blacklist(); cur.plz = cur.plz.filter((y) => y !== x); GM_setValue('blacklist', cur);
+        log(`Blacklist: PLZ ${x} wieder freigegeben.`, 'ok'); renderBlacklist();
+      };
+      list.appendChild(chip);
+    });
+    // Anzahl auch am Reiter zeigen, damit eine Sperre nicht übersehen wird
+    const tab = document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-adv"]');
+    if (tab) tab.textContent = `Erweiterte Einstellungen${b.plz.length ? ` (${b.plz.length} gesperrt)` : ''}`;
   }
 
   // ------------------------------------------------------------------ Updates (GitHub)
@@ -573,21 +609,27 @@
       const noKey = all.filter((o) => !o.key);
       const old = all.filter((o) => o.key && done.has(o.key));
       const orders = all.filter((o) => o.valid && o.key && !done.has(o.key));
-      const hits = orders.filter(matches);
+      // Gesperrte (Tages-Blacklist) nicht annehmen, aber auch nicht als erledigt merken → morgen wieder möglich
+      const hits = orders.filter((o) => matches(o) && !blocked(o));
+      const blockedHits = orders.filter((o) => matches(o) && blocked(o));
       setStatus(`${new Date().toLocaleTimeString('de-DE')}: ${all.length} in Tabelle · ${orders.length} offen · ` +
-        `${hits.length} passend · ${old.length} bereits bearbeitet`);
+        `${hits.length} passend · ${blockedHits.length} gesperrt · ${old.length} bereits bearbeitet`);
 
       // Protokoll: jeder Abgleich eine Zeile, jeden Auftrag einmalig mit Entscheidung
       log(`${reason} → Abgleich: ${all.length} Aufträge in Tabelle, ${orders.length} offen, ${hits.length} passend, ` +
+        (blockedHits.length ? `${blockedHits.length} gesperrt, ` : '') +
         `${old.length} bereits bearbeitet` + (noKey.length ? `, ${noKey.length} ohne AuftragsNr` : ''), hits.length ? 'ok' : 'info');
       if (noKey.length && lastSummary !== 'NOKEY') log(lastColInfo, 'err');
       lastSummary = noKey.length ? 'NOKEY' : '';
       orders.forEach((o) => {
-        if (seen.has(o.key)) return;
-        seen.add(o.key);
-        const why = matches(o) ? 'TREFFER → wird angenommen'
-          : `kein Treffer (PLZ ${o.plz || '?'} und Ort "${o.ort || '?'}" nicht in Ortsliste)`;
-        log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, matches(o) ? 'ok' : 'info');
+        const bl = matches(o) && blocked(o);
+        const key = bl ? `${o.key}|bl` : o.key; // Sperre separat protokollieren (z. B. nach Entsperren erneut)
+        if (seen.has(key)) return;
+        seen.add(key);
+        const why = bl ? `Treffer, aber PLZ ${bl}… heute gesperrt (Blacklist) → nicht angenommen`
+          : matches(o) ? 'TREFFER → wird angenommen'
+            : `kein Treffer (PLZ ${o.plz || '?'} und Ort "${o.ort || '?'}" nicht in Ortsliste)`;
+        log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, bl ? 'err' : matches(o) ? 'ok' : 'info');
       });
       let n = 0;
       for (const o of hits) {
@@ -617,6 +659,7 @@
 
   // Ein Takt: erst Refresh der Website (falls Auto-Refresh an), danach Abgleich mit der Ortsliste
   async function tick() {
+    renderBlacklist(); // nach Mitternacht Anzeige leeren
     if (busy || !onPublishedTab()) return;
     let refreshed = false;
     if (cfg.autoRefresh) {
@@ -659,7 +702,22 @@
         <div id="tamauto-places"></div>
         <div id="tamauto-status" style="color:#555">bereit</div>
         <div id="tamauto-refresh" style="color:#555"></div>
-        <div style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <div style="display:flex;gap:2px;margin-top:6px;border-bottom:2px solid #1a4d8f">
+          <button class="tamauto-tabbtn" data-page="tamauto-page-main">Bedienung</button>
+          <button class="tamauto-tabbtn" data-page="tamauto-page-adv">Erweiterte Einstellungen</button>
+        </div>
+        <div id="tamauto-page-adv" style="display:none;margin:6px 0">
+          <b>Tages-Blacklist</b> <span style="color:#555">– gilt nur heute, um Mitternacht automatisch leer</span>
+          <div style="color:#555;margin:2px 0 4px">PLZ, die heute <b>nicht</b> angenommen werden, z. B. nach Storno
+            (sonst würde der Auftrag erneut angenommen). 2–5 Ziffern: „43“ sperrt alle 43xxx, „47877“ nur diese PLZ.</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input id="tamauto-bl-in" placeholder="PLZ, z. B. 47877" maxlength="5" style="width:110px">
+            <button id="tamauto-bl-add">Sperren</button>
+            <button id="tamauto-bl-clear">Alle freigeben</button>
+          </div>
+          <div id="tamauto-bl-list" style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"></div>
+        </div>
+        <div id="tamauto-page-main" style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <button id="tamauto-toggle"></button>
           <button id="tamauto-load">Ortsliste laden</button>
           <button id="tamauto-paste">Liste einfügen</button>
@@ -713,6 +771,36 @@
       } finally { releaseBusy(); }
     };
     $('tamauto-upd').onclick = () => checkUpdate(true);
+
+    // Reiter im Bedienfeld
+    const showPage = (id) => {
+      p.querySelectorAll('.tamauto-tabbtn').forEach((b) => {
+        const on = b.dataset.page === id;
+        $(b.dataset.page).style.display = on ? (id === 'tamauto-page-main' ? 'flex' : 'block') : 'none';
+        Object.assign(b.style, { background: on ? '#1a4d8f' : '#e8f0fb', color: on ? '#fff' : '#000',
+          borderRadius: '3px 3px 0 0', borderBottom: 'none' });
+      });
+      if (id === 'tamauto-page-main') $('tamauto-ta').style.display = 'none';
+      if (id === 'tamauto-page-adv') renderBlacklist();
+    };
+    p.querySelectorAll('.tamauto-tabbtn').forEach((b) => { b.onclick = () => showPage(b.dataset.page); });
+    showPage('tamauto-page-main');
+    renderBlacklist();
+
+    // Tages-Blacklist
+    const addBl = () => {
+      const v = normPlz($('tamauto-bl-in').value);
+      if (v.length < 2) { log('Blacklist: bitte 2–5 Ziffern eingeben.', 'err'); return; }
+      const b = blacklist();
+      if (!b.plz.includes(v)) { b.plz.push(v); b.plz.sort(); GM_setValue('blacklist', b); }
+      log(`Blacklist: PLZ ${v}… heute gesperrt.`, 'err');
+      $('tamauto-bl-in').value = ''; renderBlacklist();
+    };
+    $('tamauto-bl-add').onclick = addBl;
+    $('tamauto-bl-in').onkeydown = (e) => { if (e.key === 'Enter') addBl(); };
+    $('tamauto-bl-clear').onclick = () => {
+      GM_setValue('blacklist', { date: today(), plz: [] }); log('Blacklist: alle PLZ freigegeben.', 'ok'); renderBlacklist();
+    };
     $('tamauto-min').onclick =() => { const b = $('tamauto-body'); b.style.display = b.style.display === 'none' ? '' : 'none'; };
 
     // verschiebbar
@@ -756,8 +844,8 @@
     buildPanel();
     watchGrid();
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;
-    // Liste max. 6 h alt; alte Google-Sheets-Liste sofort durch SharePoint ersetzen
-    if (age > 6 * 3600 * 1000 || /google/i.test(places.source || '')) loadPlacesFromSheet();
+    // Liste max. 6 h alt; Liste im alten Format (vor PLZ-Bereichen) sofort neu laden
+    if (age > 6 * 3600 * 1000 || places.v !== 2) loadPlacesFromSheet();
     restartTimer();
     if (cfg.enabled) cycle('Start');
     // Update-Prüfung beim Start (max. alle 6 h) und danach alle 6 h
