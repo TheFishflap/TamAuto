@@ -89,6 +89,11 @@ Die Liste leert sich **automatisch um Mitternacht**. Freigeben: auf den roten Ei
 „Alle freigeben“. Solange etwas gesperrt ist, zeigt der Reiter die Anzahl an („1 gesperrt“).
 Gesperrte Treffer stehen im Protokoll („Treffer, aber gesperrt: … → nicht angenommen“).
 
+**Tages-Annahmeliste** (Reiter „Bedienung“): PLZ, die **heute zusätzlich** angenommen werden – **nur vollständige
+5-stellige PLZ** (z. B. `47877`), damit nicht versehentlich ganze Gebiete angenommen werden. Leert sich um Mitternacht;
+Entfernen per Klick auf den grünen Eintrag oder „Alle entfernen“. Nach dem Hinzufügen wird sofort abgeglichen.
+Steht eine PLZ zusätzlich auf einer Sperrliste, gilt die Sperre.
+
 **Sperrliste aus Excel:** Zusätzlich gilt das Blatt **„nicht annehmen“** derselben Excel-Datei
 (gleiche Spalten und PLZ-Logik wie „annehmen“). Einträge dort gelten, **solange sie im Excel stehen**
 (nicht nur heute). Das Excel wird alle 30 min neu geladen, sofort per **„Neu laden“**. Die Einträge
@@ -242,6 +247,10 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Adaptive Refresh aus), **S
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.9.2 – 2026-09-24
+- Neu: **Tages-Annahmeliste** im Reiter Bedienung – heute zusätzlich annehmen, nur 5-stellige PLZ, leert sich um Mitternacht.
+- Sperrliste aus Excel: **?** mit Erklärung (werden nie angenommen, von „Alle freigeben“ nicht betroffen).
 
 ### 1.9.1 – 2026-09-24
 - Bedienfeld kann nicht mehr ganz aus dem Fenster rutschen: links/rechts bleiben mind. 80 px, oben/unten die

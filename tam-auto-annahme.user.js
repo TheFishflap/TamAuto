@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.9.1
+// @version      1.9.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -301,7 +301,32 @@
     const p = (order.plz || '').trim();
     const ex = extraPlaces();
     return places.plz.some((x) => p.startsWith(x)) || places.orte.includes(norm(order.ort)) ||
-      ex.plz.some((x) => p.startsWith(x)) || ex.orte.includes(norm(order.ort));
+      ex.plz.some((x) => p.startsWith(x)) || ex.orte.includes(norm(order.ort)) ||
+      acceptlist().plz.includes(p); // Tages-Annahmeliste: nur exakte 5-stellige PLZ
+  }
+
+  // ---- Tages-Annahmeliste: heute zusätzlich annehmen, NUR vollständige 5-stellige PLZ (kein ganzes Gebiet)
+  function acceptlist() {
+    let a = GM_getValue('acceptlist', { date: today(), plz: [] });
+    if (a.date !== today()) { a = { date: today(), plz: [] }; GM_setValue('acceptlist', a); }
+    return a;
+  }
+  function renderAcceptlist() {
+    const list = document.getElementById('tamauto-al-list');
+    if (!list) return;
+    const a = acceptlist();
+    list.innerHTML = '';
+    if (!a.plz.length) list.textContent = 'Keine zusätzlichen PLZ für heute.';
+    a.plz.forEach((x) => {
+      const chip = chipEl(`${x} ✕`, '#2e7d32', '#e8f5e9');
+      chip.title = 'Klicken zum Entfernen';
+      chip.style.cursor = 'pointer';
+      chip.onclick = () => {
+        const cur = acceptlist(); cur.plz = cur.plz.filter((y) => y !== x); GM_setValue('acceptlist', cur);
+        log(`Tages-Annahmeliste: PLZ ${x} entfernt.`); renderAcceptlist();
+      };
+      list.appendChild(chip);
+    });
   }
 
   // ------------------------------------------------------------------ Auftragsbuch
@@ -1043,7 +1068,7 @@
     if (now - lastHousekeepAt >= 5000) {
       lastHousekeepAt = now;
       if (license && license.exp < today()) { location.reload(); return; } // Lizenz abgelaufen → Aktivierungsfeld
-      renderBlacklist(); // nach Mitternacht Anzeige leeren
+      renderBlacklist(); renderAcceptlist(); // nach Mitternacht Anzeige leeren
       renderStatus();    // abgelaufene Zusatzliste ausblenden
       if (!busy && cfg.enabled) dismissMessages(); // liegengebliebene TAM-Meldungen (z. B. "bereits vergeben") wegklicken
       hookAllConsoles(); // später geladene TAM-iframes ebenfalls mitlesen
@@ -1237,9 +1262,22 @@
               <button id="tamauto-bl-clear">Alle freigeben</button>
             </div>
             <div id="tamauto-bl-list" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
-            <div style="margin-top:6px"><b>Sperrliste aus Excel</b> <span style="color:#555">– Blatt „nicht annehmen“</span>
+            <div style="margin-top:6px"><b>Sperrliste aus Excel</b>
+              <span class="tamauto-help" title="PLZ aus dem Excel-Blatt „nicht annehmen“. Diese PLZ werden NIE angenommen – dauerhaft, solange sie im Excel stehen (nicht nur heute). Sie sind vom Button „Alle freigeben“ NICHT betroffen und lassen sich hier nicht entfernen – ändern nur im Excel, danach „Neu laden“.">?</span>
+              <span style="color:#555">– Blatt „nicht annehmen“</span>
               <button id="tamauto-bl-reload" style="margin-left:4px">Neu laden</button></div>
             <div id="tamauto-bl-excel" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
+          </div>
+          <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">
+            <b>Tages-Annahmeliste</b>
+            <span class="tamauto-help" title="PLZ, die heute ZUSÄTZLICH zur Ortsliste angenommen werden. Nur vollständige 5-stellige PLZ (z. B. 47877) – damit nicht versehentlich ganze Gebiete angenommen werden. Die Liste leert sich um Mitternacht automatisch. Entfernen: auf den grünen Eintrag klicken. Steht eine PLZ auch auf einer Sperrliste, gilt die Sperre.">?</span>
+            <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+              <input id="tamauto-al-in" placeholder="5-stellige PLZ" maxlength="5" inputmode="numeric" style="width:110px">
+              <button id="tamauto-al-add">Annehmen</button>
+              <button id="tamauto-al-clear">Alle entfernen</button>
+              <span id="tamauto-al-msg" style="color:#c62828"></span>
+            </div>
+            <div id="tamauto-al-list" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
           </div>
         </div>
         <textarea id="tamauto-ta" placeholder="Zusätzliche PLZ für 24 h – eine je Zeile, z. B.&#10;43&#10;47877" style="display:none;width:100%;height:80px"></textarea>
@@ -1468,6 +1506,29 @@
     $('tamauto-bl-clear').onclick = () => {
       GM_setValue('blacklist', { date: today(), plz: [] }); log('Blacklist: alle PLZ freigegeben.', 'ok'); renderBlacklist();
     };
+
+    // Tages-Annahmeliste (nur exakt 5 Ziffern)
+    const addAl = () => {
+      const v = $('tamauto-al-in').value.trim();
+      if (!/^\d{5}$/.test(v)) {
+        $('tamauto-al-msg').textContent = 'Bitte vollständige 5-stellige PLZ eingeben.';
+        $('tamauto-al-in').style.borderColor = '#c62828';
+        return;
+      }
+      $('tamauto-al-msg').textContent = ''; $('tamauto-al-in').style.borderColor = '';
+      const a = acceptlist();
+      if (!a.plz.includes(v)) { a.plz.push(v); a.plz.sort(); GM_setValue('acceptlist', a); }
+      log(`Tages-Annahmeliste: PLZ ${v} wird heute zusätzlich angenommen.`, 'ok');
+      $('tamauto-al-in').value = ''; renderAcceptlist();
+      scheduleCheck('Tages-Annahmeliste'); // sofort gegen die aktuelle Tabelle prüfen
+    };
+    $('tamauto-al-add').onclick = addAl;
+    $('tamauto-al-in').onkeydown = (e) => { if (e.key === 'Enter') addAl(); };
+    $('tamauto-al-in').oninput = () => { $('tamauto-al-msg').textContent = ''; $('tamauto-al-in').style.borderColor = ''; };
+    $('tamauto-al-clear').onclick = () => {
+      GM_setValue('acceptlist', { date: today(), plz: [] }); log('Tages-Annahmeliste geleert.'); renderAcceptlist();
+    };
+    renderAcceptlist();
     // Minimieren: Inhalt aus, Höhe vorübergehend automatisch
     $('tamauto-min').onclick = () => {
       const b = $('tamauto-body');
