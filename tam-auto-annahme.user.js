@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.7.5
+// @version      1.8.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -58,7 +58,7 @@
     // eingeschaltetes Log nach dem Update bei allen aus ist.
     consoleLog: GM_getValue('consoleLogV2', false),
     delayOn: GM_getValue('delayOn', false),       // Verzögerung vor jedem Klickschritt der Annahme
-    delaySec: Math.min(1, Math.max(0.01, GM_getValue('delaySec', 0.3))), // 0,01–1,00 s in 0,01-s-Schritten
+    delaySec: Math.min(1, Math.max(0.01, GM_getValue('delaySec', 0.17))), // 0,01–1,00 s in 0,01-s-Schritten, Standard 0,17
     delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung
     delayRandomMs: GM_getValue('delayRandomMsV2', 100), // Streuung 0 … x ms (Standard 100 ms)
   });
@@ -589,6 +589,7 @@
       return maskSeen || rerendered;
     }, 10000, 100);
     const ok = maskSeen || Date.now() - t0 < 10000;
+    if (ok) lastAnyRefreshAt = Date.now();
     const stamp = new Date().toLocaleTimeString('de-DE');
     setRefreshStatus(ok ? `Letzter Refresh: ${stamp} ✓ (Auto-Refresh)` : `Letzter Refresh: ${stamp} ✗ keine Wirkung`);
     if (ok !== lastRefreshOk) {
@@ -606,10 +607,33 @@
   let ownRefresh = false;   // true, solange das Script selbst refresht
   let manualClickAt = 0;    // Zeitpunkt des letzten echten Klicks auf den Refresh-Pfeil
   let refreshNoteTimer = null;
+
+  // ---- TAM-Takt (Server-Autorefresh als Zeitbasis t = 0)
+  // TAM lädt die Tabelle selbst in festem Takt neu (Standard 60 s). Jede erkannte TAM-Aktualisierung ist t = 0;
+  // der Auto-Refresh des Scripts wird darauf ausgerichtet und entfällt, wenn TAM ohnehin gleich neu lädt.
+  let lastAnyRefreshAt = 0;   // letzter Refresh gleich welcher Quelle (Script, TAM, manuell)
+  let lastTamRefreshAt = 0;   // letzte TAM-Aktualisierung (t = 0)
+  const tamGaps = [];         // gemessene Abstände zwischen TAM-Aktualisierungen
+  function tamPeriodMs() {
+    if (tamGaps.length < 2) return 60000;
+    const s = [...tamGaps].sort((a, b) => a - b);
+    return s[Math.floor(s.length / 2)]; // Median, robust gegen Ausreißer
+  }
+  function noteTamRefresh(now) {
+    if (lastTamRefreshAt) {
+      const gap = now - lastTamRefreshAt;
+      if (gap > 20000 && gap < 600000) { tamGaps.push(gap); if (tamGaps.length > 6) tamGaps.shift(); }
+    }
+    lastTamRefreshAt = now;
+  }
+
   function noteExternalRefresh() {
     const src = Date.now() - manualClickAt < 15000 ? 'manuell' : 'TAM';
     clearTimeout(refreshNoteTimer); // eine Aktualisierung erzeugt viele DOM-Änderungen → einmal melden
     refreshNoteTimer = setTimeout(() => {
+      const now = Date.now();
+      lastAnyRefreshAt = now;
+      if (src === 'TAM') noteTamRefresh(now);
       setRefreshStatus(`Letzter Refresh: ${new Date().toLocaleTimeString('de-DE')} ✓ (${src})`);
       if (!cfg.enabled) log(`Refresh (${src}) – Tabelle neu geladen; Script gestoppt, kein Abgleich.`);
     }, 500);
@@ -818,6 +842,7 @@
     if (busy) { recheck = true; return; } // läuft gerade etwas → danach erneut prüfen
     busy = true;
     recheck = false; // Tabelle wird jetzt frisch gelesen
+    lastCycleAt = Date.now();
     try {
       if (!places.plz.length && !places.orte.length) { log('Keine Ortsliste geladen – übersprungen.', 'err'); return; }
       if (!onPublishedTab()) {
@@ -885,30 +910,71 @@
     } finally { releaseBusy(); }
   }
 
-  // Ein Takt: erst Refresh der Website (falls Auto-Refresh an), danach Abgleich mit der Ortsliste
+  // ---- Takt: läuft jede Sekunde, entscheidet aber anhand der TAM-Zeitbasis, ob ein eigener Refresh nötig ist
+  let lastHousekeepAt = 0;
+  let lastCycleAt = 0;
+  const arActive = () => cfg.autoRefresh && cfg.intervalSec <= 60;
+
+  // Muss das Script jetzt selbst refreshen? Nein, wenn seit dem letzten Refresh (egal welcher Quelle) noch
+  // kein Intervall vergangen ist oder die nächste TAM-Aktualisierung unmittelbar bevorsteht.
+  function ownRefreshDue(now) {
+    const iv = cfg.intervalSec * 1000;
+    if (now - lastAnyRefreshAt < iv - 700) return false; // Toleranz für den Sekundentakt
+    if (lastTamRefreshAt) {
+      const untilTam = lastTamRefreshAt + tamPeriodMs() - now;   // < 0 = TAM ist überfällig
+      const margin = Math.min(5000, iv / 3);
+      if (untilTam > -10000 && untilTam < margin) return false;  // TAM lädt gleich selbst (bis 10 s Verspätung abwarten)
+    }
+    return true;
+  }
+
+  function renderSync(now) {
+    const el = document.getElementById('tamauto-sync');
+    if (!el) return;
+    if (!lastTamRefreshAt) { el.textContent = 'TAM-Takt: wird erkannt (nach der nächsten TAM-Aktualisierung) …'; return; }
+    const period = tamPeriodMs();
+    const untilTam = Math.max(0, Math.round((lastTamRefreshAt + period - now) / 1000));
+    let txt = `TAM-Takt ${Math.round(period / 1000)} s · nächste TAM-Aktualisierung in ${untilTam} s`;
+    if (arActive()) {
+      const nextOwn = Math.max(0, Math.round((lastAnyRefreshAt + cfg.intervalSec * 1000 - now) / 1000));
+      txt += nextOwn >= untilTam ? ' · Auto-Refresh wartet auf TAM' : ` · Auto-Refresh in ${nextOwn} s`;
+    }
+    el.textContent = txt;
+  }
+
   async function tick() {
-    if (license && license.exp < today()) { location.reload(); return; } // Lizenz abgelaufen → Aktivierungsfeld
-    renderBlacklist(); // nach Mitternacht Anzeige leeren
-    renderStatus();    // abgelaufene Zusatzliste ausblenden
-    if (!busy && cfg.enabled) dismissMessages(); // liegengebliebene TAM-Meldungen (z. B. "bereits vergeben") wegklicken
+    const now = Date.now();
+    if (now - lastHousekeepAt >= 5000) {
+      lastHousekeepAt = now;
+      if (license && license.exp < today()) { location.reload(); return; } // Lizenz abgelaufen → Aktivierungsfeld
+      renderBlacklist(); // nach Mitternacht Anzeige leeren
+      renderStatus();    // abgelaufene Zusatzliste ausblenden
+      if (!busy && cfg.enabled) dismissMessages(); // liegengebliebene TAM-Meldungen (z. B. "bereits vergeben") wegklicken
+    }
+    renderSync(now);
     if (busy || !onPublishedTab()) return;
-    let refreshed = false;
-    if (cfg.autoRefresh && cfg.intervalSec <= 60) {
+    if (arActive()) {
+      if (!ownRefreshDue(now)) return;
       busy = true; // eigene Tabellenänderungen beim Refresh nicht doppelt auswerten
       ownRefresh = true;
+      let refreshed = false;
       try { refreshed = await refreshGrid(); } finally { busy = false; recheck = false; ownRefresh = false; }
+      if (!refreshed) lastAnyRefreshAt = Date.now(); // nicht im Sekundentakt erneut versuchen
+      await cycle(refreshed ? 'Refresh' : 'Intervall');
+    } else if (cfg.enabled && now - lastCycleAt > 60000) {
+      // Ohne Auto-Refresh gleicht die TAM-Aktualisierung ab; das hier ist nur ein Sicherheitsnetz
+      await cycle('Intervall');
     }
-    await cycle(refreshed ? 'Refresh' : 'Intervall');
   }
 
   function updateRefreshStatus() {
-    setRefreshStatus(cfg.intervalSec > 60 ? 'Auto-Refresh aus – Abgleich synchron mit TAM-Aktualisierung (jede Minute)'
-      : cfg.autoRefresh ? `Auto-Refresh alle ${cfg.intervalSec} s` : 'Auto-Refresh aus');
+    setRefreshStatus(cfg.intervalSec > 60 ? 'Auto-Refresh aus – Abgleich synchron mit TAM-Aktualisierung'
+      : cfg.autoRefresh ? `Auto-Refresh alle ${cfg.intervalSec} s, ausgerichtet am TAM-Takt` : 'Auto-Refresh aus');
   }
 
   function restartTimer() {
     clearInterval(timer);
-    timer = setInterval(tick, cfg.intervalSec * 1000); // läuft immer: Auto-Refresh ist unabhängig von Start/Stop
+    timer = setInterval(tick, 1000); // Sekundentakt; ob refresht wird, entscheidet ownRefreshDue()
     updateRefreshStatus();
   }
 
@@ -946,6 +1012,7 @@
         <div id="tamauto-extra" style="color:#1a4d8f;display:none"></div>
         <div id="tamauto-status" style="color:#555">bereit</div>
         <div id="tamauto-refresh" style="color:#555"></div>
+        <div id="tamauto-sync" style="color:#555"></div>
         <div id="tamauto-tabbar" style="display:flex;flex-wrap:wrap;gap:0 2px;margin-top:6px">
           <button class="tamauto-tabbtn" data-page="tamauto-page-main">Bedienung</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-adv">Erweiterte Einstellungen</button>
@@ -1286,7 +1353,8 @@
       const tabSwitch = muts.some((m) => m.type === 'attributes' && m.target.tagName === 'LI' &&
         m.target.id && m.target.id.endsWith('__' + cfg.tabPanelId));
       // Anzeige "Letzter Refresh" auch bei Refresh von außen – unabhängig von Start/Stop
-      const src = relevant && !ownRefresh ? noteExternalRefresh() : '';
+      // (nicht während einer Annahme: Änderungen durch die Annahme selbst sind kein TAM-Takt)
+      const src = relevant && !ownRefresh && !busy ? noteExternalRefresh() : '';
       if (!cfg.enabled) return;
       if (!relevant && !tabSwitch) return;
       // Während einer Prüfung/Annahme nicht verwerfen, sondern direkt danach erneut prüfen

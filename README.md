@@ -95,7 +95,8 @@ Gesperrte Treffer stehen im Protokoll („Treffer, aber gesperrt: … → nicht 
 werden im Reiter angezeigt (braun), ändern nur im Excel. Fehlt das Blatt, ist die Sperrliste leer –
 das Blatt „annehmen“ wird nie als Sperrliste verwendet.
 
-**Verzögerung** (ebenfalls in „Erweiterte Einstellungen“): Checkbox + Slider **0,01–1,00 s** in 0,01-s-Schritten.
+**Verzögerung** (ebenfalls in „Erweiterte Einstellungen“): Checkbox + Slider **0,01–1,00 s** in 0,01-s-Schritten
+(Standard **0,17 s**).
 Vor jedem Klickschritt der Annahme (Doppelklick, 0-km-Aufträge, alle auswählen, Annehmen, Haken, Bestätigen)
 wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt zufällig **0 bis x ms** dazu
 (Standard **100 ms**, einstellbar), bei jedem Schritt neu gewürfelt.
@@ -116,6 +117,19 @@ Zeitraum wählbar (Heute / letzte 7 Tage / dieser Monat / alle). Unten: **Anzahl
 Summe gesamt in Euro** sowie Aufträge je PLZ. 0-km-Aufträge aus der Umgebung stehen mit drin, haben aber
 keinen Preis (steht nicht in der Tabelle). „Liste leeren“ löscht das Auftragsbuch (mit Rückfrage).
 Das Auftragsbuch wird nur in diesem Browser gespeichert.
+
+## TAM-Takt (Server-Zeitbasis)
+
+TAM lädt die Tabelle selbst in festem Takt neu („Automatisch alle 1 Minuten aktualisieren“ – bleibt immer an).
+Das Script nimmt jede erkannte **TAM-Aktualisierung als t = 0** und richtet den eigenen Auto-Refresh danach aus:
+
+- Eigener Refresh nur, wenn seit dem letzten Refresh (egal welcher Quelle) das Intervall vergangen ist.
+- Steht die nächste TAM-Aktualisierung unmittelbar bevor, **entfällt** der eigene Refresh – TAM lädt ohnehin neu.
+  Beispiel 30 s: Refresh bei t = 30, bei t = 60 nur TAM → halb so viele eigene Ladevorgänge wie vorher,
+  ohne doppelte Refreshes.
+- Den TAM-Takt misst das Script selbst (Median der gemessenen Abstände, bis dahin 60 s). Bleibt die
+  TAM-Aktualisierung aus (> 10 s überfällig), refresht das Script wieder selbst.
+- Anzeige im Bedienfeld: „TAM-Takt 60 s · nächste TAM-Aktualisierung in 23 s · Auto-Refresh in 7 s“.
 
 ## Abgleich und Protokoll
 
@@ -182,6 +196,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.8.0 – 2026-09-24
+- **TAM-Takt:** Die TAM-Server-Aktualisierung gilt als t = 0; der Auto-Refresh wird darauf ausgerichtet und
+  entfällt, wenn TAM gleich selbst neu lädt (weniger Last, keine doppelten Refreshes). Takt wird gemessen,
+  Anzeige „nächste TAM-Aktualisierung in … s“.
+- Standardwert Verzögerung 0,17 s.
 
 ### 1.7.5 – 2026-09-24
 - Softwareupdate: Ist GitHub oder das Repo nicht erreichbar (Netzwerk, Zeitüberschreitung, Fehlerseite),
