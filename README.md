@@ -1,4 +1,4 @@
-# TAM Auto-Annahme (IB Thomée)
+# TAM Auto-Annahme (IB Thomée GmbH)
 
 Tampermonkey-Userscript für das **TÜV SÜD Auftragsmanagement (TAM)**. Es prüft den Tab
 **„[Meine Aufträge] Veröffentlichte Aufträge“** regelmäßig und nimmt Aufträge automatisch an,
@@ -93,6 +93,9 @@ Ein GitHub-Konto ist **nicht** nötig. Updates kommen danach automatisch (siehe 
 - Test mit nachgebauter TAM-Oberfläche (jsdom): `npm i jsdom@24 && node test/mock-tam.test.js`
 
 ## Changelog
+
+### 1.0.3 – 2026-09-24
+- Script-Name jetzt **„TAM Auto-Annahme (IB Thomée GmbH)“**.
 
 ### 1.0.2 – 2026-09-24
 - Autor **IB Thomée GmbH** im Script-Kopf (statt „unbekannt“).
