@@ -183,6 +183,11 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.7.3 – 2026-09-24
+- Bugfix: Meldung **„Auftrag bereits vergeben!“** statt Auftragskarte wird sofort erkannt, mit **OK**
+  geschlossen und protokolliert (vorher 8 s Warten, Meldung blieb offen). Liegengebliebene TAM-Meldungen
+  mit OK-Button werden beim nächsten Takt automatisch geschlossen.
+
 ### 1.7.2 – 2026-09-24
 - Reiter Info: Hinweis, dass das Löschen von Cookies/Website-Daten die Lizenz löschen kann.
 

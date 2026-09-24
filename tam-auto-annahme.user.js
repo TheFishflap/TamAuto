@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.7.2
+// @version      1.7.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -636,6 +636,22 @@
     if (btn) clickBtn(btn); else { const x = win.querySelector('.x-tool-close'); if (x) fire(x); }
   }
 
+  // TAM-Meldungsfenster (Titel + "OK"), z. B. "Auftrag bereits vergeben!" – blockieren sonst die Oberfläche
+  const MSG_TITLE = /bereits vergeben|nicht mehr verfügbar|nicht verfügbar|fehler|hinweis|achtung|information/i;
+  function dismissMessage(win) {
+    if (!win || !visible(win)) return;
+    const ok = findButton(/^(ok|schließen)$/i, win);
+    if (ok) clickBtn(ok); else closeWindow(win);
+  }
+  // Alle offenen Meldungen mit OK-Button schließen (nicht Auftragskarte / Bestätigungsdialog)
+  function dismissMessages() {
+    visibleWindows().filter((w) => MSG_TITLE.test(winTitle(w)) && !cfg.orderWindowTitle.test(winTitle(w)) &&
+      !cfg.confirmDialogTitle.test(winTitle(w)) && findButton(/^ok$/i, w)).forEach((w) => {
+      log(`TAM-Meldung „${winTitle(w)}“ geschlossen.`, 'debug');
+      dismissMessage(w);
+    });
+  }
+
   // ---- Auftragskarte (Aufbau laut TAM):
   // Warenkorb: .x-view-item mit <input class="x-view-item-checkbox"> + AuftragsNr als Text
   //            Kopf-Checkbox im Panel-Header "Warenkorb" = alle auswählen
@@ -685,9 +701,18 @@
     fire(cell, ['mousedown', 'mouseup', 'click']);
     await sleep(200);
     fire(cell, ['mousedown', 'mouseup', 'click', 'dblclick']);
-    const card = await waitFor(() => visibleWindows()
-      .find((w) => !before.has(w) && cfg.orderWindowTitle.test(winTitle(w))), 8000);
-    if (!card) { log(`Auftragskarte für ${nr} öffnete sich nicht.`, 'err'); return false; }
+    // Warten auf die Auftragskarte – oder auf eine TAM-Meldung statt der Karte
+    // (z. B. "Auftrag bereits vergeben!": ein anderer Anbieter war schneller)
+    const opened = await waitFor(() => visibleWindows().find((w) => !before.has(w) &&
+      (cfg.orderWindowTitle.test(winTitle(w)) || MSG_TITLE.test(winTitle(w)))), 8000);
+    if (opened && !cfg.orderWindowTitle.test(winTitle(opened))) {
+      const msg = text(opened.querySelector('.x-window-body, .ext-mb-text') || opened).replace(winTitle(opened), '').trim();
+      log(`${nr}: TAM meldet „${winTitle(opened)}“${msg ? ` – ${msg.slice(0, 120)}` : ''}`, 'err');
+      dismissMessage(opened);
+      return false;
+    }
+    const card = opened;
+    if (!card) { log(`Auftragskarte für ${nr} öffnete sich nicht.`, 'err'); dismissMessages(); return false; }
 
     // Sicherheitscheck: richtige Auftragskarte?
     if (!winTitle(card).includes(nr)) {
@@ -864,6 +889,7 @@
     if (license && license.exp < today()) { location.reload(); return; } // Lizenz abgelaufen → Aktivierungsfeld
     renderBlacklist(); // nach Mitternacht Anzeige leeren
     renderStatus();    // abgelaufene Zusatzliste ausblenden
+    if (!busy && cfg.enabled) dismissMessages(); // liegengebliebene TAM-Meldungen (z. B. "bereits vergeben") wegklicken
     if (busy || !onPublishedTab()) return;
     let refreshed = false;
     if (cfg.autoRefresh && cfg.intervalSec <= 60) {
