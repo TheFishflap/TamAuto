@@ -107,7 +107,24 @@ wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt 
 **Drehregler** für die Lautstärke (0–100 %, Standard 60 %): hoch/runter ziehen, Mausrad oder Pfeiltasten,
 Doppelklick = 60 %; nach dem Drehen wird der Ton einmal vorgespielt. **▶ Test** spielt ihn ab.
 **Popups** (Standard **an**): Desktop-Benachrichtigung bei Annahme ein/aus; **▶ Test** zeigt eine
-Test-Benachrichtigung (erscheint nichts: Benachrichtigungen für Browser/Tampermonkey in Windows erlauben).
+Test-Benachrichtigung. Erscheint nichts → [Popups einschalten](#popups-einschalten) (auch über das **?** daneben).
+
+#### Popups einschalten
+
+Die Popups kommen als Windows-Benachrichtigung vom Browser. Erscheint beim **▶ Test** nichts:
+
+1. **Windows-Benachrichtigungen erlauben:** Windows-Taste → *Einstellungen* → *System* → *Benachrichtigungen*.
+   - „Benachrichtigungen“ **ein**.
+   - In der Liste darunter den eigenen Browser (**Google Chrome**, **Microsoft Edge** oder **Firefox**) **ein**.
+2. **„Nicht stören“ / Fokus-Assistent ausschalten:** ebenfalls unter *System* → *Benachrichtigungen*
+   bzw. *Fokus* – solange „Nicht stören“ aktiv ist, zeigt Windows keine Popups (sie landen nur in der Mitteilungszentrale).
+3. **Browser-Einstellung (nur falls nötig):**
+   - Chrome: `chrome://settings/content/notifications` – „Websites dürfen Benachrichtigungen senden“ nicht komplett blockieren.
+   - Edge: `edge://settings/content/notifications` – nicht komplett blockieren.
+   - Firefox: *Einstellungen* → *Datenschutz & Sicherheit* → *Berechtigungen* → *Benachrichtigungen* – nicht „Neue Anfragen blockieren“ für alles.
+4. Browser **neu starten**, TAM neu laden und **▶ Test** erneut klicken.
+
+Hinweis: Popups und Benachrichtigungston sind unabhängig – der Gong kommt auch ohne Popups.
 
 **Console Log** (ebenfalls in „Erweiterte Einstellungen“, Standard **aus**): blendet das Protokoll des Scripts
 unten im Bedienfeld ein/aus. Das Script schreibt nichts in die Browser-Konsole.
@@ -125,6 +142,11 @@ Zeitraum wählbar (Heute / letzte 7 Tage / dieser Monat / alle). Unten: **Anzahl
 Summe gesamt in Euro** sowie Aufträge je PLZ. 0-km-Aufträge aus der Umgebung stehen mit drin, haben aber
 keinen Preis (steht nicht in der Tabelle). „Liste leeren“ löscht das Auftragsbuch (mit Rückfrage).
 Das Auftragsbuch wird nur in diesem Browser gespeichert.
+
+**Trefferquote** (unten im Auftragsbuch, gleicher Zeitraum):
+- **passend** = veröffentlichte Aufträge, deren PLZ in der Ortsliste steht (jeder Auftrag einmal gezählt),
+- **angenommen**, **bereits vergeben** (beim Öffnen schon an einen anderen Anbieter vergeben), **Fehler**, ggf. **gesperrt**,
+- **Angenommen von passenden** und **von tatsächlich verfügbaren** (= versucht und nicht schon vergeben) in Prozent.
 
 ## TAM-Takt (Server-Zeitbasis)
 
@@ -204,6 +226,11 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.8.4 – 2026-09-24
+- Auftragsbuch: **Trefferquote** – passende Aufträge, angenommen, bereits vergeben, Fehler; Quote von passenden
+  und von tatsächlich verfügbaren.
+- Popups: **?** neben „▶ Test“ mit Link zur Anleitung [Popups einschalten](#popups-einschalten).
 
 ### 1.8.3 – 2026-09-24
 - Tages-Blacklist und Sperrliste aus Excel in den Reiter **Bedienung** verschoben („Bedienung (x PLZ gesperrt)“).

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.8.3
+// @version      1.8.4
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -323,6 +323,45 @@
     renderOrderbook();
   }
 
+  // ---- Trefferquote: jeder veröffentlichte Auftrag mit passender PLZ wird einmal erfasst und bekommt ein Ergebnis
+  // Status: passend (noch kein Ergebnis) · angenommen · vergeben (war nicht mehr verfügbar) · fehler · gesperrt
+  function hitStats() {
+    const m = GM_getValue('hitstats', {});
+    const limit = Date.now() - 120 * 864e5; // ältere Einträge (> 120 Tage) verwerfen
+    Object.keys(m).forEach((k) => { if (new Date(m[k].ts) < limit) delete m[k]; });
+    return m;
+  }
+  function trackHit(o, status) {
+    const key = o.nr || o.key;
+    if (!key) return;
+    const m = hitStats();
+    const e = m[key];
+    if (e && !(e.s === 'gesperrt' && status === 'passend')) return; // schon erfasst (nur Sperre → passend darf wechseln)
+    m[key] = { ts: e ? e.ts : new Date().toISOString(), plz: o.plz, s: status };
+    GM_setValue('hitstats', m);
+  }
+  function trackResult(o, status) {
+    const key = o.nr || o.key;
+    const m = hitStats();
+    m[key] = Object.assign(m[key] || { ts: new Date().toISOString(), plz: o.plz }, { s: status });
+    GM_setValue('hitstats', m);
+  }
+  const pct = (a, b) => (b ? `${Math.round((a / b) * 100)} %` : '–');
+
+  function renderHitRate(from) {
+    const el = document.getElementById('tamauto-ob-rate');
+    if (!el) return;
+    const rows = Object.values(hitStats()).filter((e) => new Date(e.ts) >= from);
+    const c = (s) => rows.filter((e) => e.s === s).length;
+    const passend = rows.length - c('gesperrt');           // veröffentlicht, PLZ stimmt (ohne gesperrte)
+    const angenommen = c('angenommen');
+    const vergeben = c('vergeben');                        // war beim Öffnen schon vergeben
+    const verfuegbar = passend - vergeben - c('passend');  // tatsächlich verfügbar = versucht und nicht schon vergeben
+    el.innerHTML = `<b>Trefferquote</b> · ${passend} passend (PLZ stimmt) · <b style="color:#2e7d32">${angenommen} angenommen</b> · ` +
+      `${vergeben} bereits vergeben · ${c('fehler')} Fehler` + (c('gesperrt') ? ` · ${c('gesperrt')} gesperrt` : '') +
+      `<br>Angenommen von passenden: <b>${pct(angenommen, passend)}</b> · von tatsächlich verfügbaren: <b>${pct(angenommen, verfuegbar)}</b>`;
+  }
+
   function renderOrderbook() {
     const tbody = document.getElementById('tamauto-ob-rows');
     if (!tbody) return;
@@ -355,6 +394,7 @@
       (noPrice ? ` <span style="color:#555">(${noPrice} ohne Preis)</span>` : '');
     document.getElementById('tamauto-ob-plz').textContent = Object.entries(perPlz)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([p, c]) => `${p} (${c})`).join(' · ');
+    renderHitRate(from);
   }
 
   // ------------------------------------------------------------------ Tages-Blacklist
@@ -739,6 +779,7 @@
     if (opened && !cfg.orderWindowTitle.test(winTitle(opened))) {
       const msg = text(opened.querySelector('.x-window-body, .ext-mb-text') || opened).replace(winTitle(opened), '').trim();
       log(`${nr}: TAM meldet „${winTitle(opened)}“${msg ? ` – ${msg.slice(0, 120)}` : ''}`, 'err');
+      if (/bereits vergeben|nicht mehr verfügbar/i.test(`${winTitle(opened)} ${msg}`)) order.failReason = 'vergeben';
       dismissMessage(opened);
       return false;
     }
@@ -814,6 +855,7 @@
       /fehler|error|nicht möglich|bereits|vergeben/i.test(text(w)));
     if (errWin) {
       log(`TAM meldet: ${text(errWin).slice(0, 160)}`, 'err');
+      if (/bereits|vergeben|nicht mehr verfügbar/i.test(text(errWin))) order.failReason = 'vergeben';
       closeWindow(errWin); await sleep(300); closeWindow(card);
       return false;
     }
@@ -870,6 +912,8 @@
       // Gesperrte (Tages-Blacklist) nicht annehmen, aber auch nicht als erledigt merken → morgen wieder möglich
       const hits = orders.filter((o) => matches(o) && !blocked(o));
       const blockedHits = orders.filter((o) => matches(o) && blocked(o));
+      hits.forEach((o) => trackHit(o, 'passend'));        // Trefferquote: jeder passende Auftrag einmal
+      blockedHits.forEach((o) => trackHit(o, 'gesperrt'));
       setStatus(`${new Date().toLocaleTimeString('de-DE')}: ${all.length} in Tabelle · ${orders.length} offen · ` +
         `${hits.length} passend · ${blockedHits.length} gesperrt · ${old.length} bereits bearbeitet`);
 
@@ -899,6 +943,7 @@
         }
         log(`Nehme an: ${desc}`);
         const ok = await acceptOrder(o);
+        trackResult(o, ok ? 'angenommen' : o.failReason === 'vergeben' ? 'vergeben' : 'fehler');
         if (ok) {
           const plus = (o.extra || []).length ? ` + ${o.extra.join(', ')} (0 km)` : '';
           log(`Angenommen: ${desc}${plus}`, 'ok'); notify('TAM: Auftrag angenommen', desc + plus);
@@ -1061,6 +1106,9 @@
                 <input type="checkbox" id="tamauto-popups"> <b>Popups</b></label>
               <span style="color:#555"> – Desktop-Benachrichtigung</span>
               <button id="tamauto-popup-test" title="Test-Benachrichtigung anzeigen" style="margin-left:4px">▶ Test</button>
+              <a class="tamauto-help" href="https://github.com/TheFishflap/TamAuto#popups-einschalten" target="_blank"
+                title="Kein Popup beim Test? Hier klicken: Anleitung zum Einschalten der Benachrichtigungen (Windows, Browser, Fokus-Assistent)."
+                style="text-decoration:none;margin-left:4px">?</a>
             </div>
           </div>
         </div>
@@ -1107,6 +1155,8 @@
           </div>
           <div id="tamauto-ob-sum" style="margin-top:4px;padding-top:4px;border-top:2px solid #1a4d8f"></div>
           <div id="tamauto-ob-plz" style="color:#555;margin-top:2px"></div>
+          <div id="tamauto-ob-rate" style="margin-top:6px;padding:4px 6px;background:#f3f7fc;border:1px solid #c9d8ee;border-radius:3px"
+            title="Passend = veröffentlichte Aufträge, deren PLZ in der Ortsliste steht. Tatsächlich verfügbar = davon versucht und beim Öffnen nicht schon an einen anderen Anbieter vergeben."></div>
         </div>
         <div id="tamauto-page-main" style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <button id="tamauto-toggle"></button>
