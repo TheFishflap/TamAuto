@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.5.1
+// @version      1.6.0
 // @author       IB Thomée GmbH
+// @copyright    2026, IB Thomée GmbH
+// @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
 // @homepageURL  https://github.com/TheFishflap/TamAuto
@@ -17,6 +19,10 @@
 // @connect      raw.githubusercontent.com
 // @run-at       document-idle
 // ==/UserScript==
+
+// Copyright (c) 2026 IB Thomée GmbH. Alle Rechte vorbehalten.
+// Nutzung nur mit gültigem Lizenzschlüssel der IB Thomée GmbH. Veränderung, Bearbeitung,
+// Weitergabe und Vervielfältigung des Codes sind nicht gestattet. Siehe LICENSE.
 
 (function () {
   'use strict';
@@ -48,10 +54,11 @@
     enabled: GM_getValue('running', DEFAULTS.enabled),
     maxPerCycle: GM_getValue('maxPerCycle', DEFAULTS.maxPerCycle),
     autoRefresh: GM_getValue('autoRefresh', true),
-    consoleLog: GM_getValue('consoleLog', true), // Protokoll im Bedienfeld anzeigen ("Console Log")
+    consoleLog: GM_getValue('consoleLog', false), // Protokoll im Bedienfeld anzeigen ("Console Log")
     delayOn: GM_getValue('delayOn', false),       // Verzögerung vor jedem Klickschritt der Annahme
-    delaySec: GM_getValue('delaySec', 1),         // 1,0–5,0 s in 0,1-s-Schritten
-    delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung (Werte fest im Code)
+    delaySec: Math.min(2, GM_getValue('delaySec', 0.5)), // 0,0–2,0 s in 0,1-s-Schritten
+    delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung
+    delayRandomMs: GM_getValue('delayRandomMs', 180), // Streuung 0 … x ms
   });
 
   let places = GM_getValue('places', { plz: [], orte: [], loadedAt: null, source: '' });
@@ -615,13 +622,12 @@
   }
 
   // Verzögerung vor jedem Klickschritt der Annahme (Erweiterte Einstellungen):
-  // eingestellte Sekunden (1,0–5,0) + optional zufällige Streuung, bei jedem Schritt neu gewürfelt.
-  // Die Streuung ist fest im Code und wird bewusst nicht im Bedienfeld angezeigt.
-  const SPREAD_MIN = 0.02, SPREAD_MAX = 0.5;
+  // eingestellte Sekunden (0,0–2,0) + optional Randomizer (zufällig 0 … x ms), bei jedem Schritt neu gewürfelt.
   async function humanDelay(step) {
     if (!cfg.delayOn) return;
-    const spread = cfg.delayRandom ? SPREAD_MIN + Math.random() * (SPREAD_MAX - SPREAD_MIN) : 0;
+    const spread = cfg.delayRandom ? Math.random() * cfg.delayRandomMs / 1000 : 0;
     const s = cfg.delaySec + spread;
+    if (s <= 0) return;
     log(`Verzögerung vor: ${step}`, 'debug');
     await sleep(s * 1000);
   }
@@ -816,6 +822,7 @@
 
   // Ein Takt: erst Refresh der Website (falls Auto-Refresh an), danach Abgleich mit der Ortsliste
   async function tick() {
+    if (license && license.exp < today()) { location.reload(); return; } // Lizenz abgelaufen → Aktivierungsfeld
     renderBlacklist(); // nach Mitternacht Anzeige leeren
     if (busy || !onPublishedTab()) return;
     let refreshed = false;
@@ -885,9 +892,12 @@
               <input type="checkbox" id="tamauto-delay-on"> <b>Verzögerung</b></label>
             <span style="color:#555"> – vor jedem Klickschritt der Annahme</span>
             <div class="tamauto-chk" style="margin-top:4px">
-              <input type="range" id="tamauto-delay" min="1" max="5" step="0.1" style="width:160px;margin:0">
+              <input type="range" id="tamauto-delay" min="0" max="2" step="0.1" style="width:140px;margin:0">
               <b id="tamauto-delay-val"></b>
-              <label class="tamauto-chk" style="margin-left:8px"><input type="checkbox" id="tamauto-delay-rnd"> Randomizer</label>
+            </div>
+            <div class="tamauto-chk" style="margin-top:4px">
+              <label class="tamauto-chk"><input type="checkbox" id="tamauto-delay-rnd"> Randomizer</label>
+              + zufällig bis <input id="tamauto-delay-ms" type="number" min="0" max="2000" step="10" style="width:56px;margin:0"> ms
             </div>
           </div>
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
@@ -895,6 +905,7 @@
               <input type="checkbox" id="tamauto-consolelog"> <b>Console Log</b></label>
             <span style="color:#555"> – Protokoll des Scripts unten im Bedienfeld anzeigen</span>
           </div>
+          <div id="tamauto-lic-info" style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd;color:#555"></div>
         </div>
         <div id="tamauto-page-book" style="display:none;margin:6px 0">
           <div class="tamauto-chk" style="justify-content:space-between;width:100%">
@@ -1011,21 +1022,39 @@
       $('tamauto-delay').disabled = !cfg.delayOn;
       $('tamauto-delay-rnd').checked = cfg.delayRandom;
       $('tamauto-delay-rnd').disabled = !cfg.delayOn;
+      $('tamauto-delay-ms').value = cfg.delayRandomMs;
+      $('tamauto-delay-ms').disabled = !cfg.delayOn || !cfg.delayRandom;
       $('tamauto-delay-val').textContent = cfg.delayOn ? fmtSec(cfg.delaySec) : 'aus';
     };
-    const delayInfo = () => `Verzögerung ${fmtSec(cfg.delaySec)} je Klickschritt${cfg.delayRandom ? ' + Randomizer' : ''}.`;
+    const delayInfo = () => `Verzögerung ${fmtSec(cfg.delaySec)} je Klickschritt${cfg.delayRandom ? ` + zufällig bis ${cfg.delayRandomMs} ms` : ''}.`;
     $('tamauto-delay-on').onchange = (e) => {
       cfg.delayOn = e.target.checked; GM_setValue('delayOn', cfg.delayOn); renderDelay();
       log(cfg.delayOn ? `An: ${delayInfo()}` : 'Verzögerung aus.');
     };
     $('tamauto-delay').oninput = (e) => {
-      cfg.delaySec = Math.round(Math.min(5, Math.max(1, +e.target.value || 1)) * 10) / 10; renderDelay();
+      cfg.delaySec = Math.round(Math.min(2, Math.max(0, +e.target.value || 0)) * 10) / 10; renderDelay();
     };
     $('tamauto-delay').onchange = () => { GM_setValue('delaySec', cfg.delaySec); log(delayInfo()); };
     $('tamauto-delay-rnd').onchange = (e) => {
-      cfg.delayRandom = e.target.checked; GM_setValue('delayRandom', cfg.delayRandom); log(delayInfo());
+      cfg.delayRandom = e.target.checked; GM_setValue('delayRandom', cfg.delayRandom); renderDelay(); log(delayInfo());
+    };
+    $('tamauto-delay-ms').onchange = (e) => {
+      cfg.delayRandomMs = Math.round(Math.min(2000, Math.max(0, +e.target.value || 0)));
+      GM_setValue('delayRandomMs', cfg.delayRandomMs); renderDelay(); log(delayInfo());
     };
     renderDelay();
+
+    // Lizenzinfo; ab 30 Tagen vor Ablauf deutlicher Hinweis
+    const daysLeft = Math.ceil((new Date(`${license.exp}T23:59:59`) - Date.now()) / 864e5);
+    $('tamauto-lic-info').innerHTML = `<b>Lizenz:</b> ${license.name} · gültig bis ${fmtDate(license.exp)}` +
+      (daysLeft <= 30 ? ` <b style="color:#c62828">(noch ${daysLeft} Tage – neue Lizenz anfordern)</b>` : '') +
+      `<br>Installations-ID: ${installId()} · © IB Thomée GmbH – Veränderung und Weitergabe nicht gestattet`;
+    if (daysLeft <= 30) {
+      const w = document.createElement('div');
+      Object.assign(w.style, { color: '#c62828', fontWeight: 'bold', margin: '4px 0' });
+      w.textContent = `Lizenz läuft am ${fmtDate(license.exp)} ab (noch ${daysLeft} Tage) – neue Lizenz bei IB Thomée anfordern.`;
+      $('tamauto-body').prepend(w);
+    }
 
     // Console Log: Protokoll des Scripts ein-/ausblenden (keine Ausgaben in die Browser-Konsole)
     const renderConsole = () => { $('tamauto-consolelog').checked = cfg.consoleLog; $('tamauto-log').style.display = cfg.consoleLog ? '' : 'none'; };
@@ -1084,8 +1113,89 @@
     }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
   }
 
+  // ------------------------------------------------------------------ Lizenz
+  // Lizenzschlüssel "TAM1.<daten>.<signatur>": Daten (ID, Name, gültig bis) mit ECDSA P-256 signiert.
+  // Hier steht nur der öffentliche Schlüssel – Lizenzen erstellen kann nur, wer den privaten hat.
+  // Jede Installation hat eine eigene ID → ein Schlüssel funktioniert nur in dieser einen Installation.
+  const LICENSE_PUBKEY = { kty: 'EC', crv: 'P-256',
+    x: '4MkRZl6c7clzD5iIL8m0nwsN0Y6IJRnpJ_C6bcHE64Q', y: '9ymeLeXvTLNSUCWqYVZzLrbSTSEkQFHdbV7WKnIhxlc' };
+  let license = null; // gültige Lizenzdaten nach der Prüfung
+
+  function installId() {
+    let id = GM_getValue('installId', '');
+    if (!/^[A-Z2-7]{4}(-[A-Z2-7]{4}){3}$/.test(id)) {
+      const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+      const r = crypto.getRandomValues(new Uint8Array(16));
+      id = [...r].map((b) => abc[b % 32]).join('').replace(/(.{4})(?!$)/g, '$1-');
+      GM_setValue('installId', id);
+    }
+    return id;
+  }
+
+  const fromB64Url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+  const fmtDate = (iso) => iso.split('-').reverse().join('.');
+
+  async function checkLicense(key) {
+    const m = String(key || '').trim().match(/^TAM1\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/);
+    if (!m) return { ok: false, reason: key ? 'Lizenzschlüssel hat ein ungültiges Format.' : 'Keine Lizenz aktiviert.' };
+    try {
+      const pub = await crypto.subtle.importKey('jwk', LICENSE_PUBKEY, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+      const valid = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, fromB64Url(m[2]), new TextEncoder().encode(m[1]));
+      if (!valid) return { ok: false, reason: 'Lizenzschlüssel ist ungültig.' };
+      const lic = JSON.parse(new TextDecoder().decode(fromB64Url(m[1])));
+      if (lic.v !== 1) return { ok: false, reason: 'Lizenzschlüssel ist ungültig.' };
+      if (lic.id !== installId()) return { ok: false, reason: 'Lizenzschlüssel gehört zu einer anderen Installation.' };
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(lic.exp || '')) return { ok: false, reason: 'Lizenzschlüssel ist nicht befristet und daher ungültig.' };
+      if (lic.exp < today()) return { ok: false, reason: `Lizenz ist am ${fmtDate(lic.exp)} abgelaufen.` };
+      return { ok: true, lic };
+    } catch (e) {
+      return { ok: false, reason: 'Lizenzschlüssel ist ungültig.' };
+    }
+  }
+
+  // Bedienfeld ohne gültige Lizenz: nur Installations-ID und Schlüsseleingabe – das Script tut sonst nichts
+  function buildLicensePanel(reason) {
+    const p = document.createElement('div');
+    p.id = 'tamauto';
+    p.innerHTML = `
+      <b>TAM Auto-Annahme v${VERSION}</b> <span style="color:#555">– © IB Thomée GmbH</span>
+      <div style="margin:6px 0;color:#c62828;font-weight:bold">Lizenz erforderlich: ${reason}</div>
+      <div>Diese Installations-ID an IB Thomée schicken, um einen Lizenzschlüssel zu erhalten:</div>
+      <div style="display:flex;gap:6px;align-items:center;margin:4px 0">
+        <code id="tamauto-lic-id" style="font-size:14px;font-weight:bold;letter-spacing:1px">${installId()}</code>
+        <button id="tamauto-lic-copy">Kopieren</button></div>
+      <textarea id="tamauto-lic-key" placeholder="Lizenzschlüssel (beginnt mit TAM1.)" style="width:100%;height:60px;font:11px monospace"></textarea>
+      <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+        <button id="tamauto-lic-ok">Aktivieren</button><span id="tamauto-lic-msg" style="color:#c62828"></span></div>
+      <a id="tamauto-update" href="${UPDATE_URL}" target="_blank" style="display:none;font-weight:bold;color:#1a4d8f;margin-top:4px"></a>`;
+    Object.assign(p.style, { position: 'fixed', right: '12px', bottom: '12px', width: '420px', zIndex: 99999,
+      background: '#fff', border: '2px solid #c62828', borderRadius: '6px', padding: '8px',
+      font: '12px Arial, sans-serif', boxShadow: '0 4px 14px rgba(0,0,0,.25)' });
+    p.querySelectorAll('button').forEach((b) => Object.assign(b.style,
+      { padding: '3px 8px', border: '1px solid #1a4d8f', borderRadius: '3px', background: '#e8f0fb', cursor: 'pointer' }));
+    document.body.appendChild(p);
+    const $ = (id) => document.getElementById(id);
+    $('tamauto-lic-copy').onclick = () => { navigator.clipboard.writeText(installId()).then(() => { $('tamauto-lic-copy').textContent = 'Kopiert ✓'; }); };
+    $('tamauto-lic-ok').onclick = async () => {
+      const key = $('tamauto-lic-key').value.trim();
+      const res = await checkLicense(key);
+      if (!res.ok) { $('tamauto-lic-msg').textContent = res.reason; return; }
+      GM_setValue('licenseKey', key);
+      $('tamauto-lic-msg').style.color = '#2e7d32';
+      $('tamauto-lic-msg').textContent = `Aktiviert für ${res.lic.name}, gültig bis ${fmtDate(res.lic.exp)} – lade neu …`;
+      setTimeout(() => location.reload(), 1200);
+    };
+  }
+
   // ------------------------------------------------------------------ Start
-  waitFor(() => document.querySelector('.x-viewport'), 30000).then(() => {
+  waitFor(() => document.querySelector('.x-viewport'), 30000).then(async () => {
+    const lc = await checkLicense(GM_getValue('licenseKey', ''));
+    if (!lc.ok) {
+      buildLicensePanel(lc.reason);
+      checkUpdate(); // Updates auch ohne Lizenz
+      return;
+    }
+    license = lc.lic;
     buildPanel();
     watchGrid();
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;

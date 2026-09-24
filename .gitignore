@@ -1,2 +1,6 @@
 node_modules/
 package-lock.json
+# Lizenzverwaltung niemals veröffentlichen (privater Schlüssel!)
+lizenz-privat.json
+ausgestellte-lizenzen.csv
+TamAuto-Lizenzen/

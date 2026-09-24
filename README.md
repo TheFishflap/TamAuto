@@ -40,6 +40,18 @@ und dort auf **„Hinzufügen“** bzw. **„Zu Firefox hinzufügen“** klicken
 
 Ein GitHub-Konto ist **nicht** nötig. Updates kommen danach automatisch (siehe unten).
 
+### Schritt 3 – Lizenz aktivieren
+
+Ohne Lizenz zeigt das Bedienfeld nur **„Lizenz erforderlich“** und eine **Installations-ID**
+(z. B. `ABCD-EFGH-JKLM-NPQR`) – das Script nimmt dann nichts an.
+
+1. Installations-ID mit **„Kopieren“** kopieren und an die IB Thomée GmbH schicken.
+2. Den erhaltenen Lizenzschlüssel (beginnt mit `TAM1.`) einfügen und **„Aktivieren“** klicken.
+
+Die Lizenz gilt nur für diese eine Installation und **bis zum 31.12. des laufenden Jahres**.
+Ab 30 Tagen vor Ablauf erscheint ein roter Hinweis; danach ist eine neue Lizenz nötig.
+Wird Tampermonkey neu installiert oder werden seine Daten gelöscht, entsteht eine neue ID.
+
 > Empfehlung: In Tampermonkey unter *Einstellungen → Userscript-Updates* „Updates prüfen“
 > auf **täglich** stellen. Zusätzlich prüft das Script selbst alle 6 Stunden auf GitHub.
 
@@ -77,13 +89,13 @@ Gesperrte Treffer stehen im Protokoll („Treffer, aber gesperrt: … → nicht 
 werden im Reiter angezeigt (braun), ändern nur im Excel. Fehlt das Blatt, ist die Sperrliste leer –
 das Blatt „annehmen“ wird nie als Sperrliste verwendet.
 
-**Verzögerung** (ebenfalls in „Erweiterte Einstellungen“): Checkbox + Slider **1,0–5,0 s** in 0,1-s-Schritten.
+**Verzögerung** (ebenfalls in „Erweiterte Einstellungen“): Checkbox + Slider **0,0–2,0 s** in 0,1-s-Schritten.
 Vor jedem Klickschritt der Annahme (Doppelklick, 0-km-Aufträge, alle auswählen, Annehmen, Haken, Bestätigen)
-wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt eine zufällige Streuung dazu
-(fest im Code, wird nicht angezeigt). Eine Annahme dauert dadurch ca. 6 × länger.
+wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt zufällig **0 bis x ms** dazu
+(Standard **180 ms**, einstellbar), bei jedem Schritt neu gewürfelt.
 
-**Console Log** (ebenfalls in „Erweiterte Einstellungen“): blendet das Protokoll des Scripts unten im
-Bedienfeld ein/aus. Das Script schreibt nichts in die Browser-Konsole.
+**Console Log** (ebenfalls in „Erweiterte Einstellungen“, Standard **aus**): blendet das Protokoll des Scripts
+unten im Bedienfeld ein/aus. Das Script schreibt nichts in die Browser-Konsole.
 
 ### Reiter „Auftragsbuch“
 
@@ -152,7 +164,19 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 - PLZ mit führender 0 in Excel als **Text** eintragen (sonst macht Excel aus `01` eine `1`;
   einstellige Werte werden automatisch zu `0x` ergänzt).
 
+## Lizenz
+
+© 2026 IB Thomée GmbH. Alle Rechte vorbehalten. Nutzung nur mit gültigem Lizenzschlüssel;
+**Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
+
 ## Changelog
+
+### 1.6.0 – 2026-09-24
+- **Lizenzschlüssel-Aktivierung:** Schlüssel pro Installation (Installations-ID), signiert von der
+  IB Thomée GmbH, immer gültig bis 31.12. des laufenden Jahres. Ohne gültige Lizenz nimmt das Script nichts an.
+- Lizenz: proprietär, IB Thomée GmbH – Veränderung und Weitergabe nicht gestattet (LICENSE).
+- Verzögerung: Slider 0,0–2,0 s; Randomizer mit einstellbarem Bereich in ms (Standard 180 ms).
+- Console Log standardmäßig aus.
 
 ### 1.5.1 – 2026-09-24
 - Button **„Ortslisten laden“** lädt beide Listen (annehmen / nicht annehmen) ohne Cache neu und zeigt
