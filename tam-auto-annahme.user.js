@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.7.1
+// @version      1.7.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -966,6 +966,17 @@
             <tr><td style="padding:1px 8px 1px 0;color:#555">Installations-ID</td><td id="tamauto-info-id" style="font-family:monospace"></td></tr>
             <tr><td style="padding:1px 8px 1px 0;color:#555">Hersteller</td><td>IB Thomée GmbH</td></tr>
           </table>
+          <div style="margin-top:8px;padding:6px 8px;background:#fff8e1;border:1px solid #f0c36d;border-radius:4px">
+            <b>⚠ Hinweis zur Lizenz</b><br>
+            Die Aktivierung wird in diesem Browser gespeichert (Tampermonkey und Website-Daten von TAM).
+            Updates und eine Neuinstallation des Scripts behalten die Lizenz.<br>
+            <b>Werden Cookies bzw. Website-Daten gelöscht</b> (z. B. „Browserdaten löschen“, „Cookies und
+            Websitedaten“, automatisches Löschen beim Schließen des Browsers) <b>oder Tampermonkey deinstalliert,
+            kann die Lizenz verloren gehen.</b> Es entsteht dann eine neue Installations-ID und bei IB Thomée muss
+            ein neuer Lizenzschlüssel angefordert werden.<br>
+            Tipp: Beim Löschen von Browserdaten die Seite <b>tam.tuvsud.com</b> ausnehmen bzw. „Cookies und
+            Websitedaten“ nicht mitlöschen.
+          </div>
           <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd">
             <b>© 2026 IB Thomée GmbH. Alle Rechte vorbehalten.</b><br>
             Die Nutzung ist nur mit einem gültigen Lizenzschlüssel der IB Thomée GmbH gestattet. Der Schlüssel gilt

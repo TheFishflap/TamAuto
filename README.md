@@ -54,6 +54,11 @@ Bei **Updates und Neuinstallation des Scripts** bleibt die Aktivierung erhalten 
 zusätzlich im Browser gesichert). Nur wenn die Browserdaten der TAM-Seite gelöscht werden oder ein anderer
 Browser genutzt wird, ist eine neue Aktivierung nötig.
 
+> **Achtung:** Werden **Cookies bzw. Website-Daten gelöscht** (z. B. „Browserdaten löschen“ oder automatisches
+> Löschen beim Schließen des Browsers) oder Tampermonkey deinstalliert, kann die Lizenz verloren gehen –
+> dann neue Installations-ID an IB Thomée schicken und neuen Schlüssel aktivieren. Tipp: tam.tuvsud.com beim
+> Löschen ausnehmen. Dieser Hinweis steht auch im Reiter **Info**.
+
 > Empfehlung: In Tampermonkey unter *Einstellungen → Userscript-Updates* „Updates prüfen“
 > auf **täglich** stellen. Zusätzlich prüft das Script selbst alle 6 Stunden auf GitHub.
 
@@ -177,6 +182,9 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.7.2 – 2026-09-24
+- Reiter Info: Hinweis, dass das Löschen von Cookies/Website-Daten die Lizenz löschen kann.
 
 ### 1.7.1 – 2026-09-24
 - Neuer Reiter **Info**: Version, Lizenz (Name, gültig bis, Installations-ID), Copyright,
