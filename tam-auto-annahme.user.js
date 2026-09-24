@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.8.4
+// @version      1.8.5
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1106,9 +1106,20 @@
                 <input type="checkbox" id="tamauto-popups"> <b>Popups</b></label>
               <span style="color:#555"> – Desktop-Benachrichtigung</span>
               <button id="tamauto-popup-test" title="Test-Benachrichtigung anzeigen" style="margin-left:4px">▶ Test</button>
-              <a class="tamauto-help" href="https://github.com/TheFishflap/TamAuto#popups-einschalten" target="_blank"
-                title="Kein Popup beim Test? Hier klicken: Anleitung zum Einschalten der Benachrichtigungen (Windows, Browser, Fokus-Assistent)."
-                style="text-decoration:none;margin-left:4px">?</a>
+              <span class="tamauto-help" id="tamauto-popup-help" style="margin-left:4px"
+                title="Kein Popup beim Test? Klicken für die Anleitung zum Einschalten der Benachrichtigungen.">?</span>
+            </div>
+            <!-- Anleitung liegt im Script selbst: funktioniert auch, wenn GitHub nicht erreichbar oder das Projekt privat ist -->
+            <div id="tamauto-popup-helpbox" style="display:none;margin-top:6px;padding:6px 8px;background:#f3f7fc;border:1px solid #c9d8ee;border-radius:3px;font-size:11px;line-height:1.45">
+              <b>Popups einschalten</b> – die Popups kommen als Windows-Benachrichtigung vom Browser:<br>
+              <b>1.</b> Windows-Taste → <i>Einstellungen</i> → <i>System</i> → <i>Benachrichtigungen</i>: „Benachrichtigungen“
+              <b>ein</b> und darunter den eigenen Browser (Chrome, Edge oder Firefox) <b>ein</b>.<br>
+              <b>2.</b> „Nicht stören“ bzw. Fokus-Assistent <b>aus</b> (ebenfalls unter <i>System</i> → <i>Benachrichtigungen</i> / <i>Fokus</i>).<br>
+              <b>3.</b> Nur falls nötig, im Browser Benachrichtigungen nicht komplett blockieren:
+              Chrome <code>chrome://settings/content/notifications</code>, Edge <code>edge://settings/content/notifications</code>,
+              Firefox <i>Einstellungen → Datenschutz &amp; Sicherheit → Berechtigungen → Benachrichtigungen</i>.<br>
+              <b>4.</b> Browser neu starten, TAM neu laden, <b>▶ Test</b> erneut klicken.<br>
+              <span style="color:#555">Der Benachrichtigungston funktioniert auch ohne Popups.</span>
             </div>
           </div>
         </div>
@@ -1380,6 +1391,12 @@
     });
     knob.addEventListener('dblclick', () => setVol(60));
     renderVol();
+
+    // "?" bei Popups: eingebaute Anleitung auf-/zuklappen
+    $('tamauto-popup-help').onclick = () => {
+      const box = $('tamauto-popup-helpbox');
+      box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    };
 
     // Popup testen (unabhängig von der Checkbox, damit man die Browser-Berechtigung prüfen kann)
     $('tamauto-popup-test').onclick = () => {

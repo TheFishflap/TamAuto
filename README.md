@@ -148,6 +148,21 @@ Das Auftragsbuch wird nur in diesem Browser gespeichert.
 - **angenommen**, **bereits vergeben** (beim Öffnen schon an einen anderen Anbieter vergeben), **Fehler**, ggf. **gesperrt**,
 - **Angenommen von passenden** und **von tatsächlich verfügbaren** (= versucht und nicht schon vergeben) in Prozent.
 
+## Wenn GitHub nicht erreichbar ist (Störung, Projekt privat oder offline)
+
+Das Script arbeitet **ohne GitHub** weiter: Annahme, Ortslisten (SharePoint), Lizenzprüfung (läuft lokal, ohne
+Server) und alle Anleitungen im Bedienfeld (z. B. **?** bei Popups) sind im Script selbst enthalten.
+Nur das **automatische Update** und die Installation über den Link fallen aus – „Softwareupdate“ zeigt dann
+„GitHub nicht erreichbar – aktueller Stand: v…“.
+
+**Script ohne GitHub installieren oder aktualisieren** (Datei `tam-auto-annahme.user.js` z. B. per OneDrive/E-Mail):
+1. Tampermonkey-Symbol in der Browserleiste → **Dashboard** → Reiter **Hilfsmittel** (Utilities).
+2. Unter **„Aus Datei importieren“** die Datei `tam-auto-annahme.user.js` auswählen → **Installieren**.
+   (Alternativ die Datei in das Tampermonkey-Dashboard ziehen.)
+3. TAM neu laden (F5). Eine vorhandene Lizenz bleibt erhalten.
+
+Automatische Updates kommen in diesem Fall nicht; eine neue Version wird auf demselben Weg eingespielt.
+
 ## TAM-Takt (Server-Zeitbasis)
 
 TAM lädt die Tabelle selbst in festem Takt neu („Automatisch alle 1 Minuten aktualisieren“ – bleibt immer an).
@@ -226,6 +241,11 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.8.5 – 2026-09-24
+- Popup-Anleitung ist jetzt im Script eingebaut (**?** klappt sie im Bedienfeld auf) – funktioniert auch, wenn
+  GitHub nicht erreichbar oder das Projekt privat/offline ist.
+- README: Abschnitt „Wenn GitHub nicht erreichbar ist“ (Installation/Update aus Datei).
 
 ### 1.8.4 – 2026-09-24
 - Auftragsbuch: **Trefferquote** – passende Aufträge, angenommen, bereits vergeben, Fehler; Quote von passenden
