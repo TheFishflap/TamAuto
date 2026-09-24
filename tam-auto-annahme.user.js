@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.5.0
+// @version      1.5.1
 // @author       IB Thomée GmbH
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
@@ -222,11 +222,14 @@
     return { rows, name: sheet.getAttribute('name') };
   }
 
-  function loadPlacesFromSheet() {
-    log('Lade Ortsliste aus SharePoint …', 'debug');
+  // Lädt beide Listen aus dem Excel: "annehmen" (Ortsliste) und "nicht annehmen" (Sperrliste).
+  // manual = per Button → Ergebnis immer sichtbar protokollieren
+  function loadPlacesFromSheet(manual = false) {
+    log('Lade Ortslisten aus SharePoint …', manual ? 'info' : 'debug');
     return new Promise((resolve) => {
       GM_xmlhttpRequest({
-        method: 'GET', url: cfg.placesUrl, responseType: 'arraybuffer', anonymous: true,
+        method: 'GET', url: cfg.placesUrl, responseType: 'arraybuffer', anonymous: true, nocache: true,
+        headers: { 'Cache-Control': 'no-cache' },
         onload: async (res) => {
           try {
             if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
@@ -239,11 +242,10 @@
             p.block = { plz: b.plz, orte: b.orte };
             const changed = JSON.stringify([p.plz, p.orte, p.block]) !== JSON.stringify([places.plz, places.orte, places.block]);
             places = p; GM_setValue('places', places);
-            if (changed) {
-              log(`Ortsliste geladen: ${places.plz.length} PLZ, ${places.orte.length} Orte (Blatt "${name}"); ` +
-                `Sperrliste "${cfg.blockSheet}": ${b.plz.length} PLZ, ${b.orte.length} Orte` +
-                (bl ? '' : ' (Blatt nicht gefunden)'), 'ok');
-            } else log('Ortsliste unverändert.', 'debug');
+            const summary = `Ortsliste "${name}": ${places.plz.length} PLZ, ${places.orte.length} Orte · ` +
+              `Sperrliste "${cfg.blockSheet}": ${b.plz.length} PLZ, ${b.orte.length} Orte` + (bl ? '' : ' (Blatt nicht gefunden)');
+            if (changed) log(`Ortslisten aktualisiert – ${summary}`, 'ok');
+            else log(`Ortslisten unverändert – ${summary}`, manual ? 'ok' : 'debug');
             renderStatus(); renderBlacklist(); resolve(true);
           } catch (e) {
             log(`Ortsliste nicht ladbar (${e.message}). Freigabe-Link prüfen oder Liste manuell einfügen.`, 'err');
@@ -839,8 +841,10 @@
   function setStatus(s) { const el = document.getElementById('tamauto-status'); if (el) el.textContent = s; }
   function renderStatus() {
     const el = document.getElementById('tamauto-places');
-    if (el) el.textContent = `Ortsliste: ${places.plz.length} PLZ / ${places.orte.length} Orte` +
-      (places.loadedAt ? ` (${places.source}, ${new Date(places.loadedAt).toLocaleString('de-DE')})` : ' – nicht geladen');
+    const xb = places.block || { plz: [], orte: [] };
+    if (el) el.textContent = `Ortsliste: ${places.plz.length} PLZ / ${places.orte.length} Orte · ` +
+      `Sperrliste: ${xb.plz.length + xb.orte.length}` +
+      (places.loadedAt ? ` (geladen ${new Date(places.loadedAt).toLocaleString('de-DE')})` : ' – nicht geladen');
     const btn = document.getElementById('tamauto-toggle');
     if (btn) { btn.textContent = cfg.enabled ? '■ Stop' : '▶ Start'; btn.style.background = cfg.enabled ? '#c62828' : '#2e7d32'; }
     updateTabStatus();
@@ -913,7 +917,7 @@
         </div>
         <div id="tamauto-page-main" style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <button id="tamauto-toggle"></button>
-          <button id="tamauto-load">Ortsliste laden</button>
+          <button id="tamauto-load" title="Lädt Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) neu">Ortslisten laden</button>
           <button id="tamauto-paste">Liste einfügen</button>
           <span class="tamauto-chk" title="Klickt alle x Sekunden den Refresh-Pfeil der Tabelle – unabhängig von Start/Stop">
             <label class="tamauto-chk"><input type="checkbox" id="tamauto-ar"> Auto-Refresh</label>
@@ -948,7 +952,7 @@
     $('tamauto-int').onchange = (e) => {
       cfg.intervalSec = Math.max(15, parseInt(e.target.value, 10) || 30); GM_setValue('intervalSec', cfg.intervalSec); restartTimer();
     };
-    $('tamauto-load').onclick = loadPlacesFromSheet;
+    $('tamauto-load').onclick = () => loadPlacesFromSheet(true);
     $('tamauto-paste').onclick = () => {
       const ta = $('tamauto-ta');
       if (ta.style.display === 'none') { ta.style.display = 'block'; $('tamauto-paste').textContent = 'Übernehmen'; }
@@ -1029,7 +1033,7 @@
     renderConsole();
 
     // Excel-Sperrliste sofort neu laden (z. B. direkt nach einem Storno)
-    $('tamauto-bl-reload').onclick = loadPlacesFromSheet;
+    $('tamauto-bl-reload').onclick = () => loadPlacesFromSheet(true);
 
     // Auftragsbuch
     $('tamauto-ob-range').onchange = renderOrderbook;

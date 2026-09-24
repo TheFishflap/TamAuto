@@ -58,7 +58,7 @@ Ein GitHub-Konto ist **nicht** nötig. Updates kommen danach automatisch (siehe 
 | **Start / Stop** | Automatische Prüfung und **verbindliche** Annahme ein/aus |
 | **Auto-Refresh** | Klickt alle *x* Sekunden den Refresh-Pfeil der Tabelle (unabhängig von Start/Stop) |
 | **alle … s** | Intervall für Refresh und Abgleich (Standard 30 s, min. 15 s) |
-| **Ortsliste laden** | Lädt die Ortsliste (Excel in SharePoint, Blätter „annehmen“ und „nicht annehmen“) – ohne Anmeldung; automatisch alle 30 min |
+| **Ortslisten laden** | Lädt **beide** Listen neu: Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) aus dem Excel in SharePoint – ohne Anmeldung; Ergebnis im Log; automatisch alle 30 min |
 | **Liste einfügen** | Ortsliste manuell einfügen (`PLZ;Ort` je Zeile oder CSV mit Kopfzeile) |
 | **Softwareupdate** | Sucht auf GitHub nach einer neuen Version |
 | **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
@@ -153,6 +153,10 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
   einstellige Werte werden automatisch zu `0x` ergänzt).
 
 ## Changelog
+
+### 1.5.1 – 2026-09-24
+- Button **„Ortslisten laden“** lädt beide Listen (annehmen / nicht annehmen) ohne Cache neu und zeigt
+  das Ergebnis immer im Log; Statuszeile zeigt auch die Anzahl der Sperrliste.
 
 ### 1.5.0 – 2026-09-24
 - Neuer Reiter **Auftragsbuch**: alle angenommenen Aufträge, Anzahl PLZ, Summe gesamt in Euro.
