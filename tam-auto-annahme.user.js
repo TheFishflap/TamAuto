@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.7.3
+// @version      1.7.4
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -945,7 +945,7 @@
         <div id="tamauto-extra" style="color:#1a4d8f;display:none"></div>
         <div id="tamauto-status" style="color:#555">bereit</div>
         <div id="tamauto-refresh" style="color:#555"></div>
-        <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:6px;border-bottom:2px solid #1a4d8f">
+        <div id="tamauto-tabbar" style="display:flex;flex-wrap:wrap;gap:0 2px;margin-top:6px">
           <button class="tamauto-tabbtn" data-page="tamauto-page-main">Bedienung</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-adv">Erweiterte Einstellungen</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-book">Auftragsbuch</button>
@@ -992,16 +992,10 @@
             <tr><td style="padding:1px 8px 1px 0;color:#555">Installations-ID</td><td id="tamauto-info-id" style="font-family:monospace"></td></tr>
             <tr><td style="padding:1px 8px 1px 0;color:#555">Hersteller</td><td>IB Thomée GmbH</td></tr>
           </table>
-          <div style="margin-top:8px;padding:6px 8px;background:#fff8e1;border:1px solid #f0c36d;border-radius:4px">
-            <b>⚠ Hinweis zur Lizenz</b><br>
-            Die Aktivierung wird in diesem Browser gespeichert (Tampermonkey und Website-Daten von TAM).
-            Updates und eine Neuinstallation des Scripts behalten die Lizenz.<br>
-            <b>Werden Cookies bzw. Website-Daten gelöscht</b> (z. B. „Browserdaten löschen“, „Cookies und
-            Websitedaten“, automatisches Löschen beim Schließen des Browsers) <b>oder Tampermonkey deinstalliert,
-            kann die Lizenz verloren gehen.</b> Es entsteht dann eine neue Installations-ID und bei IB Thomée muss
-            ein neuer Lizenzschlüssel angefordert werden.<br>
-            Tipp: Beim Löschen von Browserdaten die Seite <b>tam.tuvsud.com</b> ausnehmen bzw. „Cookies und
-            Websitedaten“ nicht mitlöschen.
+          <div style="margin-top:6px;padding:3px 6px;background:#fff8e1;border:1px solid #f0c36d;border-radius:3px;font-size:10.5px;line-height:1.35">
+            ⚠ Die Lizenz ist in diesem Browser gespeichert und bleibt bei Updates erhalten. <b>Beim Löschen von
+            Cookies/Website-Daten oder Deinstallieren von Tampermonkey kann sie verloren gehen</b> – dann neue ID
+            an IB Thomée schicken. Tipp: tam.tuvsud.com beim Löschen ausnehmen.
           </div>
           <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd">
             <b>© 2026 IB Thomée GmbH. Alle Rechte vorbehalten.</b><br>
@@ -1010,10 +1004,6 @@
             <b>Nicht gestattet:</b> Veränderung oder Bearbeitung des Codes, Weitergabe der Software oder des
             Lizenzschlüssels, Vervielfältigung sowie das Umgehen der Lizenzprüfung.
             <a href="https://github.com/TheFishflap/TamAuto/blob/main/LICENSE" target="_blank" style="color:#1a4d8f">Lizenzbedingungen</a>
-          </div>
-          <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd;color:#555">
-            Die Software wird ohne Gewährleistung bereitgestellt. Die Nutzungsbedingungen von TÜV SÜD / TAM sind
-            eigenverantwortlich zu beachten.
           </div>
           <div style="margin-top:10px;text-align:center;color:#555">Made with <span style="color:#c62828">♥</span> and Claude</div>
         </div>
@@ -1054,9 +1044,15 @@
         <textarea id="tamauto-ta" placeholder="Zusätzliche PLZ für 24 h – eine je Zeile, z. B.&#10;43&#10;47877" style="display:none;width:100%;height:80px"></textarea>
         <div id="tamauto-log" style="max-height:220px;overflow:auto;font:11px monospace;border-top:1px solid #ddd;padding-top:4px"></div>
       </div>`;
+    // Bedienfeld: verschiebbar (Titelzeile) und in der Größe änderbar (Ecke unten rechts); beides wird gespeichert
     Object.assign(p.style, { position: 'fixed', right: '12px', bottom: '12px', width: '420px', zIndex: 99999,
       background: '#fff', border: '2px solid #1a4d8f', borderRadius: '6px', padding: '8px',
-      font: '12px Arial, sans-serif', boxShadow: '0 4px 14px rgba(0,0,0,.25)' });
+      font: '12px Arial, sans-serif', boxShadow: '0 4px 14px rgba(0,0,0,.25)',
+      resize: 'both', overflow: 'hidden', minWidth: '340px', minHeight: '120px', maxWidth: '95vw', maxHeight: '95vh',
+      display: 'flex', flexDirection: 'column', boxSizing: 'border-box' });
+    const body = p.querySelector('#tamauto-body');
+    Object.assign(body.style, { flex: '1 1 auto', minHeight: '0', display: 'flex', flexDirection: 'column', overflowY: 'auto' });
+    Object.assign(p.querySelector('#tamauto-log').style, { flex: '1 1 auto', minHeight: '40px' });
     p.querySelectorAll('button').forEach((b) => Object.assign(b.style,
       { padding: '3px 8px', border: '1px solid #1a4d8f', borderRadius: '3px', background: '#e8f0fb', cursor: 'pointer' }));
     // Checkbox und Text auf einer Linie (TAM-CSS verschiebt Checkboxen sonst nach oben)
@@ -1131,8 +1127,10 @@
       p.querySelectorAll('.tamauto-tabbtn').forEach((b) => {
         const on = b.dataset.page === id;
         $(b.dataset.page).style.display = on ? (id === 'tamauto-page-main' ? 'flex' : 'block') : 'none';
+        // Reiter füllen ihre Zeile; jede Zeile steht auf einer durchgehenden Linie (auch wenn umgebrochen wird)
         Object.assign(b.style, { background: on ? '#1a4d8f' : '#e8f0fb', color: on ? '#fff' : '#000',
-          borderRadius: '3px 3px 0 0', borderBottom: 'none' });
+          borderRadius: '3px 3px 0 0', borderBottom: '2px solid #1a4d8f', flex: '1 1 auto', whiteSpace: 'nowrap',
+          marginTop: '2px' });
       });
       if (id === 'tamauto-page-main') $('tamauto-ta').style.display = 'none';
       if (id === 'tamauto-page-adv') renderBlacklist();
@@ -1214,16 +1212,58 @@
     $('tamauto-bl-clear').onclick = () => {
       GM_setValue('blacklist', { date: today(), plz: [] }); log('Blacklist: alle PLZ freigegeben.', 'ok'); renderBlacklist();
     };
-    $('tamauto-min').onclick =() => { const b = $('tamauto-body'); b.style.display = b.style.display === 'none' ? '' : 'none'; };
+    // Minimieren: Inhalt aus, Höhe vorübergehend automatisch
+    $('tamauto-min').onclick = () => {
+      const b = $('tamauto-body');
+      if (b.style.display === 'none') {
+        b.style.display = 'flex'; p.style.height = p.dataset.h || ''; p.style.resize = 'both';
+      } else {
+        p.dataset.h = p.style.height; b.style.display = 'none'; p.style.height = 'auto'; p.style.resize = 'none';
+      }
+    };
 
-    // verschiebbar
+    // Position/Größe: oben links verankern (damit Ziehen und Größe ändern natürlich wirken) und speichern
+    const anchorTopLeft = () => {
+      const r = p.getBoundingClientRect();
+      Object.assign(p.style, { left: `${r.left}px`, top: `${r.top}px`, right: 'auto', bottom: 'auto' });
+    };
+    const saveRect = () => {
+      const r = p.getBoundingClientRect();
+      GM_setValue('panelRect', { left: r.left, top: r.top, width: r.width, height: p.style.height && p.style.height !== 'auto' ? r.height : null });
+    };
+    const saved = GM_getValue('panelRect', null);
+    if (saved) {
+      p.style.width = `${Math.max(340, Math.min(saved.width, innerWidth * 0.95))}px`;
+      if (saved.height) {
+        p.style.height = `${Math.max(120, Math.min(saved.height, innerHeight * 0.95))}px`;
+        $('tamauto-log').style.maxHeight = 'none'; // Log füllt die gewählte Höhe
+      }
+      // Position so begrenzen, dass das ganze Bedienfeld im Fenster liegt
+      const r = p.getBoundingClientRect();
+      Object.assign(p.style, { right: 'auto', bottom: 'auto',
+        left: `${Math.max(0, Math.min(saved.left, innerWidth - r.width))}px`,
+        top: `${Math.max(0, Math.min(saved.top, innerHeight - r.height))}px` });
+    }
+
+    // verschiebbar über die Titelzeile
     const head = $('tamauto-head'); let dx, dy;
     head.onmousedown = (e) => {
+      anchorTopLeft();
       dx = e.clientX - p.offsetLeft; dy = e.clientY - p.offsetTop;
       const mv = (ev) => Object.assign(p.style, { left: `${ev.clientX - dx}px`, top: `${ev.clientY - dy}px`, right: 'auto', bottom: 'auto' });
       document.addEventListener('mousemove', mv);
-      document.addEventListener('mouseup', () => document.removeEventListener('mousemove', mv), { once: true });
+      document.addEventListener('mouseup', () => { document.removeEventListener('mousemove', mv); saveRect(); }, { once: true });
     };
+    // Größe ändern über die Ecke unten rechts
+    p.addEventListener('mousedown', (e) => {
+      const r = p.getBoundingClientRect();
+      if (e.clientX < r.right - 18 || e.clientY < r.bottom - 18) return;
+      anchorTopLeft();
+      document.addEventListener('mouseup', () => {
+        if (p.style.height && p.style.height !== 'auto') $('tamauto-log').style.maxHeight = 'none';
+        saveRect();
+      }, { once: true });
+    });
     renderStatus();
   }
 

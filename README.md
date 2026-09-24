@@ -183,6 +183,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.7.4 – 2026-09-24
+- Bedienfeld **in der Größe änderbar** (Ecke unten rechts ziehen); Größe und Position werden gespeichert,
+  das Log füllt die gewählte Höhe.
+- Reiter füllen ihre Zeile und stehen auf einer durchgehenden Linie (auch bei zwei Reiter-Zeilen).
+- Reiter Info: Lizenzhinweis kompakter, Gewährleistungstext entfernt.
+
 ### 1.7.3 – 2026-09-24
 - Bugfix: Meldung **„Auftrag bereits vergeben!“** statt Auftragskarte wird sofort erkannt, mit **OK**
   geschlossen und protokolliert (vorher 8 s Warten, Meldung blieb offen). Liegengebliebene TAM-Meldungen
