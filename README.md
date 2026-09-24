@@ -99,6 +99,11 @@ wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt 
 **Console Log** (ebenfalls in „Erweiterte Einstellungen“, Standard **aus**): blendet das Protokoll des Scripts
 unten im Bedienfeld ein/aus. Das Script schreibt nichts in die Browser-Konsole.
 
+### Reiter „Info“
+
+Version, Lizenz (lizenziert für, gültig bis, Installations-ID), Copyright der IB Thomée GmbH,
+Kurzfassung der Lizenzbedingungen mit Link auf [LICENSE](LICENSE) und Haftungshinweis.
+
 ### Reiter „Auftragsbuch“
 
 Liste aller vom Script angenommenen Aufträge (Datum, AuftragsNr, PLZ, Ort, Euro – Dienstleistung als Tooltip),
@@ -172,6 +177,10 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.7.1 – 2026-09-24
+- Neuer Reiter **Info**: Version, Lizenz (Name, gültig bis, Installations-ID), Copyright,
+  Lizenzbedingungen, Haftungshinweis – „Made with ♥ and Claude“.
 
 ### 1.7.0 – 2026-09-24
 - Lizenz bleibt bei Updates und Neuinstallation erhalten (Sicherung im Browser-Speicher der TAM-Seite).

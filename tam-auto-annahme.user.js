@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.7.0
+// @version      1.7.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -923,6 +923,7 @@
           <button class="tamauto-tabbtn" data-page="tamauto-page-main">Bedienung</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-adv">Erweiterte Einstellungen</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-book">Auftragsbuch</button>
+          <button class="tamauto-tabbtn" data-page="tamauto-page-info">Info</button>
         </div>
         <div id="tamauto-page-adv" style="display:none;margin:6px 0">
           <b>Tages-Blacklist</b> <span style="color:#555">– gilt nur heute, um Mitternacht automatisch leer</span>
@@ -955,7 +956,29 @@
               <input type="checkbox" id="tamauto-consolelog"> <b>Console Log</b></label>
             <span style="color:#555"> – Protokoll des Scripts unten im Bedienfeld anzeigen</span>
           </div>
-          <div id="tamauto-lic-info" style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd;color:#555"></div>
+        </div>
+        <div id="tamauto-page-info" style="display:none;margin:6px 0;line-height:1.5">
+          <div style="font-size:14px;font-weight:bold;color:#1a4d8f">TAM Auto-Annahme</div>
+          <div style="color:#555">Version ${VERSION} · automatische Auftragsannahme im TÜV SÜD TAM</div>
+          <table style="border-collapse:collapse;margin-top:6px">
+            <tr><td style="padding:1px 8px 1px 0;color:#555">Lizenziert für</td><td id="tamauto-info-name"></td></tr>
+            <tr><td style="padding:1px 8px 1px 0;color:#555">Gültig bis</td><td id="tamauto-info-exp"></td></tr>
+            <tr><td style="padding:1px 8px 1px 0;color:#555">Installations-ID</td><td id="tamauto-info-id" style="font-family:monospace"></td></tr>
+            <tr><td style="padding:1px 8px 1px 0;color:#555">Hersteller</td><td>IB Thomée GmbH</td></tr>
+          </table>
+          <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd">
+            <b>© 2026 IB Thomée GmbH. Alle Rechte vorbehalten.</b><br>
+            Die Nutzung ist nur mit einem gültigen Lizenzschlüssel der IB Thomée GmbH gestattet. Der Schlüssel gilt
+            ausschließlich für diese Installation und bis zum Ende des Kalenderjahres.<br>
+            <b>Nicht gestattet:</b> Veränderung oder Bearbeitung des Codes, Weitergabe der Software oder des
+            Lizenzschlüssels, Vervielfältigung sowie das Umgehen der Lizenzprüfung.
+            <a href="https://github.com/TheFishflap/TamAuto/blob/main/LICENSE" target="_blank" style="color:#1a4d8f">Lizenzbedingungen</a>
+          </div>
+          <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd;color:#555">
+            Die Software wird ohne Gewährleistung bereitgestellt. Die Nutzungsbedingungen von TÜV SÜD / TAM sind
+            eigenverantwortlich zu beachten.
+          </div>
+          <div style="margin-top:10px;text-align:center;color:#555">Made with <span style="color:#c62828">♥</span> and Claude</div>
         </div>
         <div id="tamauto-page-book" style="display:none;margin:6px 0">
           <div class="tamauto-chk" style="justify-content:space-between;width:100%">
@@ -1125,9 +1148,11 @@
 
     // Lizenzinfo; ab 30 Tagen vor Ablauf deutlicher Hinweis
     const daysLeft = Math.ceil((new Date(`${license.exp}T23:59:59`) - Date.now()) / 864e5);
-    $('tamauto-lic-info').innerHTML = `<b>Lizenz:</b> ${license.name} · gültig bis ${fmtDate(license.exp)}` +
-      (daysLeft <= 30 ? ` <b style="color:#c62828">(noch ${daysLeft} Tage – neue Lizenz anfordern)</b>` : '') +
-      `<br>Installations-ID: ${installId()} · © IB Thomée GmbH – Veränderung und Weitergabe nicht gestattet`;
+    // Reiter "Info" (textContent: Name aus dem Schlüssel nie als HTML einsetzen)
+    $('tamauto-info-name').textContent = license.name;
+    $('tamauto-info-exp').textContent = `${fmtDate(license.exp)}${daysLeft <= 30 ? ` (noch ${daysLeft} Tage – neue Lizenz anfordern)` : ''}`;
+    if (daysLeft <= 30) $('tamauto-info-exp').style.color = '#c62828';
+    $('tamauto-info-id').textContent = installId();
     if (daysLeft <= 30) {
       const w = document.createElement('div');
       Object.assign(w.style, { color: '#c62828', fontWeight: 'bold', margin: '4px 0' });
