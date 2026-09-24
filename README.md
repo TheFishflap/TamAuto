@@ -75,8 +75,8 @@ Browser genutzt wird, ist eine neue Aktivierung nötig.
 |---|---|
 | **Tab-Anzeige** | Aktiver Reiter und Bereitschaft: **Veröffentlichte Aufträge – ✔ bereit zum Annehmen** (grün), **Angenommene Aufträge – ⏸ Annahme pausiert** (orange), sonst pausiert |
 | **Start / Stop** | Automatische Prüfung und **verbindliche** Annahme ein/aus |
-| **Auto-Refresh** | Klickt alle *x* Sekunden den Refresh-Pfeil der Tabelle, um neue Aufträge früher zu finden (unabhängig von Start/Stop) |
-| **alle … s** | Intervall für Refresh und Abgleich – Standard **30 s**, Minimum **10 s**. Niedriger = höhere Auslastung, mit Bedacht wählen. **Über 60 s** schaltet sich Auto-Refresh ab; der Abgleich läuft dann synchron mit der TAM-eigenen Aktualisierung (jede Minute, bleibt immer an). Erklärung auch über das **?** |
+| **Adaptive Refresh** | Klickt alle *x* Sekunden den Refresh-Pfeil der Tabelle, um neue Aufträge früher zu finden (unabhängig von Start/Stop) |
+| **alle … s** | Intervall für Refresh und Abgleich – Standard **30 s**, Minimum **10 s**. Niedriger = höhere Auslastung, mit Bedacht wählen. **Über 60 s** schaltet sich Adaptive Refresh ab; der Abgleich läuft dann synchron mit der TAM-eigenen Aktualisierung (jede Minute, bleibt immer an). Erklärung auch über das **?** |
 | **Ortslisten laden** | Lädt **beide** Listen neu: Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) aus dem Excel in SharePoint – ohne Anmeldung; Ergebnis im Log; automatisch alle 30 min |
 | **Liste einfügen** | PLZ **zusätzlich** zur geladenen Ortsliste annehmen (eine je Zeile, gleiche PLZ-Logik), wird **nach 24 h automatisch gelöscht**. Das Feld zeigt die aktuelle Zusatzliste; leer übernehmen = löschen. Anzeige „+ Zusätzlich: … (bis …)“. Erklärung über das **?** |
 | **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
@@ -163,23 +163,24 @@ Nur das **automatische Update** und die Installation über den Link fallen aus �
 
 Automatische Updates kommen in diesem Fall nicht; eine neue Version wird auf demselben Weg eingespielt.
 
-## TAM-Takt (Server-Zeitbasis)
+## Adaptive Refresh (ausgerichtet an der TAM-Aktualisierung)
 
-TAM lädt die Tabelle selbst in festem Takt neu („Automatisch alle 1 Minuten aktualisieren“ – bleibt immer an).
-Das Script nimmt jede erkannte **TAM-Aktualisierung als t = 0** und richtet den eigenen Auto-Refresh danach aus:
+TAM lädt die Tabelle selbst neu („☑ Automatisch alle [x] Minuten aktualisieren“ – bleibt immer an) und startet
+diesen Timer **nach jedem Laden neu**. Der Adaptive Refresh verwendet dafür **Ist-Werte statt Schätzungen**:
 
+- **Mitlesen:** TAM meldet nach jedem Laden „scheduling autorefreshing timer in X seconds“. Das Script liest diese
+  Meldung mit und kennt den nächsten TAM-Refresh auf die Sekunde („– laut TAM“).
+- **Rückfall:** Kommt die Meldung nicht, gilt die Einstellung aus der Blätterleiste (Checkbox + Minuten):
+  nächster TAM-Refresh = letzter Refresh + eingestelltes Intervall („– berechnet“).
 - Eigener Refresh nur, wenn seit dem letzten Refresh (egal welcher Quelle) das Intervall vergangen ist.
-- Steht die nächste TAM-Aktualisierung unmittelbar bevor, **entfällt** der eigene Refresh – TAM lädt ohnehin neu.
-  Beispiel 30 s: Refresh bei t = 30, bei t = 60 nur TAM → halb so viele eigene Ladevorgänge wie vorher,
-  ohne doppelte Refreshes.
-- Den TAM-Takt misst das Script selbst (Median der gemessenen Abstände, bis dahin 60 s). Bleibt die
-  TAM-Aktualisierung aus (> 10 s überfällig), refresht das Script wieder selbst.
-- Anzeige im Bedienfeld: „TAM-Takt 60 s · nächste TAM-Aktualisierung in 23 s · Auto-Refresh in 7 s“.
+  Steht die TAM-Aktualisierung unmittelbar bevor, **entfällt** der eigene Refresh – TAM lädt ohnehin neu.
+  Ist die TAM-Aktualisierung aus, refresht das Script normal im eingestellten Intervall.
+- Anzeige im Bedienfeld: „Nächste TAM-Aktualisierung in 1:47 min (alle 2:00 min) – laut TAM · Adaptive Refresh in 7 s“.
 
 ## Abgleich und Protokoll
 
 Bei jedem Refresh der Tabelle wird die Liste neu mit der Ortsliste abgeglichen; passende Aufträge
-werden sofort angenommen. Das gilt für den Auto-Refresh des Scripts, die TAM-eigene Aktualisierung
+werden sofort angenommen. Das gilt für den Adaptive Refresh des Scripts, die TAM-eigene Aktualisierung
 und einen manuellen Klick auf den Refresh-Pfeil. Jeder Abgleich steht mit Anlass im Protokoll, z. B.:
 
 ```
@@ -189,8 +190,8 @@ und einen manuellen Klick auf den Refresh-Pfeil. Jeder Abgleich steht mit Anlass
 10:15:36  Angenommen: MW3191767 · 56218 Mülheim-Kärlich · …
 ```
 
-Anlässe: **Refresh** (Auto-Refresh des Scripts), **Tabelle aktualisiert** (TAM-Aktualisierung oder
-manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start**, **Nachprüfung**
+Anlässe: **Refresh** (Adaptive Refresh des Scripts), **Tabelle aktualisiert** (TAM-Aktualisierung oder
+manueller Refresh), **Reiterwechsel**, **Intervall** (Adaptive Refresh aus), **Start**, **Nachprüfung**
 (Tabelle hat sich während einer Annahme geändert).
 
 ## Ablauf einer Annahme
@@ -242,6 +243,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.9.0 – 2026-09-24
+- Auto-Refresh heißt jetzt **Adaptive Refresh**.
+- TAM-Aktualisierung wird **mitgelesen** (Meldung „scheduling autorefreshing timer in X seconds“) statt geschätzt;
+  Rückfall auf die TAM-Einstellung „Automatisch alle [x] Minuten“ aus der Blätterleiste (z. B. 2 Minuten).
+  Berücksichtigt, dass TAM seinen Timer nach jedem Laden neu startet.
+
 ### 1.8.5 – 2026-09-24
 - Popup-Anleitung ist jetzt im Script eingebaut (**?** klappt sie im Bedienfeld auf) – funktioniert auch, wenn
   GitHub nicht erreichbar oder das Projekt privat/offline ist.
@@ -264,7 +271,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
   Aus = kein Gong, auch die Desktop-Benachrichtigung kommt ohne Ton.
 
 ### 1.8.0 – 2026-09-24
-- **TAM-Takt:** Die TAM-Server-Aktualisierung gilt als t = 0; der Auto-Refresh wird darauf ausgerichtet und
+- **TAM-Takt:** Die TAM-Server-Aktualisierung gilt als t = 0; der Adaptive Refresh wird darauf ausgerichtet und
   entfällt, wenn TAM gleich selbst neu lädt (weniger Last, keine doppelten Refreshes). Takt wird gemessen,
   Anzeige „nächste TAM-Aktualisierung in … s“.
 - Standardwert Verzögerung 0,17 s.
@@ -296,7 +303,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 - Lizenz bleibt bei Updates und Neuinstallation erhalten (Sicherung im Browser-Speicher der TAM-Seite).
 - „Softwareupdate“ zeigt das Ergebnis am Button („✓ Alles auf dem neuesten Stand“).
 - „Liste einfügen“: zusätzliche PLZ zur geladenen Ortsliste, 24 h gültig; Erklärung per **?**.
-- Auto-Refresh-Intervall ab 10 s (Standard 30 s), Erklärung per **?**; über 60 s Auto-Refresh aus,
+- Adaptive Refresh-Intervall ab 10 s (Standard 30 s), Erklärung per **?**; über 60 s Adaptive Refresh aus,
   Abgleich synchron mit der TAM-Aktualisierung.
 - Reiter heißt „Erweiterte Einstellungen (x PLZ gesperrt)“.
 
@@ -328,7 +335,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 - Konsolenausgaben nur noch mit Checkbox **Debug-Modus** (Reiter „Erweiterte Einstellungen“).
 - Angenehmerer Hinweiston: sanfter Zwei-Ton-Gong statt Piepton.
 - Button „Update prüfen“ heißt jetzt **„Softwareupdate“**.
-- Auto-Refresh-Checkbox, Text und Intervall stehen auf einer Linie.
+- Adaptive Refresh-Checkbox, Text und Intervall stehen auf einer Linie.
 
 ### 1.3.1 – 2026-09-24
 - „Letzter Refresh“ wird auch bei Refresh von außen angezeigt – Klick auf den Refresh-Pfeil der Website
@@ -379,7 +386,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 - Button **„1 Auftrag testen“**: oberster Auftrag einmal verbindlich annehmen (mit Rückfrage).
 
 ### 0.10.0
-- Checkbox **Auto-Refresh** (unabhängig von Start/Stop) mit Anzeige „Letzter Refresh ✓/✗“.
+- Checkbox **Adaptive Refresh** (unabhängig von Start/Stop) mit Anzeige „Letzter Refresh ✓/✗“.
 - Warenkorb: erst 0-km-Aufträge anklicken, danach **„alle auswählen“**; Prüfung, dass alles angehakt ist.
 
 ### 0.9.0
