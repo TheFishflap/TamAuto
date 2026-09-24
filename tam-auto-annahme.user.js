@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.3.0
+// @version      1.3.1
 // @author       IB Thomée GmbH
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
@@ -426,7 +426,7 @@
     }, 10000, 100);
     const ok = maskSeen || Date.now() - t0 < 10000;
     const stamp = new Date().toLocaleTimeString('de-DE');
-    setRefreshStatus(ok ? `Letzter Refresh: ${stamp} ✓` : `Letzter Refresh: ${stamp} ✗ keine Wirkung`);
+    setRefreshStatus(ok ? `Letzter Refresh: ${stamp} ✓ (Auto-Refresh)` : `Letzter Refresh: ${stamp} ✗ keine Wirkung`);
     if (ok !== lastRefreshOk) {
       log(ok ? 'Refresh funktioniert – Tabelle wurde neu geladen.' :
         'Refresh-Klick ohne Wirkung (Tabelle nicht neu geladen). Bitte melden.', ok ? 'ok' : 'err');
@@ -437,6 +437,26 @@
   }
 
   function setRefreshStatus(t) { const el = document.getElementById('tamauto-refresh'); if (el) el.textContent = t; }
+
+  // Refresh von außen (Klick auf den Refresh-Pfeil der Website oder TAM-Autoaktualisierung) anzeigen
+  let ownRefresh = false;   // true, solange das Script selbst refresht
+  let manualClickAt = 0;    // Zeitpunkt des letzten echten Klicks auf den Refresh-Pfeil
+  let refreshNoteTimer = null;
+  function noteExternalRefresh() {
+    const src = Date.now() - manualClickAt < 15000 ? 'manuell' : 'TAM';
+    clearTimeout(refreshNoteTimer); // eine Aktualisierung erzeugt viele DOM-Änderungen → einmal melden
+    refreshNoteTimer = setTimeout(() => {
+      setRefreshStatus(`Letzter Refresh: ${new Date().toLocaleTimeString('de-DE')} ✓ (${src})`);
+      if (!cfg.enabled) log(`Refresh (${src}) – Tabelle neu geladen; Script gestoppt, kein Abgleich.`);
+    }, 500);
+    return src;
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.isTrusted) return; // nur echte Klicks, nicht die des Scripts
+    const panel = activeTabPanel();
+    const btn = panel && findRefreshButton(panel);
+    if (btn && btn.contains(e.target)) manualClickAt = Date.now();
+  }, true);
 
 
   function clickBtn(b) {
@@ -664,7 +684,8 @@
     let refreshed = false;
     if (cfg.autoRefresh) {
       busy = true; // eigene Tabellenänderungen beim Refresh nicht doppelt auswerten
-      try { refreshed = await refreshGrid(); } finally { busy = false; recheck = false; }
+      ownRefresh = true;
+      try { refreshed = await refreshGrid(); } finally { busy = false; recheck = false; ownRefresh = false; }
     }
     await cycle(refreshed ? 'Refresh' : 'Intervall');
   }
@@ -825,17 +846,19 @@
       if (muts.some((m) => m.type === 'attributes' && m.target.tagName === 'LI' && (m.target.id || '').includes('__'))) {
         updateTabStatus();
       }
-      if (!cfg.enabled) return;
       const panel = document.getElementById(cfg.tabPanelId);
       if (!panel) return;
       const relevant = muts.some((m) => m.type === 'childList' && panel.contains(m.target) && m.target.closest &&
         m.target.closest('.x-grid3-body, .x-grid3-scroller'));
       const tabSwitch = muts.some((m) => m.type === 'attributes' && m.target.tagName === 'LI' &&
         m.target.id && m.target.id.endsWith('__' + cfg.tabPanelId));
+      // Anzeige "Letzter Refresh" auch bei Refresh von außen – unabhängig von Start/Stop
+      const src = relevant && !ownRefresh ? noteExternalRefresh() : '';
+      if (!cfg.enabled) return;
       if (!relevant && !tabSwitch) return;
       // Während einer Prüfung/Annahme nicht verwerfen, sondern direkt danach erneut prüfen
       if (busy) { recheck = true; return; }
-      scheduleCheck(tabSwitch ? 'Reiterwechsel' : 'Tabelle aktualisiert');
+      scheduleCheck(tabSwitch ? 'Reiterwechsel' : src ? `Refresh (${src})` : 'Tabelle aktualisiert');
     }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
   }
 
