@@ -171,6 +171,9 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.6.1 – 2026-09-24
+- Console Log ist nach dem Update bei allen aus (auch wenn es vorher eingeschaltet war).
+
 ### 1.6.0 – 2026-09-24
 - **Lizenzschlüssel-Aktivierung:** Schlüssel pro Installation (Installations-ID), signiert von der
   IB Thomée GmbH, immer gültig bis 31.12. des laufenden Jahres. Ohne gültige Lizenz nimmt das Script nichts an.

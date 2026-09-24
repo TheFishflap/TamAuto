@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.6.0
+// @version      1.6.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -54,7 +54,9 @@
     enabled: GM_getValue('running', DEFAULTS.enabled),
     maxPerCycle: GM_getValue('maxPerCycle', DEFAULTS.maxPerCycle),
     autoRefresh: GM_getValue('autoRefresh', true),
-    consoleLog: GM_getValue('consoleLog', false), // Protokoll im Bedienfeld anzeigen ("Console Log")
+    // Protokoll im Bedienfeld ("Console Log"), Standard aus. Neuer Schlüssel ab 1.6.1, damit ein früher
+    // eingeschaltetes Log nach dem Update bei allen aus ist.
+    consoleLog: GM_getValue('consoleLogV2', false),
     delayOn: GM_getValue('delayOn', false),       // Verzögerung vor jedem Klickschritt der Annahme
     delaySec: Math.min(2, GM_getValue('delaySec', 0.5)), // 0,0–2,0 s in 0,1-s-Schritten
     delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung
@@ -1058,7 +1060,7 @@
 
     // Console Log: Protokoll des Scripts ein-/ausblenden (keine Ausgaben in die Browser-Konsole)
     const renderConsole = () => { $('tamauto-consolelog').checked = cfg.consoleLog; $('tamauto-log').style.display = cfg.consoleLog ? '' : 'none'; };
-    $('tamauto-consolelog').onchange = (e) => { cfg.consoleLog = e.target.checked; GM_setValue('consoleLog', cfg.consoleLog); renderConsole(); };
+    $('tamauto-consolelog').onchange = (e) => { cfg.consoleLog = e.target.checked; GM_setValue('consoleLogV2', cfg.consoleLog); renderConsole(); };
     renderConsole();
 
     // Excel-Sperrliste sofort neu laden (z. B. direkt nach einem Storno)
