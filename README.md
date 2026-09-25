@@ -129,7 +129,7 @@ Browser genutzt wird, ist eine neue Aktivierung nötig.
 ### Sperren (Reiter „Bedienung“)
 
 Gesperrt wird nur noch über das Excel-Blatt **„nicht annehmen“** (Sperrliste aus Excel, Anzeige im Reiter „Bedienung“,
-Anzahl am Reiter „Bedienung (x PLZ gesperrt)“). Die frühere Tages-Blacklist ist seit 1.16.2 entfallen.
+Anzahl im Kopf des Bedienfelds „Sperrliste: x“). Die frühere Tages-Blacklist ist seit 1.16.2 entfallen.
 Gesperrte Treffer stehen im Protokoll („Treffer, aber gesperrt: … → nicht angenommen“).
 
 **Tages-Annahmeliste** (Reiter „Bedienung“): PLZ, die **heute zusätzlich** angenommen werden – **nur vollständige
@@ -388,6 +388,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.16.5 – 2026-09-25
+- Reiter heißt wieder nur **„Bedienung“** – die Zahl gesperrter PLZ steht bereits im Kopf („Sperrliste: x“).
 
 ### 1.16.4 – 2026-09-25
 - „Erweiterte Einstellungen“: **Console Log** (mit „Log kopieren“) steht jetzt immer **ganz unten** – direkt über dem

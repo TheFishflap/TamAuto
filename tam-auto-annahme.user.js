@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.16.4
+// @version      1.16.5
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -531,10 +531,7 @@
       if (!entries.length) xl.textContent = 'Keine Einträge.';
       entries.forEach((x) => xl.appendChild(chipEl(x, '#6d4c41', '#efebe9')));
     }
-    // Anzahl auch am Reiter zeigen, damit eine Sperre nicht übersehen wird
-    const n = xb.plz.length + xb.orte.length;
-    const tab = document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-main"]');
-    if (tab) tab.textContent = `Bedienung${n ? ` (${n} PLZ gesperrt)` : ''}`;
+    // Anzahl der Sperren steht im Kopf („Sperrliste: n“) – der Reiter heißt nur „Bedienung“
   }
 
   // ------------------------------------------------------------------ Updates (GitHub)
