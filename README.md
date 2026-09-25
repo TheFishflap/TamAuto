@@ -1,14 +1,55 @@
 # TAM Auto-Annahme (IB Thomée GmbH)
 
 Tampermonkey-Userscript für das **TÜV SÜD Auftragsmanagement (TAM)**. Es prüft den Tab
-**„[Meine Aufträge] Veröffentlichte Aufträge“** regelmäßig und nimmt Aufträge automatisch an,
-deren **PLZ oder Ort** in der Ortsliste der IB Thomée GmbH steht.
+**„[Meine Aufträge] Veröffentlichte Aufträge“** und nimmt passende Aufträge automatisch an –
+anhand der Ortsliste der IB Thomée GmbH.
 
 <p align="center">
   <a href="https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js">
     <img src="https://img.shields.io/badge/%E2%AC%87%20Script%20installieren-TAM%20Auto--Annahme-2e7d32?style=for-the-badge" alt="Script installieren">
   </a>
 </p>
+
+## ✨ Funktionen auf einen Blick
+
+### 🎯 Automatische Annahme
+| | |
+|---|---|
+| **PLZ-Abgleich** | Treffer, wenn die PLZ mit einem Eintrag der Ortsliste beginnt (`43` = alle 43xxx, `47877` = genau diese) |
+| **Komplette Annahme** | Auftragskarte öffnen → 0-km-Aufträge dazu → Warenkorb „alle auswählen“ → Annehmen → Bedingungen bestätigen |
+| **Bulk-Erfassung** | Alle im Warenkorb mit angenommenen Aufträge werden verbucht und nicht erneut versucht |
+| **Schnell zurück** | Terminvergabe-Fenster wird sofort weggeklickt, danach direkt zurück in „Veröffentlichte Aufträge“ |
+| **„Bereits vergeben“** | TAM-Meldung wird erkannt, mit OK geschlossen und protokolliert |
+| **Verzögerung** | Standard an: 0,17 s + Randomizer (bis 100 ms) vor jedem Klickschritt, einstellbar 0,01–1 s |
+
+### 🔄 Aktualisierung – gezielt statt dauerhaft
+| | |
+|---|---|
+| **Tabwechsel-Refresh** | Beim Zurückwechseln in „Veröffentlichte Aufträge“ wird immer einmal aktualisiert |
+| **Burst-Refresh** | Nach manuellem Refresh oder Tabwechsel für 15 s jede Sekunde aktualisieren – ideal bei Auftragswellen |
+| **Auto-Refresh** | Optional (Standard aus, 60 s), am TAM-Takt ausgerichtet – kein doppeltes Laden |
+| **TAM-Takt mitlesen** | Nächste TAM-Aktualisierung wird aus TAM selbst gelesen („laut TAM“) statt geschätzt |
+
+### 📋 Listen
+| | |
+|---|---|
+| **Ortsliste** | Excel in SharePoint (Blatt „annehmen“), ohne Anmeldung, alle 30 min neu geladen |
+| **Sperrliste** | Excel-Blatt „nicht annehmen“ – diese PLZ werden nie angenommen |
+| **Tages-Blacklist** | PLZ heute sperren (z. B. nach Storno), leert sich um Mitternacht |
+| **Tages-Annahmeliste** | Einzelne 5-stellige PLZ heute zusätzlich annehmen |
+| **Liste einfügen** | Bulk: viele PLZ auf einmal für 24 h zusätzlich annehmen |
+
+### 📊 Überblick & Komfort
+| | |
+|---|---|
+| **Auftragsbuch** | Alle angenommenen Aufträge mit Summe in Euro, PLZ-Übersicht und **Trefferquote** |
+| **Tab-Anzeige** | Zeigt, ob das Script gerade bereit zum Annehmen ist |
+| **Benachrichtigungen** | Gong mit Lautstärke-Regler und Desktop-Popups, beides mit Test-Button |
+| **Bedienfeld** | Verschiebbar, in der Größe änderbar, bleibt immer greifbar, Reiter für Bedienung / Einstellungen / Auftragsbuch / Info |
+| **Updates** | Automatisch über GitHub; läuft auch ohne GitHub weiter |
+| **Lizenz** | Aktivierung pro Installation, Laufzeit 1 / 3 / 6 Monate oder bis Jahresende |
+
+---
 
 ## Installation
 
@@ -76,8 +117,8 @@ Browser genutzt wird, ist eine neue Aktivierung nötig.
 |---|---|
 | **Tab-Anzeige** | Aktiver Reiter und Bereitschaft: **Veröffentlichte Aufträge – ✔ bereit zum Annehmen** (grün), **Angenommene Aufträge – ⏸ Annahme pausiert** (orange), sonst pausiert |
 | **Start / Stop** | Automatische Prüfung und **verbindliche** Annahme ein/aus |
-| **Adaptive Refresh** | Klickt alle *x* Sekunden den Refresh-Pfeil der Tabelle, um neue Aufträge früher zu finden (unabhängig von Start/Stop) |
-| **alle … s** | Intervall für Refresh und Abgleich – Standard **30 s**, Minimum **10 s**. Niedriger = höhere Auslastung, mit Bedacht wählen. **Über 60 s** schaltet sich Adaptive Refresh ab; der Abgleich läuft dann synchron mit der TAM-eigenen Aktualisierung (jede Minute, bleibt immer an). Erklärung auch über das **?** |
+| **Auto-Refresh** | Optional – klickt regelmäßig den Refresh-Pfeil der Tabelle, am TAM-Takt ausgerichtet (unabhängig von Start/Stop). **Standard: aus** |
+| **alle … s** | Intervall für Refresh und Abgleich – Standard **60 s**, Minimum **10 s**. Niedriger = höhere Auslastung, mit Bedacht wählen. **Über 60 s** schaltet sich Auto-Refresh ab; der Abgleich läuft dann synchron mit der TAM-eigenen Aktualisierung (bleibt immer an). Erklärung auch über das **?** |
 | **Ortslisten laden** | Lädt **beide** Listen neu: Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) aus dem Excel in SharePoint – ohne Anmeldung; Ergebnis im Log; automatisch alle 30 min |
 | **Liste einfügen** | **Bulk-Einfügen** – viele PLZ auf einmal (z. B. aus Excel kopiert) **zusätzlich** zur geladenen Ortsliste annehmen; für **einzelne** PLZ ist die **Tages-Annahmeliste** (nur 5-stellig) besser gedacht. (eine je Zeile, gleiche PLZ-Logik), wird **nach 24 h automatisch gelöscht**. Das Feld zeigt die aktuelle Zusatzliste; leer übernehmen = löschen. Anzeige „+ Zusätzlich: … (bis …)“. Erklärung über das **?** |
 | **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
@@ -102,7 +143,7 @@ werden im Reiter angezeigt (braun), ändern nur im Excel. Fehlt das Blatt, ist d
 das Blatt „annehmen“ wird nie als Sperrliste verwendet.
 
 **Verzögerung** (ebenfalls in „Erweiterte Einstellungen“): Checkbox + Slider **0,01–1,00 s** in 0,01-s-Schritten
-(Standard **0,17 s**).
+(Standard **an**, **0,17 s**).
 Vor jedem Klickschritt der Annahme (Doppelklick, 0-km-Aufträge, alle auswählen, Annehmen, Haken, Bestätigen)
 wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt zufällig **0 bis x ms** dazu
 (Standard **100 ms**, einstellbar), bei jedem Schritt neu gewürfelt.
@@ -110,8 +151,8 @@ wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt 
 ### Reiter „Erweiterte Einstellungen“
 
 **Benachrichtigungston** (Standard **an**): Gong bei angenommenem oder fehlgeschlagenem Auftrag ein/aus.
-**Drehregler** für die Lautstärke (0–100 %, Standard 60 %): hoch/runter ziehen, Mausrad oder Pfeiltasten,
-Doppelklick = 60 %; nach dem Drehen wird der Ton einmal vorgespielt. **▶ Test** spielt ihn ab.
+**Schieberegler** für die Lautstärke (0–100 %, Standard 60 %), Doppelklick = 60 %;
+nach dem Verstellen wird der Ton einmal vorgespielt. **▶ Test** spielt ihn ab.
 **Popups** (Standard **an**): Desktop-Benachrichtigung bei Annahme ein/aus; **▶ Test** zeigt eine
 Test-Benachrichtigung. Erscheint nichts → [Popups einschalten](#popups-einschalten) (auch über das **?** daneben).
 
@@ -169,10 +210,25 @@ Nur das **automatische Update** und die Installation über den Link fallen aus �
 
 Automatische Updates kommen in diesem Fall nicht; eine neue Version wird auf demselben Weg eingespielt.
 
-## Adaptive Refresh (ausgerichtet an der TAM-Aktualisierung)
+## Tabwechsel-Refresh und Burst-Refresh (gezielt statt dauerhaft)
+
+Statt die Tabelle dauerhaft im Sekundentakt neu zu laden, aktualisiert das Script **gezielt dann, wenn es darauf ankommt**:
+
+- **Tabwechsel-Refresh:** Beim Wechsel **zurück** in „Veröffentlichte Aufträge“ (z. B. aus „Angenommene Aufträge“
+  oder nach einer Annahme) wird **immer einmal** aktualisiert – so ist bei Auftragswellen sofort der aktuelle Stand da.
+- **Burst-Refresh** (Reiter „Erweiterte Einstellungen“, Standard **an**, **15 s**): Nach einem **manuellen Klick**
+  auf den Refresh-Pfeil der Website und nach dem Tabwechsel wird für die eingestellte Zeit **jede Sekunde**
+  aktualisiert. Ein Tabwechsel löst den Burst einmal aus; ein weiterer Auslöser verlängert ihn.
+  Im Bedienfeld steht „⚡ Burst-Refresh läuft – noch 12 s“. Ist Burst-Refresh aus, bleibt es beim einmaligen
+  Tabwechsel-Refresh.
+
+## Auto-Refresh (ausgerichtet an der TAM-Aktualisierung)
+
+Der Auto-Refresh ist **standardmäßig aus** (Intervall 60 s) – Tabwechsel- und Burst-Refresh decken die
+wichtigen Momente ab und erzeugen weniger Last. Wird er eingeschaltet, gilt:
 
 TAM lädt die Tabelle selbst neu („☑ Automatisch alle [x] Minuten aktualisieren“ – bleibt immer an) und startet
-diesen Timer **nach jedem Laden neu**. Der Adaptive Refresh verwendet dafür **Ist-Werte statt Schätzungen**:
+diesen Timer **nach jedem Laden neu**. Der Auto-Refresh verwendet dafür **Ist-Werte statt Schätzungen**:
 
 - **Mitlesen:** TAM meldet nach jedem Laden „scheduling autorefreshing timer in X seconds“. Das Script liest diese
   Meldung mit und kennt den nächsten TAM-Refresh auf die Sekunde („– laut TAM“).
@@ -181,12 +237,12 @@ diesen Timer **nach jedem Laden neu**. Der Adaptive Refresh verwendet dafür **I
 - Eigener Refresh nur, wenn seit dem letzten Refresh (egal welcher Quelle) das Intervall vergangen ist.
   Steht die TAM-Aktualisierung unmittelbar bevor, **entfällt** der eigene Refresh – TAM lädt ohnehin neu.
   Ist die TAM-Aktualisierung aus, refresht das Script normal im eingestellten Intervall.
-- Anzeige im Bedienfeld: „Nächste TAM-Aktualisierung in 1:47 min (alle 2:00 min) – laut TAM · Adaptive Refresh in 7 s“.
+- Anzeige im Bedienfeld: „Nächste TAM-Aktualisierung in 1:47 min (alle 2:00 min) – laut TAM · Auto-Refresh in 7 s“.
 
 ## Abgleich und Protokoll
 
 Bei jedem Refresh der Tabelle wird die Liste neu mit der Ortsliste abgeglichen; passende Aufträge
-werden sofort angenommen. Das gilt für den Adaptive Refresh des Scripts, die TAM-eigene Aktualisierung
+werden sofort angenommen. Das gilt für den Auto-Refresh des Scripts, die TAM-eigene Aktualisierung
 und einen manuellen Klick auf den Refresh-Pfeil. Jeder Abgleich steht mit Anlass im Protokoll, z. B.:
 
 ```
@@ -196,8 +252,8 @@ und einen manuellen Klick auf den Refresh-Pfeil. Jeder Abgleich steht mit Anlass
 10:15:36  Angenommen: MW3191767 · 56218 Mülheim-Kärlich · …
 ```
 
-Anlässe: **Refresh** (Adaptive Refresh des Scripts), **Tabelle aktualisiert** (TAM-Aktualisierung oder
-manueller Refresh), **Reiterwechsel**, **Intervall** (Adaptive Refresh aus), **Start**, **Nachprüfung**
+Anlässe: **Refresh** (Auto-Refresh des Scripts), **Tabelle aktualisiert** (TAM-Aktualisierung oder
+manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start**, **Nachprüfung**
 (Tabelle hat sich während einer Annahme geändert).
 
 ## Ablauf einer Annahme
@@ -213,7 +269,10 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Adaptive Refresh aus), **S
 7. **Annehmen** → Dialog **„Auftragsannahme bestätigen“** → Haken „Ja, hiermit bestätige ich die
    Bedingungen …“ → **Bestätigen**.
 8. Fehlermeldungen von TAM werden im Protokoll angezeigt, die Auftragskarte wird geschlossen.
-9. Nach erfolgreicher Annahme wird **sofort** wieder in den Reiter **Veröffentlichte Aufträge** gewechselt.
+9. Öffnet TAM danach das Fenster zur **Terminvergabe**, wird es sofort (ohne Verzögerung) weggeklickt – nur in den
+   ersten 30 s nach einer Annahme durch das Script, eine selbst geöffnete Terminvergabe bleibt unangetastet.
+10. Nach erfolgreicher Annahme wird **sofort** wieder in den Reiter **Veröffentlichte Aufträge** gewechselt und
+    aktualisiert (bzw. Burst-Refresh).
 
 ## Sicherheit
 
@@ -249,6 +308,16 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Adaptive Refresh aus), **S
 
 ## Changelog
 
+### 1.11.0 – 2026-09-25
+- **Tabwechsel-Refresh:** Beim Wechsel zurück in „Veröffentlichte Aufträge“ wird immer einmal aktualisiert.
+- **Burst-Refresh** (Erweiterte Einstellungen, Standard an, 15 s): nach manuellem Refresh und Tabwechsel jede Sekunde
+  aktualisieren – gezielt statt dauerhaft Last.
+- **Auto-Refresh** heißt wieder so; Standard jetzt **aus** und **60 s** (gilt nach dem Update einmal für alle).
+- **Terminvergabe-Fenster** nach einer Annahme wird sofort weggeklickt; kürzere Wartezeit nach „Bestätigen“.
+- Lautstärke als **Schieberegler** statt Drehregler.
+- **Verzögerung** standardmäßig **an** (0,17 s + Randomizer 100 ms; gilt nach dem Update einmal für alle).
+- README: neue Übersicht „Funktionen auf einen Blick“.
+
 ### 1.10.0 – 2026-09-25
 - **Lizenzdauer** wählbar: 1 Monat, 3 Monate, 6 Monate oder bis Jahresende; Anzeige im Reiter Info,
   Ablaufhinweis passend zur Laufzeit.
@@ -270,7 +339,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Adaptive Refresh aus), **S
   Nach Änderung der Fenstergröße wird es automatisch in den sichtbaren Bereich geholt.
 
 ### 1.9.0 – 2026-09-24
-- Auto-Refresh heißt jetzt **Adaptive Refresh**.
+- Auto-Refresh vorübergehend „Adaptive Refresh“ genannt (seit 1.11 wieder „Auto-Refresh“).
 - TAM-Aktualisierung wird **mitgelesen** (Meldung „scheduling autorefreshing timer in X seconds“) statt geschätzt;
   Rückfall auf die TAM-Einstellung „Automatisch alle [x] Minuten“ aus der Blätterleiste (z. B. 2 Minuten).
   Berücksichtigt, dass TAM seinen Timer nach jedem Laden neu startet.
@@ -297,7 +366,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Adaptive Refresh aus), **S
   Aus = kein Gong, auch die Desktop-Benachrichtigung kommt ohne Ton.
 
 ### 1.8.0 – 2026-09-24
-- **TAM-Takt:** Die TAM-Server-Aktualisierung gilt als t = 0; der Adaptive Refresh wird darauf ausgerichtet und
+- **TAM-Takt:** Die TAM-Server-Aktualisierung gilt als t = 0; der Auto-Refresh wird darauf ausgerichtet und
   entfällt, wenn TAM gleich selbst neu lädt (weniger Last, keine doppelten Refreshes). Takt wird gemessen,
   Anzeige „nächste TAM-Aktualisierung in … s“.
 - Standardwert Verzögerung 0,17 s.
@@ -329,7 +398,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Adaptive Refresh aus), **S
 - Lizenz bleibt bei Updates und Neuinstallation erhalten (Sicherung im Browser-Speicher der TAM-Seite).
 - „Softwareupdate“ zeigt das Ergebnis am Button („✓ Alles auf dem neuesten Stand“).
 - „Liste einfügen“: zusätzliche PLZ zur geladenen Ortsliste, 24 h gültig; Erklärung per **?**.
-- Adaptive Refresh-Intervall ab 10 s (Standard 30 s), Erklärung per **?**; über 60 s Adaptive Refresh aus,
+- Auto-Refresh-Intervall ab 10 s (Standard 30 s), Erklärung per **?**; über 60 s Auto-Refresh aus,
   Abgleich synchron mit der TAM-Aktualisierung.
 - Reiter heißt „Erweiterte Einstellungen (x PLZ gesperrt)“.
 
@@ -361,7 +430,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Adaptive Refresh aus), **S
 - Konsolenausgaben nur noch mit Checkbox **Debug-Modus** (Reiter „Erweiterte Einstellungen“).
 - Angenehmerer Hinweiston: sanfter Zwei-Ton-Gong statt Piepton.
 - Button „Update prüfen“ heißt jetzt **„Softwareupdate“**.
-- Adaptive Refresh-Checkbox, Text und Intervall stehen auf einer Linie.
+- Auto-Refresh-Checkbox, Text und Intervall stehen auf einer Linie.
 
 ### 1.3.1 – 2026-09-24
 - „Letzter Refresh“ wird auch bei Refresh von außen angezeigt – Klick auf den Refresh-Pfeil der Website
@@ -412,7 +481,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Adaptive Refresh aus), **S
 - Button **„1 Auftrag testen“**: oberster Auftrag einmal verbindlich annehmen (mit Rückfrage).
 
 ### 0.10.0
-- Checkbox **Adaptive Refresh** (unabhängig von Start/Stop) mit Anzeige „Letzter Refresh ✓/✗“.
+- Checkbox **Auto-Refresh** (unabhängig von Start/Stop) mit Anzeige „Letzter Refresh ✓/✗“.
 - Warenkorb: erst 0-km-Aufträge anklicken, danach **„alle auswählen“**; Prüfung, dass alles angehakt ist.
 
 ### 0.9.0

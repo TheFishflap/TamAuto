@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.10.0
+// @version      1.11.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -38,7 +38,7 @@
     placesSheet: 'annehmen',
     blockSheet: 'nicht annehmen', // Sperrliste im selben Excel
     placesReloadMin: 30,          // Excel alle 30 min neu laden (Sperrliste zeitnah aktuell)
-    intervalSec: 30,          // Prüf-/Refresh-Intervall (Sekunden)
+    intervalSec: 60,          // Auto-Refresh-Intervall (Sekunden), Standard 60
     enabled: false,
     maxPerCycle: 3,           // Sicherheitsbremse
     tabName: 'Veröffentlichte Aufträge',
@@ -50,21 +50,23 @@
     confirmButton: /^bestätigen$/i,
   };
   const cfg = Object.assign({}, DEFAULTS, {
-    intervalSec: GM_getValue('intervalSec', DEFAULTS.intervalSec),
+    intervalSec: GM_getValue('intervalSecV2', DEFAULTS.intervalSec),
     // eigener Schlüssel seit Wegfall des Testmodus: wer im Testmodus lief, startet nicht ungefragt live
     enabled: GM_getValue('running', DEFAULTS.enabled),
     maxPerCycle: GM_getValue('maxPerCycle', DEFAULTS.maxPerCycle),
-    autoRefresh: GM_getValue('autoRefresh', true),
+    autoRefresh: GM_getValue('autoRefreshV2', false), // Standard aus (neuer Schlüssel ab 1.11: gilt einmal für alle)
     // Protokoll im Bedienfeld ("Console Log"), Standard aus. Neuer Schlüssel ab 1.6.1, damit ein früher
     // eingeschaltetes Log nach dem Update bei allen aus ist.
     consoleLog: GM_getValue('consoleLogV2', false),
     sound: GM_getValue('sound', true),   // Benachrichtigungston bei Annahme / fehlgeschlagener Annahme
     popups: GM_getValue('popups', true), // Desktop-Benachrichtigung (Popup) bei Annahme / fehlgeschlagener Annahme
     volume: GM_getValue('volume', 60),   // Lautstärke des Benachrichtigungstons in %
-    delayOn: GM_getValue('delayOn', false),       // Verzögerung vor jedem Klickschritt der Annahme
+    delayOn: GM_getValue('delayOnV2', true),       // Verzögerung vor jedem Klickschritt der Annahme – Standard an (ab 1.11)
     delaySec: Math.min(1, Math.max(0.01, GM_getValue('delaySec', 0.17))), // 0,01–1,00 s in 0,01-s-Schritten, Standard 0,17
     delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung
     delayRandomMs: GM_getValue('delayRandomMsV2', 100), // Streuung 0 … x ms (Standard 100 ms)
+    burstOn: GM_getValue('burstOn', true),  // Burst-Refresh nach manuellem Refresh / Tabwechsel
+    burstSec: GM_getValue('burstSec', 15),  // Dauer des Burst-Refresh in s (1 Refresh pro Sekunde)
   });
 
   let places = GM_getValue('places', { plz: [], orte: [], loadedAt: null, source: '' });
@@ -76,6 +78,7 @@
 
   function releaseBusy() {
     busy = false;
+    if (enterPending) { onEnterPublished(); return; } // Tabwechsel während der Annahme → jetzt aktualisieren
     if (recheck && cfg.enabled) { recheck = false; scheduleCheck(); }
   }
   let lastSummary = '';
@@ -127,7 +130,7 @@
   }
 
   // Sanfter Zwei-Ton-Gong (E5 → A5) mit weichem Ein- und Ausklingen statt hartem Piepton
-  // Lautstärke 0–100 % (Drehregler in "Erweiterte Einstellungen"); 60 % entspricht dem bisherigen Pegel
+  // Lautstärke 0–100 % (Schieberegler in "Erweiterte Einstellungen"); 60 % entspricht dem bisherigen Pegel
   function chime() {
     const peak = 0.3 * Math.max(0, Math.min(100, cfg.volume)) / 100;
     if (peak <= 0) return;
@@ -691,7 +694,7 @@
     const ok = maskSeen || Date.now() - t0 < 10000;
     if (ok) lastAnyRefreshAt = Date.now();
     const stamp = new Date().toLocaleTimeString('de-DE');
-    setRefreshStatus(ok ? `Letzter Refresh: ${stamp} ✓ (Adaptive Refresh)` : `Letzter Refresh: ${stamp} ✗ keine Wirkung`);
+    setRefreshStatus(ok ? `Letzter Refresh: ${stamp} ✓ (Auto-Refresh)` : `Letzter Refresh: ${stamp} ✗ keine Wirkung`);
     if (ok !== lastRefreshOk) {
       log(ok ? 'Refresh funktioniert – Tabelle wurde neu geladen.' :
         'Refresh-Klick ohne Wirkung (Tabelle nicht neu geladen). Bitte melden.', ok ? 'ok' : 'err');
@@ -785,7 +788,7 @@
     if (!e.isTrusted) return; // nur echte Klicks, nicht die des Scripts
     const panel = activeTabPanel();
     const btn = panel && findRefreshButton(panel);
-    if (btn && btn.contains(e.target)) manualClickAt = Date.now();
+    if (btn && btn.contains(e.target)) { manualClickAt = Date.now(); startBurst('manueller Refresh'); }
   }, true);
 
 
@@ -810,6 +813,27 @@
     const ok = findButton(/^(ok|schließen)$/i, win);
     if (ok) clickBtn(ok); else closeWindow(win);
   }
+  // Fenster zur Terminvergabe, das TAM nach einer Annahme öffnet: sofort (ohne Verzögerung) wegklicken und
+  // zurück in "Veröffentlichte Aufträge". Nur in den ersten 30 s nach einer Annahme durch das Script –
+  // öffnet man die Terminvergabe selbst, bleibt sie unangetastet.
+  let lastAcceptAt = 0;
+  function dismissTerminDialog() {
+    if (Date.now() - lastAcceptAt > 30000) return;
+    const wins = visibleWindows().filter((w) => {
+      const t = winTitle(w);
+      if (cfg.orderWindowTitle.test(t) || cfg.confirmDialogTitle.test(t)) return false;
+      return /termin/i.test(t) || (/termin/i.test(text(w)) && w.querySelector('input[type=checkbox]'));
+    });
+    wins.forEach((w) => {
+      // bevorzugt schließen/abbrechen – nichts bestätigen
+      const x = w.querySelector('.x-tool-close');
+      const btn = findButton(/^(abbrechen|schließen|später|nein)$/i, w) || findButton(/^(ok|weiter)$/i, w);
+      if (x && visible(x)) fire(x); else if (btn) clickBtn(btn);
+      log(`Fenster „${winTitle(w) || 'Terminvergabe'}“ weggeklickt.`, 'debug');
+    });
+    if (wins.length && !onPublishedTab()) setTimeout(() => switchToPublishedTab(), 200);
+  }
+
   // Alle offenen Meldungen mit OK-Button schließen (nicht Auftragskarte / Bestätigungsdialog)
   function dismissMessages() {
     visibleWindows().filter((w) => MSG_TITLE.test(winTitle(w)) && !cfg.orderWindowTitle.test(winTitle(w)) &&
@@ -948,7 +972,12 @@
     }
     await humanDelay('Bestätigen');
     clickBtn(okBtn);
-    await sleep(2500);
+    lastAcceptAt = Date.now(); // ab jetzt darf ein Terminvergabe-Fenster sofort weggeklickt werden
+    // auf TAMs Reaktion warten (Meldung, Terminvergabe, Karte zu oder Reiterwechsel) – höchstens 2,5 s statt starr
+    await sleep(300);
+    await waitFor(() => !visible(card) || !onPublishedTab() ||
+      visibleWindows().some((w) => w !== card && w !== dlg && !before.has(w)), 2200, 100);
+    await sleep(200);
 
     // 5) Fehlermeldung erkennen
     const errWin = visibleWindows().find((w) => w !== card && !before.has(w) &&
@@ -967,7 +996,8 @@
     closeWindow(card);
     await sleep(500);
     order.auftragsNr = nr;
-    // TAM springt nach der Annahme ggf. in einen anderen Reiter → sofort zurück
+    // Terminvergabe-Fenster (falls schon offen) wegklicken; TAM springt ggf. in einen anderen Reiter → sofort zurück
+    dismissTerminDialog();
     await switchToPublishedTab();
     return true;
   }
@@ -1092,9 +1122,65 @@
     let txt = t.at ? `Nächste TAM-Aktualisierung in ${fmtDur(t.at - now)}${per} – ${t.src}` : `TAM-Aktualisierung${per}: wartet auf ersten Refresh`;
     if (arActive()) {
       const nextOwn = lastAnyRefreshAt + cfg.intervalSec * 1000 - now;
-      txt += t.at && nextOwn >= t.at - now ? ' · Adaptive Refresh wartet auf TAM' : ` · Adaptive Refresh in ${fmtDur(nextOwn)}`;
+      txt += t.at && nextOwn >= t.at - now ? ' · Auto-Refresh wartet auf TAM' : ` · Auto-Refresh in ${fmtDur(nextOwn)}`;
     }
+    if (burstUntil > now) txt = `⚡ Burst-Refresh läuft – noch ${fmtDur(burstUntil - now)} · ${txt}`;
     el.textContent = txt;
+    const bs = document.getElementById("tamauto-burst-state");
+    if (bs) bs.textContent = burstUntil > now ? `⚡ läuft – noch ${fmtDur(burstUntil - now)}` : (cfg.burstOn ? "bereit (Auslöser: manueller Refresh, Tabwechsel)" : "aus – beim Tabwechsel wird einmal aktualisiert");
+  }
+
+  // Einmal refreshen (Refresh-Pfeil) und danach abgleichen – gemeinsam genutzt von Auto-Refresh,
+  // Tabwechsel und Burst-Refresh
+  async function refreshAndCheck(reason) {
+    if (busy || !onPublishedTab()) return false;
+    busy = true; // eigene Tabellenänderungen beim Refresh nicht doppelt auswerten
+    ownRefresh = true;
+    let refreshed = false;
+    try { refreshed = await refreshGrid(); } finally { busy = false; recheck = false; ownRefresh = false; }
+    if (!refreshed) lastAnyRefreshAt = Date.now(); // nicht im Sekundentakt erneut versuchen
+    await cycle(refreshed ? reason : 'Intervall');
+    return refreshed;
+  }
+
+  // ---- Burst-Refresh: gezielt für kurze Zeit jede Sekunde aktualisieren (Auftragswellen), statt dauerhaft
+  // Last zu erzeugen. Auslöser: manueller Klick auf den Refresh-Pfeil der Website und Wechsel zurück in
+  // "Veröffentlichte Aufträge" (Erweiterte Einstellungen: an/aus + Dauer in s).
+  let burstUntil = 0;
+  let burstRunning = false;
+  async function startBurst(reason) {
+    if (!cfg.burstOn || !license) return;
+    burstUntil = Date.now() + cfg.burstSec * 1000;
+    log(`Burst-Refresh (${reason}): ${cfg.burstSec} s lang jede Sekunde aktualisieren.`, 'ok');
+    if (burstRunning) return; // läuft schon → nur verlängert
+    burstRunning = true;
+    try {
+      if (reason === 'manueller Refresh') await sleep(1000); // der Klick hat gerade selbst aktualisiert
+      while (Date.now() < burstUntil && onPublishedTab()) {
+        const t0 = Date.now();
+        if (!busy) await refreshAndCheck('Burst-Refresh');
+        await sleep(Math.max(100, 1000 - (Date.now() - t0))); // höchstens 1 Refresh pro Sekunde
+      }
+    } finally { burstRunning = false; burstUntil = 0; }
+  }
+
+  // Wechsel zurück in "Veröffentlichte Aufträge": immer einmal aktualisieren (bzw. Burst-Refresh, falls an),
+  // damit bei Auftragswellen sofort der aktuelle Stand da ist. Einmal pro Wechsel genügt.
+  let wasOnPublished = false;
+  let enterPending = false;
+  function checkTabEnter() {
+    const on = onPublishedTab();
+    if (on && !wasOnPublished) {
+      if (busy) enterPending = true; // z. B. während einer Annahme → direkt danach
+      else onEnterPublished();
+    }
+    wasOnPublished = on;
+  }
+  function onEnterPublished() {
+    enterPending = false;
+    if (!license) return;
+    if (cfg.burstOn) startBurst('Tabwechsel');
+    else setTimeout(() => refreshAndCheck('Tabwechsel-Refresh'), 300);
   }
 
   async function tick() {
@@ -1108,24 +1194,19 @@
       hookAllConsoles(); // später geladene TAM-iframes ebenfalls mitlesen
     }
     renderSync(now);
-    if (busy || !onPublishedTab()) return;
+    if (busy || !onPublishedTab() || burstUntil > now) return; // während Burst-Refresh übernimmt dieser
     if (arActive()) {
       if (!ownRefreshDue(now)) return;
-      busy = true; // eigene Tabellenänderungen beim Refresh nicht doppelt auswerten
-      ownRefresh = true;
-      let refreshed = false;
-      try { refreshed = await refreshGrid(); } finally { busy = false; recheck = false; ownRefresh = false; }
-      if (!refreshed) lastAnyRefreshAt = Date.now(); // nicht im Sekundentakt erneut versuchen
-      await cycle(refreshed ? 'Refresh' : 'Intervall');
+      await refreshAndCheck('Refresh');
     } else if (cfg.enabled && now - lastCycleAt > 60000) {
-      // Ohne Adaptive Refresh gleicht die TAM-Aktualisierung ab; das hier ist nur ein Sicherheitsnetz
+      // Ohne Auto-Refresh gleicht die TAM-Aktualisierung ab; das hier ist nur ein Sicherheitsnetz
       await cycle('Intervall');
     }
   }
 
   function updateRefreshStatus() {
-    setRefreshStatus(cfg.intervalSec > 60 ? 'Adaptive Refresh aus – Abgleich synchron mit TAM-Aktualisierung'
-      : cfg.autoRefresh ? `Adaptive Refresh alle ${cfg.intervalSec} s, ausgerichtet am TAM-Takt` : 'Adaptive Refresh aus');
+    setRefreshStatus(cfg.intervalSec > 60 ? 'Auto-Refresh aus – Abgleich synchron mit TAM-Aktualisierung'
+      : cfg.autoRefresh ? `Auto-Refresh alle ${cfg.intervalSec} s, ausgerichtet am TAM-Takt` : 'Auto-Refresh aus');
   }
 
   function restartTimer() {
@@ -1176,6 +1257,14 @@
           <button class="tamauto-tabbtn" data-page="tamauto-page-info">Info</button>
         </div>
         <div id="tamauto-page-adv" style="display:none;margin:6px 0">
+          <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
+            <span class="tamauto-chk">
+              <label class="tamauto-chk"><input type="checkbox" id="tamauto-burst-on"> <b>Burst-Refresh</b></label>
+              für <input id="tamauto-burst-sec" type="number" min="3" max="120" style="width:48px;margin:0"> s
+              <span class="tamauto-help" title="Gezielt statt dauerhaft Last erzeugen: Nach einem MANUELLEN Klick auf den Refresh-Pfeil der Website und nach dem Wechsel zurück in „Veröffentlichte Aufträge“ wird für die eingestellte Zeit (Standard 15 s) jede Sekunde aktualisiert – ideal bei Auftragswellen. Ein Tabwechsel löst den Burst einmal aus. Ist Burst-Refresh aus, wird beim Tabwechsel trotzdem immer einmal aktualisiert.">?</span>
+            </span>
+            <div id="tamauto-burst-state" style="color:#555;margin-top:2px"></div>
+          </div>
           <div>
             <label class="tamauto-chk" title="Wartet vor jedem Klickschritt der Annahme">
               <input type="checkbox" id="tamauto-delay-on"> <b>Verzögerung</b></label>
@@ -1198,11 +1287,8 @@
             <span class="tamauto-chk">
               <label class="tamauto-chk" title="Gong bei angenommenem oder fehlgeschlagenem Auftrag">
                 <input type="checkbox" id="tamauto-sound"> <b>Benachrichtigungston</b></label>
-              <span id="tamauto-vol" tabindex="0" title="Lautstärke: ziehen (hoch/runter), Mausrad oder Pfeiltasten · Doppelklick = 60 %"
-                style="position:relative;display:inline-block;width:26px;height:26px;border-radius:50%;margin-left:6px;cursor:ns-resize;
-                background:radial-gradient(circle at 35% 30%,#fff,#c9d8ee);border:2px solid #1a4d8f;box-sizing:border-box;outline:none">
-                <span id="tamauto-vol-needle" style="position:absolute;left:50%;top:50%;width:2px;height:9px;margin-left:-1px;
-                  background:#1a4d8f;border-radius:1px;transform-origin:50% 0"></span></span>
+              <input type="range" id="tamauto-vol" min="0" max="100" step="5" title="Lautstärke · Doppelklick = 60 %"
+                style="width:100px;margin:0 0 0 6px;cursor:pointer">
               <b id="tamauto-vol-val" style="min-width:34px"></b>
               <button id="tamauto-sound-test" title="Ton einmal abspielen">▶ Test</button>
             </span>
@@ -1284,9 +1370,9 @@
 Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser gedacht – sie nimmt nur vollständige 5-stellige PLZ an, so wird nicht versehentlich ein ganzes Gebiet angenommen.">?</span>
           </span>
           <span class="tamauto-chk">
-            <label class="tamauto-chk"><input type="checkbox" id="tamauto-ar"> Adaptive Refresh</label>
+            <label class="tamauto-chk"><input type="checkbox" id="tamauto-ar"> Auto-Refresh</label>
             alle <input id="tamauto-int" type="number" min="10" style="width:48px;margin:0" value="${cfg.intervalSec}"> s
-            <span class="tamauto-help" title="Adaptive Refresh lädt die Tabelle schneller neu, um neue Aufträge früher zu finden. Ein niedrigerer Wert bedeutet eine höhere Auslastung und sollte mit Bedacht gewählt werden, um Auffälligkeiten zu vermeiden. Standard: 30 s, Minimum: 10 s. Adaptiv: Das Script liest mit, wann TAM selbst neu lädt (Einstellung „Automatisch alle … Minuten“), und lässt den eigenen Refresh aus, wenn TAM gleich ohnehin aktualisiert. Über 60 s schaltet sich der Adaptive Refresh ab – der Abgleich läuft dann nur mit der TAM-eigenen Aktualisierung.">?</span>
+            <span class="tamauto-help" title="Auto-Refresh lädt die Tabelle schneller neu, um neue Aufträge früher zu finden. Ein niedrigerer Wert bedeutet eine höhere Auslastung und sollte mit Bedacht gewählt werden, um Auffälligkeiten zu vermeiden. Standard: 60 s (aus), Minimum: 10 s. Am TAM-Takt ausgerichtet: Das Script liest mit, wann TAM selbst neu lädt (Einstellung „Automatisch alle … Minuten“), und lässt den eigenen Refresh aus, wenn TAM gleich ohnehin aktualisiert. Über 60 s schaltet sich der Auto-Refresh ab – der Abgleich läuft dann nur mit der TAM-eigenen Aktualisierung.">?</span>
           </span>
           <button id="tamauto-once" title="Nimmt den obersten Auftrag der Tabelle EINMAL verbindlich an – ohne Ortsliste">Auftrag 1. Zeile annehmen</button>
           <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">
@@ -1348,7 +1434,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       log(cfg.enabled ? 'Gestartet' : 'Gestoppt'); renderStatus();
       if (cfg.enabled) cycle('Start');
     };
-    // Adaptive Refresh: über 60 s aus (TAM aktualisiert selbst jede Minute → Abgleich synchron damit)
+    // Auto-Refresh: über 60 s aus (TAM aktualisiert selbst jede Minute → Abgleich synchron damit)
     const renderAr = () => {
       const over = cfg.intervalSec > 60;
       $('tamauto-ar').checked = cfg.autoRefresh && !over;
@@ -1356,13 +1442,13 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       $('tamauto-int').value = cfg.intervalSec;
     };
     $('tamauto-ar').onchange = (e) => {
-      cfg.autoRefresh = e.target.checked; GM_setValue('autoRefresh', cfg.autoRefresh); lastRefreshOk = null; updateRefreshStatus();
+      cfg.autoRefresh = e.target.checked; GM_setValue('autoRefreshV2', cfg.autoRefresh); lastRefreshOk = null; updateRefreshStatus();
     };
     $('tamauto-int').onchange = (e) => {
-      cfg.intervalSec = Math.max(10, parseInt(e.target.value, 10) || 30); GM_setValue('intervalSec', cfg.intervalSec);
+      cfg.intervalSec = Math.max(10, parseInt(e.target.value, 10) || 60); GM_setValue('intervalSecV2', cfg.intervalSec);
       if (cfg.intervalSec > 60 && cfg.autoRefresh) {
-        cfg.autoRefresh = false; GM_setValue('autoRefresh', false);
-        log('Intervall über 60 s: Adaptive Refresh aus – Abgleich läuft synchron mit der TAM-Aktualisierung.', 'ok');
+        cfg.autoRefresh = false; GM_setValue('autoRefreshV2', false);
+        log('Intervall über 60 s: Auto-Refresh aus – Abgleich läuft synchron mit der TAM-Aktualisierung.', 'ok');
       }
       renderAr(); restartTimer();
     };
@@ -1442,7 +1528,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     };
     const delayInfo = () => `Verzögerung ${fmtSec(cfg.delaySec)} je Klickschritt${cfg.delayRandom ? ` + zufällig bis ${cfg.delayRandomMs} ms` : ''}.`;
     $('tamauto-delay-on').onchange = (e) => {
-      cfg.delayOn = e.target.checked; GM_setValue('delayOn', cfg.delayOn); renderDelay();
+      cfg.delayOn = e.target.checked; GM_setValue('delayOnV2', cfg.delayOn); renderDelay();
       log(cfg.delayOn ? `An: ${delayInfo()}` : 'Verzögerung aus.');
     };
     $('tamauto-delay').oninput = (e) => {
@@ -1477,6 +1563,19 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       $('tamauto-body').prepend(w);
     }
 
+    // Burst-Refresh an/aus + Dauer
+    $('tamauto-burst-on').checked = cfg.burstOn;
+    $('tamauto-burst-sec').value = cfg.burstSec;
+    $('tamauto-burst-on').onchange = (e) => {
+      cfg.burstOn = e.target.checked; GM_setValue('burstOn', cfg.burstOn);
+      if (!cfg.burstOn) burstUntil = 0; // laufenden Burst beenden
+      log(cfg.burstOn ? `Burst-Refresh an (${cfg.burstSec} s).` : 'Burst-Refresh aus.');
+    };
+    $('tamauto-burst-sec').onchange = (e) => {
+      cfg.burstSec = Math.round(Math.min(120, Math.max(3, +e.target.value || 15)));
+      e.target.value = cfg.burstSec; GM_setValue('burstSec', cfg.burstSec);
+    };
+
     // Console Log: Protokoll des Scripts ein-/ausblenden (keine Ausgaben in die Browser-Konsole)
     const renderConsole = () => { $('tamauto-consolelog').checked = cfg.consoleLog; $('tamauto-log').style.display = cfg.consoleLog ? '' : 'none'; };
     $('tamauto-consolelog').onchange = (e) => { cfg.consoleLog = e.target.checked; GM_setValue('consoleLogV2', cfg.consoleLog); renderConsole(); };
@@ -1490,33 +1589,19 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     };
     $('tamauto-sound-test').onclick = () => chime();
 
-    // Drehregler Lautstärke (0–100 %): Zeiger von -135° (0 %) bis +135° (100 %)
-    const knob = $('tamauto-vol');
+    // Lautstärke-Schieberegler (0–100 %, 5-%-Schritte); beim Loslassen speichern und einmal vorspielen
+    const vol = $('tamauto-vol');
     const renderVol = () => {
-      $('tamauto-vol-needle').style.transform = `rotate(${180 - 135 + cfg.volume * 2.7}deg)`;
+      vol.value = cfg.volume;
       $('tamauto-vol-val').textContent = `${cfg.volume} %`;
-      knob.style.opacity = cfg.sound ? '1' : '.4';
+      vol.disabled = !cfg.sound;
+      vol.style.opacity = cfg.sound ? '1' : '.4';
     };
-    let volSaveTimer = null;
-    const setVol = (v, preview = true) => {
-      cfg.volume = Math.round(Math.max(0, Math.min(100, v)));
-      renderVol();
-      clearTimeout(volSaveTimer); // erst nach dem Drehen speichern und einmal vorspielen
-      volSaveTimer = setTimeout(() => { GM_setValue('volume', cfg.volume); if (preview && cfg.sound) chime(); }, 350);
-    };
-    knob.addEventListener('mousedown', (e) => {
-      e.preventDefault(); e.stopPropagation(); // nicht das Bedienfeld verschieben / Größe ändern
-      const y0 = e.clientY, v0 = cfg.volume;
-      const mv = (ev) => setVol(v0 + (y0 - ev.clientY) * 0.8, false);
-      document.addEventListener('mousemove', mv);
-      document.addEventListener('mouseup', () => { document.removeEventListener('mousemove', mv); setVol(cfg.volume); }, { once: true });
-    });
-    knob.addEventListener('wheel', (e) => { e.preventDefault(); setVol(cfg.volume + (e.deltaY < 0 ? 5 : -5)); }, { passive: false });
-    knob.addEventListener('keydown', (e) => {
-      if (['ArrowUp', 'ArrowRight'].includes(e.key)) { e.preventDefault(); setVol(cfg.volume + 5); }
-      if (['ArrowDown', 'ArrowLeft'].includes(e.key)) { e.preventDefault(); setVol(cfg.volume - 5); }
-    });
-    knob.addEventListener('dblclick', () => setVol(60));
+    const setVol = (v) => { cfg.volume = Math.round(Math.max(0, Math.min(100, +v))); renderVol(); };
+    vol.addEventListener('mousedown', (e) => e.stopPropagation()); // nicht das Bedienfeld verschieben
+    vol.oninput = (e) => setVol(e.target.value);
+    vol.onchange = () => { GM_setValue('volume', cfg.volume); if (cfg.sound) chime(); };
+    vol.ondblclick = () => { setVol(60); GM_setValue('volume', 60); if (cfg.sound) chime(); };
     renderVol();
 
     // "?" bei Popups: eingebaute Anleitung auf-/zuklappen
@@ -1657,7 +1742,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     renderStatus();
   }
 
-  // Sofort prüfen, sobald sich die Tabelle ändert (Adaptive Refresh, TAM-Autoaktualisierung, manueller Refresh, Tabwechsel)
+  // Sofort prüfen, sobald sich die Tabelle ändert (Auto-Refresh, TAM-Autoaktualisierung, manueller Refresh, Tabwechsel)
   let obsTimer = null;
   function scheduleCheck(reason = 'Nachprüfung') {
     clearTimeout(obsTimer);
@@ -1667,7 +1752,11 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     new MutationObserver((muts) => {
       if (muts.some((m) => m.type === 'attributes' && m.target.tagName === 'LI' && (m.target.id || '').includes('__'))) {
         updateTabStatus();
+        checkTabEnter(); // zurück in "Veröffentlichte Aufträge" → einmal aktualisieren / Burst-Refresh
       }
+      // TAM-Fenster zur Terminvergabe nach einer Annahme sofort wegklicken (ohne Verzögerung)
+      if (muts.some((m) => m.type === 'childList' && [...m.addedNodes].some((n) => n.nodeType === 1 &&
+        (n.matches('.x-window') || n.querySelector?.('.x-window'))))) setTimeout(dismissTerminDialog, 50);
       const panel = document.getElementById(cfg.tabPanelId);
       if (!panel) return;
       const relevant = muts.some((m) => m.type === 'childList' && panel.contains(m.target) && m.target.closest &&
@@ -1783,6 +1872,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     license = lc.lic;
     buildPanel();
     watchGrid();
+    wasOnPublished = onPublishedTab(); // Ausgangszustand für die Tabwechsel-Erkennung
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;
     // Excel (Ortsliste + Sperrliste) beim Start laden, wenn älter als 30 min oder altes Format, danach alle 30 min
     const reloadMs = cfg.placesReloadMin * 60 * 1000;
