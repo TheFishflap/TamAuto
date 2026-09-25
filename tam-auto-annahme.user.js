@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.16.0
+// @version      1.16.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -2721,7 +2721,8 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
   const LIC_PREFIX = 'tamlic-hnzqxgvxtcc49z6z';
   const LIC_TOPIC_REQ = `${LIC_PREFIX}-anfrage`, LIC_TOPIC_STATUS = `${LIC_PREFIX}-status`;
   const licKeyTopic = () => `${LIC_PREFIX}-key-${installId()}`;
-  const REVOKE_URL = ''; // Freigabelink (download.aspx?share=…) der Datei Script\sperrliste.txt – leer = keine Prüfung
+  // Freigabelink (download.aspx?share=…) der Datei Script\sperrliste.txt im OneDrive – leer = keine Prüfung
+  const REVOKE_URL = 'https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQBmSNFRkXF5RqfVZ6nt9cqPAYd2NQ8PsE9lLpjtk6_bw68';
   const REVOKE_GRACE_MS = 7 * 24 * 3600 * 1000;
   const licFetch = (url, opt) => (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).fetch(url, opt);
   const licPost = (topic, obj) => licFetch(`${LIC_NTFY}/${topic}`, { method: 'POST', body: JSON.stringify(obj) });

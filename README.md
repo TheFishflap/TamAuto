@@ -361,6 +361,10 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.16.1 – 2026-09-25
+- Sperrliste aktiv: Freigabelink der signierten Sperrliste im OneDrive hinterlegt (Prüfung beim Start und alle 6 h,
+  7 Tage offline erlaubt).
+
 ### 1.16.0 – 2026-09-25
 - **Fern-Lizenzierung:** Im Lizenzfenster „Lizenz anfragen“ (Name eintragen) – nach der Freischaltung durch IB Thomée
   aktiviert sich das Script automatisch (auch nachträglich innerhalb von 12 h). Reiter Info: „Lizenz verlängern“ –
@@ -368,7 +372,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 - **Lebenszeichen** alle 15 min (ID, Name, Version, Ablaufdatum, an/aus) für die Nutzerübersicht der Lizenzverwaltung.
 - **Sperrliste:** signierte Liste entzogener Installationen (OneDrive/SharePoint), Prüfung beim Start und alle 6 h;
   Schutz gegen Wiedereinspielen älterer Listen; ist sie **länger als 7 Tage** nicht abrufbar, pausiert das Script.
-  (Aktiv, sobald der Freigabelink der Sperrliste im Script hinterlegt ist.)
+  (Aktiv ab 1.16.1.)
 
 ### 1.15.2 – 2026-09-25
 - **Push-Signal standardmäßig aus** (gilt nach dem Update einmal für alle); Einschalten und Kanal jetzt im Reiter
