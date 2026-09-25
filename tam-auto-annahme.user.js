@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.12.0
+// @version      1.12.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -600,6 +600,7 @@
   // Tab-Status im Bedienfeld: welcher Reiter ist aktiv, ist das Script bereit zum Annehmen?
   let lastTabState = '';
   function updateTabStatus() {
+    renderHeadState();
     const el = document.getElementById('tamauto-tab');
     if (!el) return;
     const active = [...document.querySelectorAll('li.x-tab-strip-active[id*="__"]')].filter(visible);
@@ -835,17 +836,35 @@
   // Annahme-Logik sie trotzdem auswerten kann (Trefferquote, Log).
   const UNAVAILABLE = /nicht (mehr )?verfügbar|bereits vergeben/i;
   let lastUnavailable = { at: 0, text: '' };
+  // Neben TAM-Fenstern (.x-window) auch Info-Einblendungen, Tooltips und Dialoge prüfen – TAM zeigt Hinweise
+  // teils als kurze Einblendung, die sonst erst nach Sekunden von selbst verschwindet.
+  const MSG_SELECTOR = '.x-window, .x-window-dlg, .x-info, .x-tip, .x-form-invalid-tip, [role="dialog"], [role="alertdialog"]';
+  const msgTries = new WeakMap(); // wie oft schon versucht (für Ausweich-Wege)
   function dismissUnavailable() {
-    visibleWindows().forEach((w) => {
+    [...document.querySelectorAll(MSG_SELECTOR)].filter((w) => visible(w) && !w.closest('#tamauto')).forEach((w) => {
+      if (w.parentElement && w.parentElement.closest(MSG_SELECTOR)) return; // nur das äußerste Element
       const t = winTitle(w);
       if (cfg.orderWindowTitle.test(t) || cfg.confirmDialogTitle.test(t)) return;
       const all = text(w);
       if (!UNAVAILABLE.test(`${t} ${all}`)) return;
-      const body = text(w.querySelector('.x-window-body, .ext-mb-text')) || all.replace(t, '');
-      lastUnavailable = { at: Date.now(), text: `${t ? `„${t}“ – ` : ''}${body.replace(/(OK|Abbrechen|Schließen)\s*$/i, '').trim()}`.slice(0, 160) };
-      const btn = findButton(/^(ok|schließen|abbrechen)$/i, w);
-      if (btn) clickBtn(btn); else closeWindow(w);
-      log(`TAM-Meldung sofort geschlossen: ${lastUnavailable.text}`, 'debug');
+      const tries = (msgTries.get(w) || 0) + 1;
+      msgTries.set(w, tries);
+      if (tries === 1) {
+        const body = text(w.querySelector('.x-window-body, .ext-mb-text, .x-info-body')) || all.replace(t, '');
+        lastUnavailable = { at: Date.now(), text: `${t ? `„${t}“ – ` : ''}${body.replace(/(OK|Abbrechen|Schließen)\s*$/i, '').trim()}`.slice(0, 160) };
+        log(`TAM-Meldung sofort geschlossen: ${lastUnavailable.text}`, 'debug');
+      }
+      // Erst regulär schließen (Button bzw. Schließen-Symbol); reagiert die Meldung nicht oder hat keinen
+      // Button (Info-Einblendung), wird sie sofort bzw. beim nächsten Durchlauf direkt ausgeblendet
+      const btn = findButton(/^(ok|schließen|abbrechen)$/i, w) || [...w.querySelectorAll('button')].find(visible);
+      const x = w.querySelector('.x-tool-close');
+      if (tries === 1 && btn) clickBtn(btn);
+      else if (tries === 1 && x && visible(x)) fire(x);
+      else {
+        w.style.display = 'none'; // letzter Ausweg: Meldung und ggf. graue Sperrfläche ausblenden
+        document.querySelectorAll('.ext-el-mask, .x-modal-mask').forEach((m) => { if (visible(m) && !m.closest('#tamauto')) m.style.display = 'none'; });
+        if (tries > 1) log(`TAM-Meldung reagierte nicht auf Klick – ausgeblendet (Aufbau: ${String(w.className).slice(0, 60)}).`, 'debug');
+      }
     });
   }
   function dismissMessage(win) {
@@ -1203,7 +1222,7 @@
     if (burstUntil > now) txt = `⚡ Burst-Refresh läuft – noch ${fmtDur(burstUntil - now)} · ${txt}`;
     el.textContent = txt;
     const bs = document.getElementById("tamauto-burst-state");
-    if (bs) bs.textContent = burstUntil > now ? `⚡ läuft – noch ${fmtDur(burstUntil - now)}` : "bereit";
+    if (bs) bs.textContent = burstUntil > now ? `⚡ läuft – noch ${fmtDur(burstUntil - now)}` : "";
   }
 
   // Einmal refreshen (Refresh-Pfeil) und danach abgleichen – gemeinsam genutzt von Auto-Refresh,
@@ -1293,7 +1312,15 @@
 
   // ------------------------------------------------------------------ Bedienfeld
   function setStatus(s) { const el = document.getElementById('tamauto-status'); if (el) el.textContent = s; }
+  // Kurzstatus in der Titelzeile (sichtbar im minimierten Zustand)
+  function renderHeadState() {
+    const hs = document.getElementById('tamauto-head-state');
+    if (!hs) return;
+    const [txt, col] = !cfg.enabled ? ['■ gestoppt', '#c62828'] : onPublishedTab() ? ['● bereit', '#2e7d32'] : ['⏸ pausiert', '#b26a00'];
+    hs.textContent = txt; hs.style.color = col;
+  }
   function renderStatus() {
+    renderHeadState();
     const el = document.getElementById('tamauto-places');
     const xb = places.block || { plz: [], orte: [] };
     if (el) el.textContent = `Ortsliste: ${places.plz.length} PLZ / ${places.orte.length} Orte · ` +
@@ -1316,8 +1343,8 @@
     const p = document.createElement('div');
     p.id = 'tamauto';
     p.innerHTML = `
-      <div id="tamauto-head" style="display:flex;justify-content:space-between;align-items:center;cursor:move">
-        <b>TAM Auto-Annahme v${VERSION}</b><span id="tamauto-min" style="cursor:pointer;padding:0 4px">–</span></div>
+      <div id="tamauto-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:move;white-space:nowrap">
+        <b>TAM Auto-Annahme v${VERSION}</b><span id="tamauto-head-state" style="display:none;font-weight:bold"></span><span id="tamauto-min" style="cursor:pointer;padding:0 6px;font-weight:bold">–</span></div>
       <div id="tamauto-body">
         <a id="tamauto-update" href="${UPDATE_URL}" target="_blank" style="display:none;font-weight:bold;color:#1a4d8f;margin:4px 0"></a>
         <div id="tamauto-tab" style="font-weight:bold;margin:4px 0"></div>
@@ -1333,14 +1360,6 @@
           <button class="tamauto-tabbtn" data-page="tamauto-page-info">Info</button>
         </div>
         <div id="tamauto-page-adv" style="display:none;margin:6px 0">
-          <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
-            <span class="tamauto-chk">
-              <b>Burst-Refresh</b> für <input id="tamauto-burst-sec" type="number" min="3" max="120" style="width:48px;margin:0"> s
-              <span class="tamauto-help" title="Burst-Refresh: für die eingestellte Zeit (Standard 3 s) jede Sekunde aktualisieren – ideal bei Auftragswellen, ohne dauerhaft Last zu erzeugen. Auslösen: über den Button „⚡ Burst“ im Reiter „Bedienung“ ODER direkt auf der TAM-Website über den Refresh-Pfeil ⟳ unten in der Blätterleiste der Tabelle. Beim Tabwechsel zurück in „Veröffentlichte Aufträge“ wird dagegen immer nur EINMAL aktualisiert.">?</span>
-            </span>
-            <div style="color:#555;margin-top:2px">Auslösen: Button <b>„⚡ Burst“</b> im Reiter Bedienung oder Refresh-Pfeil <b>⟳</b> auf der TAM-Website.</div>
-            <div id="tamauto-burst-state" style="color:#555;margin-top:2px"></div>
-          </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-hidetips"> <b>Tipps ausblenden</b></label>
@@ -1467,7 +1486,12 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
             <span class="tamauto-help" title="Auto-Refresh lädt die Tabelle schneller neu, um neue Aufträge früher zu finden. Ein niedrigerer Wert bedeutet eine höhere Auslastung und sollte mit Bedacht gewählt werden, um Auffälligkeiten zu vermeiden. Standard: 60 s (aus), Minimum: 10 s. Am TAM-Takt ausgerichtet: Das Script liest mit, wann TAM selbst neu lädt (Einstellung „Automatisch alle … Minuten“), und lässt den eigenen Refresh aus, wenn TAM gleich ohnehin aktualisiert. Über 60 s schaltet sich der Auto-Refresh ab – der Abgleich läuft dann nur mit der TAM-eigenen Aktualisierung.">?</span>
           </span>
           <button id="tamauto-once" title="Nimmt den obersten Auftrag der Tabelle EINMAL verbindlich an – ohne Ortsliste">Auftrag 1. Zeile annehmen</button>
-          <button id="tamauto-burst-go" title="Burst-Refresh jetzt starten: für die eingestellte Zeit (Erweiterte Einstellungen, Standard 3 s) jede Sekunde aktualisieren – z. B. wenn eine Auftragswelle erwartet wird. Erneut klicken = wieder volle Zeit.">⚡ Burst</button>
+          <span class="tamauto-chk">
+            <button id="tamauto-burst-go" title="Burst-Refresh jetzt starten: für die eingestellte Zeit jede Sekunde aktualisieren – z. B. wenn eine Auftragswelle erwartet wird. Erneut klicken = wieder volle Zeit.">⚡ Burst</button>
+            <input id="tamauto-burst-sec" type="number" min="3" max="120" title="Dauer des Burst-Refresh in Sekunden" style="width:44px;margin:0"> s
+            <span class="tamauto-help" title="Burst-Refresh: für die eingestellte Zeit (Standard 3 s) jede Sekunde aktualisieren – ideal bei Auftragswellen, ohne dauerhaft Last zu erzeugen. Auslösen: über diesen Button ODER direkt auf der TAM-Website über den Refresh-Pfeil ⟳ unten in der Blätterleiste der Tabelle. Beim Tabwechsel zurück in „Veröffentlichte Aufträge“ wird dagegen immer nur EINMAL aktualisiert.">?</span>
+            <span id="tamauto-burst-state" style="color:#555"></span>
+          </span>
           <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">
             <b>Tages-Blacklist</b>
             <span class="tamauto-help" title="PLZ, die heute NICHT angenommen werden, z. B. nach einem Storno (sonst würde der Auftrag erneut angenommen). 2–5 Ziffern: „43“ sperrt alle 43xxx, „47877“ nur diese PLZ. Die Liste leert sich um Mitternacht automatisch. Freigeben: auf den roten Eintrag klicken.">?</span>
@@ -1784,15 +1808,27 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       GM_setValue('acceptlist', { date: today(), plz: [] }); log('Tages-Annahmeliste geleert.'); renderAcceptlist();
     };
     renderAcceptlist();
-    // Minimieren: Inhalt aus, Höhe vorübergehend automatisch
-    $('tamauto-min').onclick = () => {
+    // Minimieren: nur noch eine schmale Titelzeile mit Status (wird gespeichert)
+    const setMinimized = (min) => {
       const b = $('tamauto-body');
-      if (b.style.display === 'none') {
-        b.style.display = 'flex'; p.style.height = p.dataset.h || ''; p.style.resize = 'both';
+      if (min) {
+        if (b.style.display !== 'none') p.dataset.prev = JSON.stringify({ h: p.style.height, w: p.style.width });
+        b.style.display = 'none';
+        Object.assign(p.style, { height: 'auto', width: 'max-content', minWidth: '0', minHeight: '0', resize: 'none', padding: '4px 8px', display: 'block' });
+        $('tamauto-min').textContent = '+'; $('tamauto-min').title = 'Bedienfeld öffnen';
       } else {
-        p.dataset.h = p.style.height; b.style.display = 'none'; p.style.height = 'auto'; p.style.resize = 'none';
+        const prev = JSON.parse(p.dataset.prev || '{}');
+        b.style.display = 'flex';
+        Object.assign(p.style, { height: prev.h || '', width: prev.w && prev.w !== 'max-content' ? prev.w : '420px', minWidth: '340px', minHeight: '120px', resize: 'both', padding: '8px', display: 'flex' });
+        $('tamauto-min').textContent = '–'; $('tamauto-min').title = 'Minimieren';
       }
+      $('tamauto-head-state').style.display = min ? '' : 'none';
+      GM_setValue('minimized', min);
+      // Titelzeile im Fenster halten, wenn das Bedienfeld oben/links verankert ist
+      if (p.style.left) { const r = p.getBoundingClientRect(); p.style.left = `${Math.max(0, Math.min(r.left, innerWidth - r.width))}px`; }
     };
+    $('tamauto-min').onclick = () => setMinimized($('tamauto-body').style.display !== 'none');
+    $('tamauto-min').title = 'Minimieren';
 
     // Position/Größe: oben links verankern (damit Ziehen und Größe ändern natürlich wirken) und speichern
     const anchorTopLeft = () => {
@@ -1866,6 +1902,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
         saveRect();
       }, { once: true });
     });
+    if (GM_getValue('minimized', false)) setMinimized(true); // zuletzt minimiert → wieder minimiert starten
     renderStatus();
   }
 

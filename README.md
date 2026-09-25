@@ -242,7 +242,7 @@ Statt die Tabelle dauerhaft im Sekundentakt neu zu laden, aktualisiert das Scrip
 
 - **Tabwechsel-Refresh:** Beim Wechsel **zurück** in „Veröffentlichte Aufträge“ (z. B. aus „Angenommene Aufträge“
   oder nach einer Annahme) wird **genau einmal** aktualisiert – so ist bei Auftragswellen sofort der aktuelle Stand da.
-- **Burst-Refresh** (Dauer in „Erweiterte Einstellungen“, Standard **3 s**): für die eingestellte Zeit **jede Sekunde**
+- **Burst-Refresh** (Dauer im Reiter „Bedienung“ neben dem Button, Standard **3 s**): für die eingestellte Zeit **jede Sekunde**
   aktualisieren. Auslösen auf zwei Wegen:
   - Button **„⚡ Burst“** im Reiter „Bedienung“, oder
   - **manueller Klick** auf den Refresh-Pfeil **⟳** der TAM-Website (Blätterleiste unten an der Tabelle).
@@ -336,6 +336,13 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.12.1 – 2026-09-25
+- **Minimieren** jetzt wirklich kompakt: nur noch eine schmale Titelzeile mit Status (● bereit / ⏸ pausiert /
+  ■ gestoppt); der Zustand bleibt nach dem Neuladen erhalten.
+- Meldungen „bereits vergeben“ / „nicht verfügbar“: Wächter prüft zusätzlich Info-Einblendungen und Dialoge
+  und blendet hartnäckige Meldungen direkt aus – geschlossen in wenigen Millisekunden.
+- Burst-Dauer (s) steht jetzt direkt neben dem Button „⚡ Burst“ im Reiter Bedienung.
 
 ### 1.12.0 – 2026-09-25
 - Android: Klicks werden als echte **Fingertipps** simuliert (Touch- + Maus-Ereignisse).
