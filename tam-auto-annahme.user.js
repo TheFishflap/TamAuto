@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.15.1
+// @version      1.15.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -76,9 +76,12 @@
     burstOn: true, // Burst-Refresh nach manuellem Refresh immer aktiv (ohne Checkbox)
     hideTips: GM_getValue('hideTips', false), // alle ?-Erklärungen ausblenden
     wakeLock: GM_getValue('wakeLock', /android/i.test(navigator.userAgent)), // Bildschirm anlassen – auf Android standardmäßig an
-    prioMode: GM_getValue('prioMode', 'ort'), // Reihenfolge bei mehreren Treffern (siehe PRIO_MODES)
+    // Priorität bei mehreren Treffern: Stufe 1–3 mit je einem Kriterium (siehe PRIO_CRIT), aus dem alten
+    // Dropdown (prioMode) einmalig übernommen
+    prioOrder: GM_getValue('prioOrder', ({ ort: ['anzahl', 'summe', 'preis'], summe: ['summe', 'preis', 'keine'],
+      preis: ['preis', 'keine', 'keine'], tabelle: ['keine', 'keine', 'keine'] })[GM_getValue('prioMode', 'ort')] || ['anzahl', 'summe', 'preis']),
     silentSec: GM_getValue('silentSec', 0),
-    pushOn: GM_getValue('pushOn', true),            // Push-Signal (App „TAM-Signal“ über ntfy) – Standard an (Plug & Play)
+    pushOn: GM_getValue('pushOnV2', false),         // Push-Signal (App „TAM-Signal“ über ntfy) – Standard aus (V2: gilt einmal für alle)
     pushTopic: GM_getValue('pushTopic', 'tam-zrd6g634b4wej7aqhsycc9qm'), // gemeinsamer Kanal der IB Thomée // Silent Reload: Hintergrund-Abfrage alle x s (0 = aus, Standard)
     burstSec: GM_getValue('burstSecV2', 3), // Dauer des Burst-Refresh in s (1 Refresh pro Sekunde), Standard 3
   });
@@ -942,12 +945,18 @@
   // AuftragsNr: "MW3191767", "SA040647", "1002669965" oder mit Anhang "9601182381-10" (bis 4 Buchstaben + ab 6 Ziffern). Vergleich tolerant, falls TAM den
   // Anhang an einer Stelle (Karte, Warenkorb, Meldung) weglässt.
   // NR_RE nur als Rückfall, um eine Nummer in einem Meldungstext zu finden – maßgeblich ist die Spalte "AuftragsNr"
-  // Priorität bei mehreren passenden Aufträgen (Dropdown in "Erweiterte Einstellungen")
-  const PRIO_MODES = {
-    ort: 'Anzahl am Ort → Summe → Preis',
-    summe: 'Summe am Ort → Preis',
-    preis: 'Höchster Einzelpreis',
-    tabelle: 'Reihenfolge wie in TAM',
+  // Priorität bei mehreren passenden Aufträgen: Stufe 1, 2, 3 mit je einem Kriterium ("Erweiterte Einstellungen").
+  // Gleichstand in Stufe 1 → Stufe 2 entscheidet usw.; ganz ohne Kriterium bleibt die Reihenfolge der TAM-Tabelle.
+  const PRIO_CRIT = {
+    anzahl: 'Anzahl am Ort',   // mehrere Aufträge an derselben Adresse (landen gemeinsam im Warenkorb)
+    summe: 'Summe am Ort',     // Umsatz aller Aufträge an der Adresse
+    preis: 'Einzelpreis',      // Preis des einzelnen Auftrags
+    keine: '– (keine)',
+  };
+  const PRIO_DEFAULT = ['anzahl', 'summe', 'preis'];
+  const prioText = () => {
+    const c = cfg.prioOrder.filter((k) => k !== 'keine' && PRIO_CRIT[k]);
+    return c.length ? c.map((k) => PRIO_CRIT[k]).join(' → ') : 'Reihenfolge wie in TAM';
   };
   const NR_RE = /\b[A-Z]{0,4}\d{6,}(-\d{1,3})?/i;
   const nrBase = (s) => String(s || '').toUpperCase().trim().replace(/-\d{1,3}$/, '');
@@ -1346,10 +1355,10 @@
       const grp = (o) => loc.get(locKey(o)) || { n: 1, sum: parseEuro(o.preis) || 0 };
       const byN = (a, b) => grp(b).n - grp(a).n, bySum = (a, b) => grp(b).sum - grp(a).sum;
       const byPrice = (a, b) => (parseEuro(b.preis) ?? -1) - (parseEuro(a.preis) ?? -1);
-      const sorter = { ort: (a, b) => byN(a, b) || bySum(a, b) || byPrice(a, b),   // Anzahl am Ort → Summe → Preis
-        summe: (a, b) => bySum(a, b) || byPrice(a, b),                             // Summe am Ort → Preis
-        preis: byPrice,                                                           // nur Einzelpreis
-        tabelle: () => 0 }[cfg.prioMode] || ((a, b) => byN(a, b) || bySum(a, b) || byPrice(a, b)); // Reihenfolge wie in TAM
+      // Stufen 1–3 nacheinander; "keine" überspringen; ohne Kriterium stabil = Reihenfolge der Tabelle
+      const cmp = { anzahl: byN, summe: bySum, preis: byPrice };
+      const chain = cfg.prioOrder.map((k) => cmp[k]).filter(Boolean);
+      const sorter = (a, b) => { for (const f of chain) { const r = f(a, b); if (r) return r; } return 0; };
       const hits = orders.filter((o) => matches(o) && !blocked(o)).sort(sorter);
       const blockedHits = orders.filter((o) => matches(o) && blocked(o));
       hits.forEach((o) => trackHit(o, 'passend'));        // Trefferquote: jeder passende Auftrag einmal
@@ -1374,7 +1383,7 @@
         log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, bl ? 'err' : matches(o) ? 'ok' : 'info');
       });
       let n = 0;
-      if (hits.length > 1) log(`Reihenfolge (${(PRIO_MODES[cfg.prioMode] || PRIO_MODES.ort)}): ${hits.map((o) =>
+      if (hits.length > 1) log(`Reihenfolge (${prioText()}): ${hits.map((o) =>
         `${o.nr || o.ref} (${grp(o).n > 1 ? `${grp(o).n} am Ort, zus. ${fmtEuro(grp(o).sum)}, ` : ''}${o.preis || 'ohne Preis'})`).join(' → ')}`);
       for (const o of hits) {
         if (n >= cfg.maxPerCycle) { log(`Limit ${cfg.maxPerCycle}/Zyklus erreicht.`); break; }
@@ -1457,13 +1466,13 @@
     const rows = Object.values(hitStats()).filter((e) => new Date(e.ts) >= from && e.s !== 'gesperrt');
     const ang = rows.filter((e) => e.s === 'angenommen').length;
     document.getElementById('tamauto-mini-rate').textContent = rows.length ? `${ang} von ${rows.length} passenden (${pct(ang, rows.length)})` : 'heute noch keine passenden';
-    document.getElementById('tamauto-mini-prio').textContent = PRIO_MODES[cfg.prioMode] || PRIO_MODES.ort;
+    document.getElementById('tamauto-mini-prio').textContent = prioText();
   }
 
   function renderSync(now) {
     renderMini(now);
     const pi = document.getElementById('tamauto-prio-info');
-    if (pi) pi.textContent = `Priorität: ${PRIO_MODES[cfg.prioMode] || PRIO_MODES.ort}`;
+    if (pi) pi.textContent = `Priorität: ${prioText()}`;
     const el = document.getElementById('tamauto-sync');
     if (!el) return;
     const t = tamNext();
@@ -1636,7 +1645,7 @@
     if (!rows) return;
     const st = document.getElementById('tamauto-pl-state');
     if (st) {
-      st.textContent = cfg.pushOn ? `Kanal ${cfg.pushTopic} · ${pushState}` : 'Push-Signal ist aus (Erweiterte Einstellungen)';
+      st.textContent = cfg.pushOn ? `Kanal ${cfg.pushTopic} · ${pushState}` : 'Push-Signal ist aus – oben einschalten';
       st.style.color = cfg.pushOn && /verbunden/.test(pushState) ? '#2e7d32' : '#b36b00';
     }
     const from = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
@@ -1899,30 +1908,21 @@ Standard: 0 (aus).">?</span>
             <div id="tamauto-silent-warn" style="display:none;color:#b00020;font-size:11px;margin-top:2px"></div>
           </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
-            <span class="tamauto-chk">
-              <label class="tamauto-chk"><input type="checkbox" id="tamauto-push"> <b>Push-Signal</b></label>
-              Kanal <input id="tamauto-push-topic" style="width:190px;margin:0;font-family:monospace;font-size:11px">
-              <span class="tamauto-help" title="PUSH-SIGNAL – was es macht:
-Die App „TAM-Signal“ auf 1–2 Master-Handys erkennt die Push-Benachrichtigungen der TAM-App („Mehrere Aufträge wurden hinzugefügt …“) und schickt sofort ein reines Startsignal an diesen Kanal (ntfy.sh). Das Script lauscht dauerhaft und fragt TAM daraufhin einmal ab – mit Zufallsversatz 0–1,5 s (damit nicht alle Nutzer in derselben Sekunde anfragen). Nur wenn wirklich ein neuer Auftrag da ist, wird die Tabelle geladen und abgeglichen. Doppelte Signale (2 Master-Handys) innerhalb von 10 s zählen einmal.
-
-Über den Kanal laufen keine Auftragsdaten. Wer den Kanalnamen kennt, kann nur zusätzliche Abfragen auslösen – den Namen nicht öffentlich weitergeben.
-
-Standard: an, Kanal der IB Thomée (Plug & Play). Test: in der App „Test-Signal senden“ → im Log erscheint „Push-Signal empfangen … Test“.">?</span>
+            <span class="tamauto-chk"><b>Priorität</b>
+              <span class="tamauto-help" title="Reihenfolge, wenn mehrere passende Aufträge gleichzeitig in der Tabelle stehen (jede Annahme dauert einige Sekunden – wer zuerst drankommt, hat die besten Chancen).
+Stufe 1 entscheidet zuerst; bei Gleichstand Stufe 2, dann Stufe 3.
+• Anzahl am Ort: Adressen mit mehreren Aufträgen zuerst (gleiche Straße + PLZ + Ort – TAM legt sie gemeinsam in den Warenkorb, eine Annahme übernimmt alle).
+• Summe am Ort: Adresse mit dem meisten Umsatz zuerst.
+• Einzelpreis: teuerster Auftrag zuerst (den wollen allerdings oft alle).
+• – (keine): Stufe nicht verwenden. Alle Stufen „keine“ = Reihenfolge wie in TAM.
+Automatische Zuordnung: Wählst du ein Kriterium, das schon in einer anderen Stufe steht, tauschen die beiden Stufen.
+Standard: 1 Anzahl am Ort · 2 Summe am Ort · 3 Einzelpreis.">?</span>
+              <button id="tamauto-prio-reset" title="Standard: 1 Anzahl am Ort · 2 Summe am Ort · 3 Einzelpreis">Standard</button>
             </span>
-            <div id="tamauto-push-state" style="color:#555;font-size:11px;margin-top:2px"></div>
-          </div>
-          <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
-            <span class="tamauto-chk">
-              <b>Priorität</b>
-              <select id="tamauto-prio" style="margin:0;max-width:220px">
-                ${Object.entries(PRIO_MODES).map(([k, v]) => `<option value="${k}">${v}${k === 'ort' ? ' (Standard)' : ''}</option>`).join('')}
-              </select>
-              <span class="tamauto-help" title="Reihenfolge, wenn mehrere passende Aufträge gleichzeitig in der Tabelle stehen (jede Annahme dauert einige Sekunden – wer zuerst drankommt, hat die besten Chancen):
-• Anzahl am Ort → Summe → Preis (Standard): zuerst Adressen mit mehreren Aufträgen (gleiche Straße + PLZ + Ort – TAM legt sie gemeinsam in den Warenkorb, eine Annahme übernimmt alle), bei Gleichstand die höhere Summe, dann der höhere Einzelpreis.
-• Summe am Ort → Preis: die Adresse mit dem meisten Umsatz zuerst.
-• Höchster Einzelpreis: nur nach Preis (Nachteil: den teuersten Auftrag wollen oft alle).
-• Reihenfolge wie in TAM: so, wie die Tabelle sortiert ist.">?</span>
-            </span>
+            <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 6px;align-items:center;margin-top:4px;max-width:260px">
+              ${[1, 2, 3].map((i) => `<span style="color:#555">${i}.</span><select id="tamauto-prio-${i}" data-stufe="${i - 1}" style="margin:0">
+                ${Object.entries(PRIO_CRIT).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>`).join('')}
+            </div>
           </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
@@ -2024,6 +2024,19 @@ Standard: an, Kanal der IB Thomée (Plug & Play). Test: in der App „Test-Signa
           <div class="tamauto-chk" style="justify-content:space-between;width:100%">
             <span><b>Push-Signal</b> <span class="tamauto-help" title="Liest live mit, welche Signale die App „TAM-Signal“ (Master-Handys) über den ntfy-Kanal schickt: wann, von welchem Handy, wie schnell (TAM-Benachrichtigung → Handy → Script) und was das Script daraus gemacht hat. Einstellungen (an/aus, Kanal): Reiter „Erweiterte Einstellungen“.">?</span></span>
             <button id="tamauto-pl-clear" title="Liste leeren">Leeren</button>
+          </div>
+          <div style="margin:4px 0 6px;padding-bottom:6px;border-bottom:1px solid #ddd">
+            <span class="tamauto-chk">
+              <label class="tamauto-chk"><input type="checkbox" id="tamauto-push"> <b>Push-Signal empfangen</b></label>
+              <span class="tamauto-help" title="PUSH-SIGNAL – was es macht:
+Die App „TAM-Signal“ auf 1–2 Master-Handys erkennt die Push-Benachrichtigungen der TAM-App („Mehrere Aufträge wurden hinzugefügt …“) und schickt sofort ein reines Startsignal an diesen Kanal (ntfy.sh). Das Script lauscht dauerhaft und fragt TAM daraufhin einmal ab – mit Zufallsversatz 0–1,5 s (damit nicht alle Nutzer in derselben Sekunde anfragen). Nur wenn wirklich ein neuer Auftrag da ist, wird die Tabelle geladen und abgeglichen. Doppelte Signale (2 Master-Handys) innerhalb von 10 s zählen einmal.
+
+Über den Kanal laufen keine Auftragsdaten. Wer den Kanalnamen kennt, kann nur zusätzliche Abfragen auslösen – den Namen nicht öffentlich weitergeben.
+
+Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test-Signal senden“ → erscheint unten in der Liste.">?</span>
+            </span>
+            <div style="margin-top:3px">Kanal <input id="tamauto-push-topic" style="width:210px;margin:0;font-family:monospace;font-size:11px"></div>
+            <div id="tamauto-push-state" style="color:#555;font-size:11px;margin-top:2px"></div>
           </div>
           <div id="tamauto-pl-state" style="font-size:11px;margin:2px 0"></div>
           <div id="tamauto-pl-sum" style="color:#555;font-size:11px;margin-bottom:4px"></div>
@@ -2309,7 +2322,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     $('tamauto-push').checked = cfg.pushOn;
     $('tamauto-push-topic').value = cfg.pushTopic;
     $('tamauto-push').onchange = (e) => {
-      cfg.pushOn = e.target.checked; GM_setValue('pushOn', cfg.pushOn);
+      cfg.pushOn = e.target.checked; GM_setValue('pushOnV2', cfg.pushOn);
       log(cfg.pushOn ? `Push-Signal an (Kanal ${cfg.pushTopic}).` : 'Push-Signal aus.'); startPush();
     };
     $('tamauto-push-topic').onchange = (e) => {
@@ -2320,12 +2333,23 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     };
     renderPush();
 
-    // Priorität bei mehreren Treffern
-    $('tamauto-prio').value = PRIO_MODES[cfg.prioMode] ? cfg.prioMode : 'ort';
-    $('tamauto-prio').onchange = (e) => {
-      cfg.prioMode = e.target.value; GM_setValue('prioMode', cfg.prioMode);
-      log(`Priorität: ${PRIO_MODES[cfg.prioMode]}.`);
-    };
+    // Priorität bei mehreren Treffern: Stufe 1–3. Automatische Zuordnung: Kriterium schon in einer anderen Stufe →
+    // die beiden Stufen tauschen (jedes Kriterium höchstens einmal; "keine" darf mehrfach vorkommen)
+    const renderPrio = () => [1, 2, 3].forEach((i) => { $(`tamauto-prio-${i}`).value = cfg.prioOrder[i - 1] || 'keine'; });
+    const savePrio = () => { GM_setValue('prioOrder', cfg.prioOrder); renderPrio(); renderSync(Date.now()); log(`Priorität: ${prioText()}.`); };
+    if (!Array.isArray(cfg.prioOrder) || cfg.prioOrder.length !== 3) cfg.prioOrder = [...PRIO_DEFAULT];
+    [1, 2, 3].forEach((i) => {
+      $(`tamauto-prio-${i}`).onchange = (e) => {
+        const idx = i - 1, val = e.target.value, old = cfg.prioOrder[idx];
+        const other = val === 'keine' ? -1 : cfg.prioOrder.findIndex((k, j) => j !== idx && k === val);
+        const next = [...cfg.prioOrder];
+        next[idx] = val;
+        if (other >= 0) next[other] = old; // Tausch
+        cfg.prioOrder = next; savePrio();
+      };
+    });
+    $('tamauto-prio-reset').onclick = () => { cfg.prioOrder = [...PRIO_DEFAULT]; savePrio(); };
+    renderPrio();
     renderSilent();
 
     // Burst-Refresh: nur die Dauer ist einstellbar (Auslöser: Button "⚡ Burst" oder manueller Refresh auf der Website)
@@ -2349,7 +2373,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
         `${cfg.silentSec ? `alle ${cfg.silentSec} s` : 'aus'} · Burst ${cfg.burstSec} s · Verzögerung ` +
         `${cfg.delayOn ? `${cfg.delaySec} s${cfg.delayRandom ? ` + bis ${cfg.delayRandomMs} ms` : ''}` : 'aus'} · Ortsliste ` +
         `${places.plz.length} PLZ / ${places.orte.length} Orte · Sperrliste ${(places.block || { plz: [] }).plz.length} PLZ` +
-        ` · Priorität ${PRIO_MODES[cfg.prioMode] || PRIO_MODES.ort}`;
+        ` · Priorität ${prioText()}`;
       const txt = `TAM Auto-Annahme v${VERSION} · Log vom ${new Date().toLocaleString('de-DE')} · ${navigator.userAgent}\n` +
         `${settings}\n(letzte ${lines.length} von ${logHistory.length} Zeilen)\n\n${lines.join('\n')}`;
       let ok = false;

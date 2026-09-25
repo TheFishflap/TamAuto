@@ -22,8 +22,8 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Wächter-Modus** | Schließt störende TAM-Meldungen **in Millisekunden** – „bereits vergeben“, „nicht verfügbar“, „falscher Status“, Warenkorb-Hinweise, technische Fehlerfenster – und wertet sie trotzdem richtig aus |
 | **Neue-Zeilen-Wächter** | Erkennt neue Aufträge in „Veröffentlichte Aufträge“ innerhalb von 250 ms – auch wenn TAM sie ohne Refresh einblendet |
 | **Silent Reload** | Optional (Erweiterte Einstellungen, Standard 0 = aus): fragt TAM alle x s im Hintergrund nach neuen Aufträgen – ohne Tabelle neu zu zeichnen; nur bei einem neuen Auftrag wird aktualisiert |
-| **Push-Signal** | Die App **TAM-Signal** auf 1–2 Master-Handys leitet die Push-Benachrichtigungen der TAM-App als Startsignal über ntfy.sh weiter – das Script fragt TAM **innerhalb von ca. 1 s** ab (Standard an, gemeinsamer Kanal voreingestellt) |
-| **Priorität** | Mehrere passende Aufträge gleichzeitig → zuerst **mehrere Aufträge am selben Ort** (landen gemeinsam im Warenkorb), dann **höchste Summe am Ort**, dann **höchster Preis** |
+| **Push-Signal** | Die App **TAM-Signal** auf 1–2 Master-Handys leitet die Push-Benachrichtigungen der TAM-App als Startsignal über ntfy.sh weiter – das Script fragt TAM **innerhalb von ca. 1 s** ab (Standard aus, gemeinsamer Kanal voreingestellt; eigener Reiter „Push-Signal“) |
+| **Priorität** | Mehrere passende Aufträge gleichzeitig → Reihenfolge nach **Stufe 1, 2, 3** frei wählbar (Anzahl am Ort, Summe am Ort, Einzelpreis) mit automatischer Zuordnung; Standard: Anzahl → Summe → Preis |
 | **Verzögerung** | Standard an: 0,17 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0,001–0,5 s |
 
 ### 🔄 Aktualisierung – gezielt statt dauerhaft
@@ -359,6 +359,13 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.15.2 – 2026-09-25
+- **Push-Signal standardmäßig aus** (gilt nach dem Update einmal für alle); Einschalten und Kanal jetzt im Reiter
+  **„Push-Signal“** statt in den Erweiterten Einstellungen.
+- **Priorität mit Stufe 1, 2, 3:** je ein Kriterium (Anzahl am Ort, Summe am Ort, Einzelpreis oder keine);
+  **automatische Zuordnung** – ein Kriterium, das schon in einer anderen Stufe steht, tauscht mit ihr. Button
+  „Standard“. Die bisherige Auswahl wird übernommen.
 
 ### 1.15.1 – 2026-09-25
 - Neuer Reiter **„Push-Signal“**: liest live mit, welche Signale die App TAM-Signal schickt – Zeit, **Handy-Kennung**,
