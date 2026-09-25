@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.11.3
+// @version      1.11.4
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -813,6 +813,25 @@
 
   // TAM-Meldungsfenster (Titel + "OK"), z. B. "Auftrag bereits vergeben!" – blockieren sonst die Oberfläche
   const MSG_TITLE = /bereits vergeben|nicht mehr verfügbar|nicht verfügbar|fehler|hinweis|achtung|information/i;
+
+  // "Auftrag nicht (mehr) verfügbar" / "bereits vergeben": SOFORT wegklicken, ohne Verzögerung – auch wenn sie
+  // nach einer (erfolgreichen) Annahme oder unabhängig vom Script auftauchen. Die Meldung wird gemerkt, damit die
+  // Annahme-Logik sie trotzdem auswerten kann (Trefferquote, Log).
+  const UNAVAILABLE = /nicht (mehr )?verfügbar|bereits vergeben/i;
+  let lastUnavailable = { at: 0, text: '' };
+  function dismissUnavailable() {
+    visibleWindows().forEach((w) => {
+      const t = winTitle(w);
+      if (cfg.orderWindowTitle.test(t) || cfg.confirmDialogTitle.test(t)) return;
+      const all = text(w);
+      if (!UNAVAILABLE.test(`${t} ${all}`)) return;
+      const body = text(w.querySelector('.x-window-body, .ext-mb-text')) || all.replace(t, '');
+      lastUnavailable = { at: Date.now(), text: `${t ? `„${t}“ – ` : ''}${body.replace(/(OK|Abbrechen|Schließen)\s*$/i, '').trim()}`.slice(0, 160) };
+      const btn = findButton(/^(ok|schließen|abbrechen)$/i, w);
+      if (btn) clickBtn(btn); else closeWindow(w);
+      log(`TAM-Meldung sofort geschlossen: ${lastUnavailable.text}`, 'debug');
+    });
+  }
   function dismissMessage(win) {
     if (!win || !visible(win)) return;
     const ok = findButton(/^(ok|schließen)$/i, win);
@@ -915,11 +934,19 @@
     if (!order.row.isConnected) { log(`Abbruch: Zeile ${nr} während der Verzögerung verschwunden.`, 'err'); return false; }
     fire(cell, ['mousedown', 'mouseup', 'click']);
     await sleep(200);
+    const clickedAt = Date.now();
     fire(cell, ['mousedown', 'mouseup', 'click', 'dblclick']);
     // Warten auf die Auftragskarte – oder auf eine TAM-Meldung statt der Karte
-    // (z. B. "Auftrag bereits vergeben!": ein anderer Anbieter war schneller)
+    // (z. B. "Auftrag bereits vergeben!": ein anderer Anbieter war schneller). Die Meldung wird ggf. schon vom
+    // Sofort-Wächter geschlossen → dann über lastUnavailable erkennen.
     const opened = await waitFor(() => visibleWindows().find((w) => !before.has(w) &&
-      (cfg.orderWindowTitle.test(winTitle(w)) || MSG_TITLE.test(winTitle(w)))), 8000);
+      (cfg.orderWindowTitle.test(winTitle(w)) || MSG_TITLE.test(winTitle(w)))) ||
+      (lastUnavailable.at >= clickedAt ? 'unavailable' : null), 8000);
+    if (opened === 'unavailable') {
+      log(`${nr}: TAM meldet – ${lastUnavailable.text}`, 'err');
+      order.failReason = 'vergeben';
+      return false;
+    }
     if (opened && !cfg.orderWindowTitle.test(winTitle(opened))) {
       const msg = text(opened.querySelector('.x-window-body, .ext-mb-text') || opened).replace(winTitle(opened), '').trim();
       log(`${nr}: TAM meldet „${winTitle(opened)}“${msg ? ` – ${msg.slice(0, 120)}` : ''}`, 'err');
@@ -1011,6 +1038,16 @@
       if (/bereits|vergeben|nicht mehr verfügbar/i.test(text(errWin))) order.failReason = 'vergeben';
       closeWindow(errWin); await sleep(300); closeWindow(card);
       return false;
+    }
+    // Vom Sofort-Wächter bereits geschlossene Meldung nach "Bestätigen":
+    // "bereits vergeben" = nicht angenommen; "nicht verfügbar" kommt teils trotz erfolgreicher Annahme → nur vermerken
+    if (lastUnavailable.at >= lastAcceptAt) {
+      if (/bereits vergeben/i.test(lastUnavailable.text)) {
+        log(`TAM meldet: ${lastUnavailable.text}`, 'err');
+        order.failReason = 'vergeben'; closeWindow(card);
+        return false;
+      }
+      log(`${nr}: TAM meldete nach der Annahme „nicht verfügbar“ – Meldung geschlossen, Annahme gilt als erfolgt.`, 'debug');
     }
     // Hinweis-/Erfolgsfenster wegklicken, Auftragskarte schließen
     visibleWindows().filter((w) => w !== card && !before.has(w)).forEach((w) => {
@@ -1800,7 +1837,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       }
       // TAM-Fenster zur Terminvergabe nach einer Annahme sofort wegklicken (ohne Verzögerung)
       if (muts.some((m) => m.type === 'childList' && [...m.addedNodes].some((n) => n.nodeType === 1 &&
-        (n.matches('.x-window') || n.querySelector?.('.x-window'))))) setTimeout(() => { dismissTerminDialog(); dismissTamErrors(); }, 50);
+        (n.matches('.x-window') || n.querySelector?.('.x-window'))))) { dismissUnavailable(); setTimeout(() => { dismissUnavailable(); dismissTerminDialog(); dismissTamErrors(); }, 50); }
       const panel = document.getElementById(cfg.tabPanelId);
       if (!panel) return;
       const relevant = muts.some((m) => m.type === 'childList' && panel.contains(m.target) && m.target.closest &&
@@ -1917,6 +1954,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     buildPanel();
     watchGrid();
     wasOnPublished = onPublishedTab(); // Ausgangszustand für die Tabwechsel-Erkennung
+    setInterval(dismissUnavailable, 250); // Sofort-Wächter für "nicht verfügbar" / "bereits vergeben" (auch wiederverwendete Fenster)
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;
     // Excel (Ortsliste + Sperrliste) beim Start laden, wenn älter als 30 min oder altes Format, danach alle 30 min
     const reloadMs = cfg.placesReloadMin * 60 * 1000;

@@ -282,7 +282,8 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 6. Danach **„Warenkorb – alle auswählen“** anhaken.
 7. **Annehmen** → Dialog **„Auftragsannahme bestätigen“** → Haken „Ja, hiermit bestätige ich die
    Bedingungen …“ → **Bestätigen**.
-8. Fehlermeldungen von TAM werden im Protokoll angezeigt, die Auftragskarte wird geschlossen.
+8. Fehlermeldungen von TAM werden im Protokoll angezeigt, die Auftragskarte wird geschlossen. Meldungen
+   „Auftrag nicht (mehr) verfügbar“ / „bereits vergeben“ werden **sofort** weggeklickt (Wächter alle 250 ms).
 9. Öffnet TAM danach das Fenster zur **Terminvergabe**, wird es sofort (ohne Verzögerung) weggeklickt – nur in den
    ersten 30 s nach einer Annahme durch das Script, eine selbst geöffnete Terminvergabe bleibt unangetastet.
 10. Nach erfolgreicher Annahme wird **sofort** wieder in den Reiter **Veröffentlichte Aufträge** gewechselt und
@@ -321,6 +322,11 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.11.4 – 2026-09-25
+- TAM-Meldungen **„Auftrag nicht (mehr) verfügbar“** und **„bereits vergeben“** werden **sofort** (ohne Verzögerung)
+  geschlossen – auch wenn sie nach einer erfolgreichen Annahme oder ganz ohne Script-Aktion auftauchen.
+  „Nicht verfügbar“ nach erfolgreicher Annahme gilt weiter als angenommen; „bereits vergeben“ als nicht angenommen.
 
 ### 1.11.3 – 2026-09-25
 - Technische TAM-Fehlerfenster (z. B. „TypeError … undefined“, v. a. Android) werden automatisch geschlossen und
