@@ -162,6 +162,20 @@ ist** (z. B. „letzte Script-Aktion: Refresh-Pfeil vor 0,3 s“). So lässt sic
 von TAM allein kommt. Fachliche Meldungen (z. B. „Auftrag bereits vergeben!“) sind davon nicht betroffen.
 Auf Android zeigt der Reiter **Info** einen entsprechenden Hinweis.
 
+**Klicks auf Android:** Das Script simuliert dort echte **Fingertipps** (`touchstart`/`touchend`, danach die
+Maus-Ereignisse – genau wie der Browser bei einem Tipp).
+
+**Bildschirm anlassen (Wake Lock)** – Reiter „Erweiterte Einstellungen“, auf Android standardmäßig **an**:
+Geht der Bildschirm aus oder wird der Browser in den Hintergrund gelegt, **friert Android die Seite ein** – das
+Script kann dann nicht mehr prüfen und annehmen (das kann kein Webseiten-Script umgehen). Die Option hält den
+Bildschirm an, solange TAM im Vordergrund offen ist, und fordert das nach dem Zurückkehren automatisch neu an.
+Empfehlungen für den Dauerbetrieb am Handy:
+- Gerät **ans Ladegerät**, Helligkeit herunterdrehen, TAM im Vordergrund lassen.
+- Falls der Browser Wake Lock nicht unterstützt: *Einstellungen → Display → Bildschirm-Timeout* hochsetzen oder in den
+  **Entwickleroptionen „Aktiv lassen“** (Bildschirm bleibt beim Laden an) einschalten.
+- *Einstellungen → Apps → Firefox → Akku* auf **„Nicht eingeschränkt“** stellen.
+- Zuverlässigster Betrieb bleibt ein **PC/Laptop** mit geöffnetem Browserfenster.
+
 **Benachrichtigungston** (Standard **an**): Gong bei angenommenem oder fehlgeschlagenem Auftrag ein/aus.
 **Schieberegler** für die Lautstärke (0–100 %, Standard 60 %), Doppelklick = 60 %;
 nach dem Verstellen wird der Ton einmal vorgespielt. **▶ Test** spielt ihn ab.
@@ -322,6 +336,11 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.12.0 – 2026-09-25
+- Android: Klicks werden als echte **Fingertipps** simuliert (Touch- + Maus-Ereignisse).
+- Neue Option **„Bildschirm anlassen“** (Wake Lock, auf Android standardmäßig an) – verhindert, dass der Bildschirm
+  ausgeht und Android die Seite einfriert; wird nach dem Zurückkehren automatisch neu angefordert.
 
 ### 1.11.4 – 2026-09-25
 - TAM-Meldungen **„Auftrag nicht (mehr) verfügbar“** und **„bereits vergeben“** werden **sofort** (ohne Verzögerung)

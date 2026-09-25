@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.11.4
+// @version      1.12.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -67,6 +67,7 @@
     delayRandomMs: GM_getValue('delayRandomMsV2', 100), // Streuung 0 … x ms (Standard 100 ms)
     burstOn: true, // Burst-Refresh nach manuellem Refresh immer aktiv (ohne Checkbox)
     hideTips: GM_getValue('hideTips', false), // alle ?-Erklärungen ausblenden
+    wakeLock: GM_getValue('wakeLock', /android/i.test(navigator.userAgent)), // Bildschirm anlassen – auf Android standardmäßig an
     burstSec: GM_getValue('burstSecV2', 3), // Dauer des Burst-Refresh in s (1 Refresh pro Sekunde), Standard 3
   });
 
@@ -93,13 +94,28 @@
   const visible = (el) => !!el && el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden';
   const text = (el) => (el ? el.textContent.replace(/\u00a0/g, ' ').trim() : '');
 
+  const isAndroid = /android/i.test(navigator.userAgent);
+
   // Letzte eigene Aktion des Scripts – für die Diagnose, ob ein TAM-Fehler vom Script ausgelöst wurde
   let lastScriptAction = { at: 0, what: '' };
+
+  // Auf Android wie ein echter Fingertipp: erst touchstart/touchend, danach die Maus-Ereignisse
+  // (so erzeugt auch der Browser einen Tipp). Ohne Touch-Unterstützung fällt das stillschweigend weg.
+  function fireTouch(el, x, y) {
+    try {
+      const t = new Touch({ identifier: Date.now(), target: el, clientX: x, clientY: y, pageX: x + scrollX, pageY: y + scrollY,
+        screenX: x, screenY: y, radiusX: 1, radiusY: 1, force: 1 });
+      el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [t], targetTouches: [t], changedTouches: [t] }));
+      el.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [t] }));
+    } catch (e) { /* kein Touch im Browser */ }
+  }
+
   function fire(el, types = ['mouseover', 'mousedown', 'mouseup', 'click']) {
     lastScriptAction = { at: Date.now(), what: (el.textContent || '').trim().slice(0, 30) || String(el.className).split(' ')[0] || el.tagName };
     const r = el.getBoundingClientRect();
-    const opts = { bubbles: true, cancelable: true, button: 0,
-      clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    if (isAndroid && types.includes('click')) fireTouch(el, x, y);
+    const opts = { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y };
     types.forEach((t) => el.dispatchEvent(new MouseEvent(t, opts)));
   }
 
@@ -861,7 +877,6 @@
   // Technische TAM-Fehlerfenster ("Fehler!" mit JavaScript-Fehler wie "TypeError … undefined", tritt v. a. auf
   // Android auf) automatisch mit "Abbrechen" schließen. Im Log steht, was das Script zuletzt getan hat – so ist
   // erkennbar, ob der Fehler vom Script ausgelöst wurde oder von TAM allein kommt.
-  const isAndroid = /android/i.test(navigator.userAgent);
   const TAM_JS_ERROR = /TypeError|ReferenceError|RangeError|is undefined|is null|is not a function|can't access|cannot read/i;
   let tamErrorCount = 0;
   function dismissTamErrors() {
@@ -1332,6 +1347,13 @@
               <span class="tamauto-help" title="Blendet alle ?-Erklärungen im Bedienfeld aus (auch dieses), für eine aufgeräumte Ansicht. Wieder einblenden: Haken entfernen.">?</span>
             </span>
           </div>
+          <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
+            <span class="tamauto-chk">
+              <label class="tamauto-chk"><input type="checkbox" id="tamauto-wakelock"> <b>Bildschirm anlassen</b></label>
+              <span class="tamauto-help" title="Verhindert, dass der Bildschirm ausgeht, solange TAM im Vordergrund offen ist (Wake Lock). Wichtig auf Android/Handy: Geht der Bildschirm aus oder wird der Browser in den Hintergrund gelegt, friert das System die Seite ein – das Script kann dann nicht mehr prüfen und annehmen. Tipp: Gerät ans Ladegerät, Helligkeit herunterdrehen. Wird automatisch neu angefordert, sobald TAM wieder sichtbar ist.">?</span>
+            </span>
+            <div id="tamauto-wakelock-state" style="color:#555;margin-top:2px"></div>
+          </div>
           <div>
             <label class="tamauto-chk" title="Wartet vor jedem Klickschritt der Annahme">
               <input type="checkbox" id="tamauto-delay-on"> <b>Verzögerung</b></label>
@@ -1640,6 +1662,30 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       if (!onPublishedTab()) { log('Burst-Refresh: bitte zuerst den Reiter „Veröffentlichte Aufträge“ öffnen.', 'err'); return; }
       startBurst('Button');
     };
+
+    // Bildschirm anlassen (Screen Wake Lock): hält den Bildschirm an, solange TAM sichtbar ist.
+    // Der Browser gibt die Sperre frei, sobald die Seite unsichtbar wird → beim Zurückkehren neu anfordern.
+    const nav = (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).navigator;
+    let wakeSentinel = null;
+    const renderWake = (msg) => {
+      $('tamauto-wakelock').checked = cfg.wakeLock;
+      $('tamauto-wakelock-state').textContent = msg || (!cfg.wakeLock ? 'aus – Bildschirm darf ausgehen'
+        : !('wakeLock' in nav) ? '⚠ vom Browser nicht unterstützt – Bildschirm-Timeout in den Geräteeinstellungen erhöhen'
+          : wakeSentinel ? '✔ aktiv – Bildschirm bleibt an' : 'wartet (wird aktiv, sobald TAM sichtbar ist / nach einem Tipp ins Bedienfeld)');
+    };
+    const applyWakeLock = async () => {
+      if (!cfg.wakeLock) { if (wakeSentinel) { try { await wakeSentinel.release(); } catch (e) { /* ignore */ } } wakeSentinel = null; renderWake(); return; }
+      if (!('wakeLock' in nav) || wakeSentinel || document.visibilityState !== 'visible') { renderWake(); return; }
+      try {
+        wakeSentinel = await nav.wakeLock.request('screen');
+        wakeSentinel.addEventListener('release', () => { wakeSentinel = null; renderWake(); });
+        renderWake();
+      } catch (e) { wakeSentinel = null; renderWake(); } // z. B. Energiesparmodus – beim nächsten Tipp erneut
+    };
+    $('tamauto-wakelock').onchange = (e) => { cfg.wakeLock = e.target.checked; GM_setValue('wakeLock', cfg.wakeLock); applyWakeLock(); };
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') applyWakeLock(); });
+    p.addEventListener('pointerdown', () => { if (cfg.wakeLock && !wakeSentinel) applyWakeLock(); }); // manche Browser brauchen eine Berührung
+    applyWakeLock();
 
     // Tipps ausblenden: alle "?"-Erklärungen weg – außer dem "?" direkt an dieser Checkbox
     const applyTips = () => {
