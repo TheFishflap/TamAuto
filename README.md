@@ -361,6 +361,16 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.16.2 – 2026-09-25
+- **Detailansicht „Auftrag MW…“ erkannt:** Ist ein Auftrag schon woanders angenommen, öffnet TAM statt der Auftragskarte
+  nur die Detailansicht. Das Script wertet das sofort als „bereits vergeben“ und schließt sie (bisher 20 s Warten, Fenster
+  blieb offen).
+- **Wächter prüft laufend:** Auftragsfenster (Karte oder Detailansicht) zu Aufträgen, die das Script versucht hat und gerade
+  nicht bearbeitet, werden sofort geschlossen. Selbst geöffnete Fenster bleiben offen.
+- **Sicherheitssperre:** Das Script klickt nie auf „Statusumschaltung“ o. Ä.; Meldungs- und Termin-Wächter behandeln
+  Auftragsfenster nicht mehr als Meldung und klicken nie „irgendeinen ersten Button“.
+- **Tages-Blacklist entfernt** (gesperrt wird nur noch über die Excel-Sperrliste „nicht annehmen“).
+
 ### 1.16.1 – 2026-09-25
 - Sperrliste aktiv: Freigabelink der signierten Sperrliste im OneDrive hinterlegt (Prüfung beim Start und alle 6 h,
   7 Tage offline erlaubt).

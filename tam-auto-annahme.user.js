@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.16.1
+// @version      1.16.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -500,21 +500,12 @@
     renderHitRate(from);
   }
 
-  // ------------------------------------------------------------------ Tages-Blacklist
-  // PLZ (2–5 Ziffern, Anfang der PLZ), die heute nicht angenommen werden – z. B. nach Storno.
-  // Gilt nur bis Mitternacht, danach automatisch leer.
+  // ------------------------------------------------------------------ Sperrliste (Excel)
   const today = () => new Date().toLocaleDateString('sv-SE'); // JJJJ-MM-TT, lokale Zeit
-  function blacklist() {
-    let b = GM_getValue('blacklist', { date: today(), plz: [] });
-    if (b.date !== today()) { b = { date: today(), plz: [] }; GM_setValue('blacklist', b); }
-    return b;
-  }
   // Gesperrt? Liefert den Grund als Text (für das Protokoll) oder ''.
-  // Quellen: Tages-Blacklist (manuell, bis Mitternacht) und Excel-Blatt "nicht annehmen" (solange dort eingetragen)
+  // Quelle: Excel-Blatt "nicht annehmen" (solange dort eingetragen). Die frühere Tages-Blacklist ist entfallen.
   function blocked(order) {
     const p = (order.plz || '').trim();
-    const day = blacklist().plz.find((x) => p.startsWith(x));
-    if (day) return `PLZ ${day}${day.length < 5 ? '…' : ''} (Tages-Blacklist)`;
     const xb = places.block || { plz: [], orte: [] };
     const xp = xb.plz.find((x) => p.startsWith(x));
     if (xp) return `PLZ ${xp}${xp.length < 5 ? '…' : ''} (Excel „${cfg.blockSheet}“)`;
@@ -540,25 +531,8 @@
       if (!entries.length) xl.textContent = 'Keine Einträge.';
       entries.forEach((x) => xl.appendChild(chipEl(x, '#6d4c41', '#efebe9')));
     }
-    const list = document.getElementById('tamauto-bl-list');
-    if (!list) return;
-    const b = blacklist();
-    list.innerHTML = '';
-    if (!b.plz.length) list.textContent = 'Keine PLZ gesperrt.';
-    b.plz.forEach((x) => {
-      const chip = document.createElement('span');
-      chip.textContent = `${x}${x.length < 5 ? '…' : ''} ✕`;
-      chip.title = 'Klicken zum Freigeben';
-      Object.assign(chip.style, { padding: '2px 6px', background: '#fdecea', border: '1px solid #c62828',
-        borderRadius: '10px', color: '#c62828', cursor: 'pointer' });
-      chip.onclick = () => {
-        const cur = blacklist(); cur.plz = cur.plz.filter((y) => y !== x); GM_setValue('blacklist', cur);
-        log(`Blacklist: PLZ ${x} wieder freigegeben.`, 'ok'); renderBlacklist();
-      };
-      list.appendChild(chip);
-    });
     // Anzahl auch am Reiter zeigen, damit eine Sperre nicht übersehen wird
-    const n = b.plz.length + xb.plz.length + xb.orte.length;
+    const n = xb.plz.length + xb.orte.length;
     const tab = document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-main"]');
     if (tab) tab.textContent = `Bedienung${n ? ` (${n} PLZ gesperrt)` : ''}`;
   }
@@ -920,8 +894,11 @@
   }, true);
 
 
+  // Buttons, die das Script NIE anklicken darf (z. B. „Statusumschaltung“ – ändert den Auftragsstatus)
+  const NEVER_CLICK = /statusumschaltung|ansehen|status/i;
   function clickBtn(b) {
     const inner = b.querySelector('button') || b;
+    if (NEVER_CLICK.test(text(b)) || NEVER_CLICK.test(text(inner))) { log(`Sicherheitssperre: Klick auf „${text(b)}“ verhindert.`, 'err'); return; }
     fire(inner, ['mouseover', 'mousedown', 'mouseup', 'click']);
   }
 
@@ -972,7 +949,9 @@
     [...document.querySelectorAll(MSG_SELECTOR)].filter((w) => visible(w) && !w.closest('#tamauto')).forEach((w) => {
       if (w.parentElement && w.parentElement.closest(MSG_SELECTOR)) return; // nur das äußerste Element
       const t = winTitle(w);
-      if (cfg.orderWindowTitle.test(t) || cfg.confirmDialogTitle.test(t)) return;
+      // Auftragsfenster (Karte / Detailansicht „Auftrag MW…“) nie als Meldung behandeln – die Detailansicht enthält
+      // u. a. den Button „Statusumschaltung“, der sonst versehentlich geklickt werden könnte
+      if (isOrderWin(t) || cfg.confirmDialogTitle.test(t)) return;
       const all = text(w);
       // bekannte Meldungen – oder jede andere kurze Fehlermeldung (technische JS-Fehler übernimmt dismissTamErrors)
       const isErr = !UNAVAILABLE.test(`${t} ${all}`) && ERROR_MSG.test(`${t} ${all}`) && all.length < 400 && !TAM_JS_ERROR.test(all);
@@ -990,7 +969,8 @@
       }
       // Erst regulär schließen (Button bzw. Schließen-Symbol); reagiert die Meldung nicht oder hat keinen
       // Button (Info-Einblendung), wird sie sofort bzw. beim nächsten Durchlauf direkt ausgeblendet
-      const btn = findButton(/^(ok|schließen|abbrechen)$/i, w) || [...w.querySelectorAll('button')].find(visible);
+      // nur eindeutige Schließen-Buttons – NIE „irgendeinen ersten Button“ (könnte z. B. Statusumschaltung sein)
+      const btn = findButton(/^(ok|schließen|abbrechen)$/i, w);
       const x = w.querySelector('.x-tool-close');
       if (tries === 1 && btn) clickBtn(btn);
       else if (tries === 1 && x && visible(x)) fire(x);
@@ -1014,7 +994,7 @@
     if (Date.now() - lastAcceptAt > 30000) return;
     const wins = visibleWindows().filter((w) => {
       const t = winTitle(w);
-      if (cfg.orderWindowTitle.test(t) || cfg.confirmDialogTitle.test(t)) return false;
+      if (isOrderWin(t) || cfg.confirmDialogTitle.test(t)) return false; // Detailansicht enthält auch „Termin“
       return /termin/i.test(t) || (/termin/i.test(text(w)) && w.querySelector('input[type=checkbox]'));
     });
     wins.forEach((w) => {
@@ -1048,20 +1028,31 @@
 
   // Wächter: alle Fehlermeldungen ohne Verzögerung schließen (unabhängig von der Klick-Verzögerung der Annahme)
   function dismissAllMessagesNow() {
-    dismissUnavailable(); dismissTamErrors(); dismissTerminDialog(); closeLateCard();
+    dismissUnavailable(); dismissTamErrors(); dismissTerminDialog(); closeStrayWindows();
   }
-  // Auftragskarte, die erst nach dem Aufgeben geöffnet wurde (TAM sehr langsam): innerhalb von 30 s sofort
-  // schließen, damit sie nicht die Tabelle verdeckt und die nächste Annahme stört
-  let lateCard = null;
-  function closeLateCard() {
-    if (!lateCard) return;
-    if (Date.now() > lateCard.until) { lateCard = null; return; }
-    const nr = lateCard.nr;
-    const late = visibleWindows().filter((w) => cfg.orderWindowTitle.test(winTitle(w)) && winTitle(w).toUpperCase().includes(nrBase(nr)));
-    if (!late.length) return;
-    lateCard = null;
-    late.forEach((w) => closeWindow(w));
-    log(`${nr}: Auftragskarte kam verspätet – sofort geschlossen.`, 'err');
+  // Auftragsfenster: "Auftragskarte zu MW…" (annehmbar) oder – wenn der Auftrag schon woanders angenommen wurde –
+  // nur die Detailansicht "Auftrag MW…" (Basisdaten/Auftragsdokumente/Bemerkungen, ohne Annehmen)
+  const ORDER_DETAIL_TITLE = /^auftrag\s+\S*\d{4,}/i;
+  const isOrderWin = (t) => cfg.orderWindowTitle.test(t) || ORDER_DETAIL_TITLE.test(t);
+  // Wächter: Auftragsfenster zu Aufträgen, die das Script versucht hat (letzte 3 min) und gerade NICHT bearbeitet,
+  // sofort schließen – z. B. Detailansicht nach "woanders angenommen" oder eine verspätet geöffnete Karte.
+  // Fenster, die man selbst öffnet, bleiben offen.
+  const triedNrs = new Map(); // nrBase → Zeitpunkt des Doppelklicks
+  let currentAcceptNr = '';
+  const strayLogged = new WeakSet();
+  function closeStrayWindows() {
+    if (!triedNrs.size) return;
+    const now = Date.now();
+    triedNrs.forEach((t, k) => { if (now - t > 180000) triedNrs.delete(k); });
+    visibleWindows().forEach((w) => {
+      const t = winTitle(w);
+      if (!isOrderWin(t)) return;
+      const up = t.toUpperCase();
+      const k = [...triedNrs.keys()].find((x) => up.includes(x));
+      if (!k || k === currentAcceptNr) return;
+      closeWindow(w);
+      if (!strayLogged.has(w)) { strayLogged.add(w); log(`Wächter: Fenster „${t}“ stand noch im Vordergrund – geschlossen.`, 'err'); }
+    });
   }
 
   // Alle offenen Meldungen mit OK-Button schließen (nicht Auftragskarte / Bestätigungsdialog)
@@ -1110,16 +1101,21 @@
     await sleep(ms);
   }
 
+  // Während der Annahme merkt sich der Wächter den Auftrag, damit er dessen Fenster nicht schließt
   async function acceptOrder(order) {
+    currentAcceptNr = nrBase(order.nr);
+    try { return await acceptOrderInner(order); } finally { currentAcceptNr = ''; }
+  }
+  async function acceptOrderInner(order) {
     if (!onPublishedTab()) { log('Abbruch: nicht im Tab "Veröffentlichte Aufträge".', 'err'); return false; }
     const nr = (order.nr || '').trim();
     if (!nr) { log('Keine AuftragsNr in der Zeile (Spalte „AuftragsNr“ leer).', 'err'); return false; } // Format egal
 
     // 1) Doppelklick -> "Auftragskarte zu MW…"
-    // Noch offene Auftragskarte eines ANDEREN Auftrags vorher schließen – sie verdeckt die Tabelle und würde
-    // die Erkennung der neuen Karte stören
-    visibleWindows().filter((w) => cfg.orderWindowTitle.test(winTitle(w)) && !winTitle(w).toUpperCase().includes(nrBase(nr)))
-      .forEach((w) => { log(`Noch offene Auftragskarte („${winTitle(w)}“) vor der Annahme geschlossen.`, 'err'); closeWindow(w); });
+    // Noch offenes Auftragsfenster (Karte oder Detailansicht) eines ANDEREN Auftrags vorher schließen – es verdeckt
+    // die Tabelle und würde die Erkennung der neuen Karte stören
+    visibleWindows().filter((w) => isOrderWin(winTitle(w)) && !winTitle(w).toUpperCase().includes(nrBase(nr)))
+      .forEach((w) => { log(`Noch offenes Fenster („${winTitle(w)}“) vor der Annahme geschlossen.`, 'err'); closeWindow(w); });
     const before = new Set(visibleWindows());
     // sichtbare Zelle anklicken (die ersten Zellen sind im TAM ausgeblendete Spalten)
     const cell = [...order.row.querySelectorAll('td.x-grid3-cell')].find(visible) || order.row;
@@ -1128,13 +1124,15 @@
     fire(cell, ['mousedown', 'mouseup', 'click']);
     await sleep(200);
     const clickedAt = Date.now();
+    triedNrs.set(nrBase(nr), clickedAt); // Wächter: Fenster dieses Auftrags später ggf. schließen
     fire(cell, ['mousedown', 'mouseup', 'click', 'dblclick']);
     // Warten auf die Auftragskarte – oder auf eine TAM-Meldung statt der Karte
     // (z. B. "Auftrag bereits vergeben!": ein anderer Anbieter war schneller). Die Meldung wird ggf. schon vom
     // Sofort-Wächter geschlossen → dann über lastUnavailable erkennen.
     // Karte dieses Auftrags zählt auch, wenn sie schon vorher offen war bzw. TAM das Fenster wiederverwendet
     // (sonst wartet das Script auf ein "neues" Fenster, das nie kommt)
-    const cardOrMsg = () => visibleWindows().find((w) => cfg.orderWindowTitle.test(winTitle(w)) &&
+    // Detailansicht "Auftrag MW…" statt Karte = Auftrag wurde schon woanders angenommen
+    const cardOrMsg = () => visibleWindows().find((w) => isOrderWin(winTitle(w)) &&
       winTitle(w).toUpperCase().includes(nrBase(nr))) ||
       visibleWindows().find((w) => !before.has(w) && (cfg.orderWindowTitle.test(winTitle(w)) || MSG_TITLE.test(winTitle(w)))) ||
       (lastUnavailable.at >= clickedAt ? 'unavailable' : null);
@@ -1155,6 +1153,12 @@
       order.failReason = 'vergeben';
       return false;
     }
+    if (opened && ORDER_DETAIL_TITLE.test(winTitle(opened))) {
+      log(`${nr}: TAM zeigt nur die Detailansicht „${winTitle(opened)}“ – Auftrag wurde bereits woanders angenommen. Fenster geschlossen.`, 'err');
+      order.failReason = 'vergeben';
+      closeWindow(opened);
+      return false;
+    }
     if (opened && !cfg.orderWindowTitle.test(winTitle(opened))) {
       const msg = text(opened.querySelector('.x-window-body, .ext-mb-text') || opened).replace(winTitle(opened), '').trim();
       log(`${nr}: TAM meldet „${winTitle(opened)}“${msg ? ` – ${msg.slice(0, 120)}` : ''}`, 'err');
@@ -1166,8 +1170,7 @@
     if (!card) {
       log(`Auftragskarte für ${nr} öffnete sich nicht (nach ${(openMs / 1000).toFixed(1)} s aufgegeben). Offene Fenster: ` +
         (visibleWindows().map((w) => `„${winTitle(w) || '?'}“ [${String(w.className).trim().slice(0, 50)}]`).join(', ') || 'keine'), 'err');
-      dismissMessages();
-      lateCard = { nr, until: Date.now() + 30000 }; // kommt sie doch noch → sofort schließen (Wächter)
+      dismissMessages(); // kommt die Karte doch noch, schließt sie der Wächter (closeStrayWindows)
       return false;
     }
 
@@ -1342,7 +1345,7 @@
       const noKey = all.filter((o) => !o.key);
       const old = all.filter((o) => o.key && done.has(o.key));
       const orders = all.filter((o) => o.valid && o.key && !done.has(o.key));
-      // Gesperrte (Tages-Blacklist) nicht annehmen, aber auch nicht als erledigt merken → morgen wieder möglich
+      // Gesperrte (Excel „nicht annehmen“) nicht annehmen, aber auch nicht als erledigt merken → nach Entsperren wieder möglich
       // Priorität: 1) mehrere Aufträge am selben Ort (gleiche Straße + PLZ + Ort → landen bei TAM gemeinsam im
       // Warenkorb und werden mit einer Annahme übernommen), 2) Summe der Preise am Ort, 3) Preis des Auftrags.
       // Ohne Straße wird nicht gruppiert (nur PLZ+Ort wäre zu grob). Ohne Preis ans Ende.
@@ -2093,16 +2096,8 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
             <span id="tamauto-burst-state" style="color:#555"></span>
           </span>
           <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">
-            <b>Tages-Blacklist</b>
-            <span class="tamauto-help" title="PLZ, die heute NICHT angenommen werden, z. B. nach einem Storno (sonst würde der Auftrag erneut angenommen). 2–5 Ziffern: „43“ sperrt alle 43xxx, „47877“ nur diese PLZ. Die Liste leert sich um Mitternacht automatisch. Freigeben: auf den roten Eintrag klicken.">?</span>
-            <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
-              <input id="tamauto-bl-in" placeholder="PLZ, z. B. 47877" maxlength="5" style="width:110px">
-              <button id="tamauto-bl-add">Sperren</button>
-              <button id="tamauto-bl-clear">Alle freigeben</button>
-            </div>
-            <div id="tamauto-bl-list" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
-            <div style="margin-top:6px"><b>Sperrliste aus Excel</b>
-              <span class="tamauto-help" title="PLZ aus dem Excel-Blatt „nicht annehmen“. Diese PLZ werden NIE angenommen – dauerhaft, solange sie im Excel stehen (nicht nur heute). Sie sind vom Button „Alle freigeben“ NICHT betroffen und lassen sich hier nicht entfernen – ändern nur im Excel, danach „Neu laden“.">?</span>
+            <div><b>Sperrliste aus Excel</b>
+              <span class="tamauto-help" title="PLZ aus dem Excel-Blatt „nicht annehmen“. Diese PLZ werden NIE angenommen – dauerhaft, solange sie im Excel stehen. Ändern nur im Excel, danach „Neu laden“.">?</span>
               <span style="color:#555">– Blatt „nicht annehmen“</span>
               <button id="tamauto-bl-reload" style="margin-left:4px">Neu laden</button>
               <div id="tamauto-bl-updated" style="color:#555;font-size:11px;margin-top:2px"></div></div>
@@ -2206,17 +2201,6 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     showPage('tamauto-page-main');
     renderBlacklist();
 
-    // Tages-Blacklist
-    const addBl = () => {
-      const v = normPlz($('tamauto-bl-in').value);
-      if (v.length < 2) { log('Blacklist: bitte 2–5 Ziffern eingeben.', 'err'); return; }
-      const b = blacklist();
-      if (!b.plz.includes(v)) { b.plz.push(v); b.plz.sort(); GM_setValue('blacklist', b); }
-      log(`Blacklist: PLZ ${v}… heute gesperrt.`, 'err');
-      $('tamauto-bl-in').value = ''; renderBlacklist();
-    };
-    $('tamauto-bl-add').onclick = addBl;
-    $('tamauto-bl-in').onkeydown = (e) => { if (e.key === 'Enter') addBl(); };
     // Verzögerung: Checkbox + Slider 1,0–5,0 s (0,1-s-Schritte) + Randomizer (Streuung nicht angezeigt)
     const fmtSec = (v) => `${v.toFixed(3).replace('.', ',')} s`;
     const renderDelay = () => {
@@ -2441,9 +2425,6 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     $('tamauto-ob-clear').onclick = () => {
       if (!confirm('Auftragsbuch vollständig löschen?')) return;
       GM_setValue('orderbook', []); log('Auftragsbuch geleert.'); renderOrderbook();
-    };
-    $('tamauto-bl-clear').onclick = () => {
-      GM_setValue('blacklist', { date: today(), plz: [] }); log('Blacklist: alle PLZ freigegeben.', 'ok'); renderBlacklist();
     };
 
     // Tages-Annahmeliste (nur exakt 5 Ziffern)
