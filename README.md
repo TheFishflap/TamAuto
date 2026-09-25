@@ -22,7 +22,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Wächter-Modus** | Schließt störende TAM-Meldungen **in Millisekunden** – „bereits vergeben“, „nicht verfügbar“, „falscher Status“, Warenkorb-Hinweise, technische Fehlerfenster – und wertet sie trotzdem richtig aus |
 | **Neue-Zeilen-Wächter** | Erkennt neue Aufträge in „Veröffentlichte Aufträge“ innerhalb von 250 ms – auch wenn TAM sie ohne Refresh einblendet |
 | **Silent Reload** | Optional (Erweiterte Einstellungen, Standard 0 = aus): fragt TAM alle x s im Hintergrund nach neuen Aufträgen – ohne Tabelle neu zu zeichnen; nur bei einem neuen Auftrag wird aktualisiert |
-| **Preis-Priorität** | Mehrere passende Aufträge gleichzeitig → **höchster Preis zuerst** |
+| **Priorität** | Mehrere passende Aufträge gleichzeitig → zuerst **mehrere Aufträge am selben Ort** (landen gemeinsam im Warenkorb), dann **höchste Summe am Ort**, dann **höchster Preis** |
 | **Verzögerung** | Standard an: 0,17 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0,001–0,5 s |
 
 ### 🔄 Aktualisierung – gezielt statt dauerhaft
@@ -358,6 +358,11 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.13.6 – 2026-09-25
+- **Priorität:** Stehen mehrere passende Aufträge da, kommen zuerst die mit **mehreren Aufträgen am selben Ort**
+  (gleiche Straße + PLZ + Ort – TAM legt sie gemeinsam in den Warenkorb, eine Annahme übernimmt alle), dann die
+  **höchste Summe am Ort**, dann der **höchste Einzelpreis**. Log: „Reihenfolge (mehrere am Ort → Summe → Preis): …“.
 
 ### 1.13.5 – 2026-09-25
 - Log (für Entwicklung) zeigt beim Silent Reload / „Jetzt testen“ wieder die **vollständigen neuen Einträge im

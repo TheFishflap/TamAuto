@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.13.5
+// @version      1.13.6
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1238,9 +1238,19 @@
       const old = all.filter((o) => o.key && done.has(o.key));
       const orders = all.filter((o) => o.valid && o.key && !done.has(o.key));
       // Gesperrte (Tages-Blacklist) nicht annehmen, aber auch nicht als erledigt merken → morgen wieder möglich
-      // Priorität: höchster Preis zuerst (ohne Preis ans Ende, sonst Reihenfolge der Tabelle)
+      // Priorität: 1) mehrere Aufträge am selben Ort (gleiche Straße + PLZ + Ort → landen bei TAM gemeinsam im
+      // Warenkorb und werden mit einer Annahme übernommen), 2) Summe der Preise am Ort, 3) Preis des Auftrags.
+      // Ohne Straße wird nicht gruppiert (nur PLZ+Ort wäre zu grob). Ohne Preis ans Ende.
+      const locKey = (o) => (o.strasse ? `${norm(o.strasse).replace(/\s+/g, ' ')}|${o.plz}|${norm(o.ort)}` : `#${o.key}`);
+      const loc = new Map();
+      all.filter((o) => o.valid).forEach((o) => {
+        const g = loc.get(locKey(o)) || { n: 0, sum: 0 };
+        g.n++; g.sum += parseEuro(o.preis) || 0; loc.set(locKey(o), g);
+      });
+      const grp = (o) => loc.get(locKey(o)) || { n: 1, sum: parseEuro(o.preis) || 0 };
       const hits = orders.filter((o) => matches(o) && !blocked(o))
-        .sort((a, b) => (parseEuro(b.preis) ?? -1) - (parseEuro(a.preis) ?? -1));
+        .sort((a, b) => (grp(b).n - grp(a).n) || (grp(b).sum - grp(a).sum) ||
+          ((parseEuro(b.preis) ?? -1) - (parseEuro(a.preis) ?? -1)));
       const blockedHits = orders.filter((o) => matches(o) && blocked(o));
       hits.forEach((o) => trackHit(o, 'passend'));        // Trefferquote: jeder passende Auftrag einmal
       blockedHits.forEach((o) => trackHit(o, 'gesperrt'));
@@ -1264,7 +1274,8 @@
         log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, bl ? 'err' : matches(o) ? 'ok' : 'info');
       });
       let n = 0;
-      if (hits.length > 1) log(`Reihenfolge nach Preis: ${hits.map((o) => `${o.nr || o.ref} (${o.preis || 'ohne Preis'})`).join(' → ')}`);
+      if (hits.length > 1) log(`Reihenfolge (mehrere am Ort → Summe → Preis): ${hits.map((o) =>
+        `${o.nr || o.ref} (${grp(o).n > 1 ? `${grp(o).n} am Ort, zus. ${fmtEuro(grp(o).sum)}, ` : ''}${o.preis || 'ohne Preis'})`).join(' → ')}`);
       for (const o of hits) {
         if (n >= cfg.maxPerCycle) { log(`Limit ${cfg.maxPerCycle}/Zyklus erreicht.`); break; }
         const desc = `${o.nr || o.ref} · ${o.plz} ${o.ort} · ${o.dienst}${o.preis ? ' · ' + o.preis : ''}`;
