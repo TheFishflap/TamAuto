@@ -359,6 +359,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.14.0 – 2026-09-25
+- **Silent Reload versetzt zum Refresh:** Nach jedem Refresh (Auto-Refresh, TAM, Burst, manuell) wartet die
+  Hintergrund-Abfrage mindestens das halbe Intervall – sie liegt so mittig zwischen zwei Refreshes statt zufällig
+  gleichzeitig (z. B. Auto-Refresh 30 s + Silent 30 s → effektiv alle 15 s ein Blick auf TAM).
+- Anfragen-Hinweis nach Last eingefärbt: unter 5 s **rot**, 5–29 s **orange**, ab 30 s neutral grau.
+
 ### 1.13.9 – 2026-09-25
 - Statuszeile: Mit aktivem Auto-Refresh nur noch **„Auto-Refresh in x s (alle y s)“** – die Anzeige „Nächste
   TAM-Aktualisierung“ entfällt, da jeder Refresh auch TAMs eigenen Timer zurücksetzt (zwei gleichzeitig neu startende

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.13.9
+// @version      1.14.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1522,6 +1522,10 @@
     const now = Date.now();
     if (!cfg.silentSec || !cfg.enabled || !license || busy || silentFetching || !onPublishedTab() || burstUntil > now) return;
     if (now - lastSilentAt < cfg.silentSec * 1000) return;
+    // Versetzt zum Refresh: direkt nach einem Refresh (Auto-Refresh, TAM, Burst, manuell) ist die Tabelle frisch –
+    // Abfrage erst nach der Hälfte des kürzeren Intervalls → liegt mittig zwischen zwei Refreshes
+    const gapMs = Math.min(cfg.silentSec, arActive() ? cfg.intervalSec : cfg.silentSec) * 500;
+    if (now - lastAnyRefreshAt < gapMs) return;
     if (!tamLoadReq) { silentState = 'wartet auf den ersten Refresh (dabei wird TAMs Anfrage übernommen)'; renderSilent(); return; }
     lastSilentAt = now;
     silentFetching = true;
@@ -1556,10 +1560,13 @@
     if (el) el.textContent = cfg.silentSec ? silentState || 'aktiv' : 'aus';
     const w = document.getElementById('tamauto-silent-warn');
     if (w) {
-      const perH = cfg.silentSec ? Math.round(3600 / cfg.silentSec) : 0;
-      w.style.display = cfg.silentSec ? '' : 'none';
-      w.textContent = cfg.silentSec ? `⚠ ${perH.toLocaleString('de-DE')} Server-Anfragen pro Stunde` +
-        (cfg.silentSec < 5 ? ' – hohe Serverlast, nur kurzzeitig nutzen (Empfehlung 5–10 s)' : ' – Serverlast beachten') : '';
+      // Farbe nach Last: unter 5 s rot, 5–29 s orange, ab 30 s neutral grau
+      const s = cfg.silentSec, perH = s ? Math.round(3600 / s) : 0;
+      w.style.display = s ? '' : 'none';
+      w.style.color = s < 5 ? '#b00020' : s < 30 ? '#b36b00' : '#555';
+      w.textContent = !s ? '' : `${s < 30 ? '⚠ ' : ''}${perH.toLocaleString('de-DE')} Server-Anfragen pro Stunde` +
+        (s < 5 ? ' – hohe Serverlast, nur kurzzeitig nutzen (Empfehlung 5–10 s)' : s < 30 ? ' – Serverlast beachten' : '') +
+        ' · versetzt zum Refresh';
     }
   }
 
