@@ -359,6 +359,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.13.7 – 2026-09-25
+- **Priorität als Dropdown** (Erweiterte Einstellungen): „Anzahl am Ort → Summe → Preis“ (Standard), „Summe am Ort →
+  Preis“, „Höchster Einzelpreis“, „Reihenfolge wie in TAM“ – mit **?**-Erklärung; steht auch im Kopf von „Log kopieren“.
+- **Changelog im Reiter Info:** die letzten Versionen mit Änderungen, geladen von GitHub; ist GitHub nicht erreichbar,
+  aus der README-Kopie im OneDrive. Markiert „(installiert)“ und neuere Versionen.
+
 ### 1.13.6 – 2026-09-25
 - **Priorität:** Stehen mehrere passende Aufträge da, kommen zuerst die mit **mehreren Aufträgen am selben Ort**
   (gleiche Straße + PLZ + Ort – TAM legt sie gemeinsam in den Warenkorb, eine Annahme übernimmt alle), dann die

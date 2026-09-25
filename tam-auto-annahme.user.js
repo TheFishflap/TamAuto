@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.13.6
+// @version      1.13.7
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -76,6 +76,7 @@
     burstOn: true, // Burst-Refresh nach manuellem Refresh immer aktiv (ohne Checkbox)
     hideTips: GM_getValue('hideTips', false), // alle ?-Erklärungen ausblenden
     wakeLock: GM_getValue('wakeLock', /android/i.test(navigator.userAgent)), // Bildschirm anlassen – auf Android standardmäßig an
+    prioMode: GM_getValue('prioMode', 'ort'), // Reihenfolge bei mehreren Treffern (siehe PRIO_MODES)
     silentSec: GM_getValue('silentSec', 0), // Silent Reload: Hintergrund-Abfrage alle x s (0 = aus, Standard)
     burstSec: GM_getValue('burstSecV2', 3), // Dauer des Burst-Refresh in s (1 Refresh pro Sekunde), Standard 3
   });
@@ -559,6 +560,53 @@
 
   // ------------------------------------------------------------------ Updates (GitHub)
   const UPDATE_URL = 'https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js';
+  // Changelog (Reiter Info): aus dem README auf GitHub – ist GitHub nicht erreichbar, aus der README-Kopie im
+  // OneDrive (Freigabelink "Jeder mit dem Link", download.aspx wie bei der Ortsliste). Leer = kein Ersatz.
+  const CHANGELOG_URL = 'https://raw.githubusercontent.com/TheFishflap/TamAuto/main/README.md';
+  const CHANGELOG_BACKUP_URL = '';
+
+  const escHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // "## Changelog" aus dem README in HTML umwandeln (### Version – Datum, "- " Punkte, **fett**, `Code`)
+  function renderChangelog(md, max = 12) {
+    const i = md.indexOf('## Changelog');
+    if (i < 0) return null;
+    const inline = (s) => escHtml(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`(.+?)`/g, '<code>$1</code>').replace(/\\\|/g, '|');
+    const entries = md.slice(i).split(/\n### /).slice(1, max + 1);
+    return entries.map((e) => {
+      const [title, ...rest] = e.split('\n');
+      const items = [];
+      rest.forEach((l) => {
+        if (/^\s*-\s/.test(l)) items.push(l.replace(/^\s*-\s/, ''));
+        else if (l.trim() && items.length && !/^#/.test(l)) items[items.length - 1] += ' ' + l.trim();
+      });
+      const v = (title.match(/^(\d+\.\d+(\.\d+)?)/) || [])[1] || '';
+      const tag = v === VERSION ? ' <span style="color:#1b7f3b">(installiert)</span>'
+        : v && newerVersion(v, VERSION) ? ' <span style="color:#b36b00">(neu – Update verfügbar)</span>' : '';
+      return `<div style="margin-top:6px"><b>${escHtml(title.trim())}</b>${tag}<ul style="margin:2px 0 0 16px;padding:0">` +
+        items.map((t) => `<li>${inline(t)}</li>`).join('') + '</ul></div>';
+    }).join('');
+  }
+  let changelogLoaded = false;
+  function loadChangelog() {
+    const box = document.getElementById('tamauto-changelog'), src = document.getElementById('tamauto-cl-src');
+    if (!box) return;
+    box.textContent = 'wird geladen …';
+    const get = (url) => new Promise((resolve) => {
+      if (!url) { resolve(null); return; }
+      GM_xmlhttpRequest({ method: 'GET', url, anonymous: true, nocache: true, timeout: 8000,
+        onload: (r) => resolve(r.status === 200 ? r.responseText : null), onerror: () => resolve(null), ontimeout: () => resolve(null) });
+    });
+    (async () => {
+      let html = renderChangelog((await get(CHANGELOG_URL)) || ''), from = 'GitHub';
+      if (!html) { html = renderChangelog((await get(CHANGELOG_BACKUP_URL)) || ''); from = 'OneDrive (GitHub nicht erreichbar)'; }
+      if (html) { box.innerHTML = html; changelogLoaded = true; if (src) src.textContent = `· Quelle: ${from}`; }
+      else {
+        box.textContent = CHANGELOG_BACKUP_URL ? 'Changelog nicht erreichbar (GitHub und OneDrive) – später erneut versuchen.'
+          : 'Changelog nicht erreichbar (GitHub) – später erneut versuchen.';
+        if (src) src.textContent = '';
+      }
+    })();
+  }
   const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '0';
 
   function newerVersion(a, b) { // true, wenn a > b
@@ -892,6 +940,13 @@
   // AuftragsNr: "MW3191767", "SA040647", "1002669965" oder mit Anhang "9601182381-10" (bis 4 Buchstaben + ab 6 Ziffern). Vergleich tolerant, falls TAM den
   // Anhang an einer Stelle (Karte, Warenkorb, Meldung) weglässt.
   // NR_RE nur als Rückfall, um eine Nummer in einem Meldungstext zu finden – maßgeblich ist die Spalte "AuftragsNr"
+  // Priorität bei mehreren passenden Aufträgen (Dropdown in "Erweiterte Einstellungen")
+  const PRIO_MODES = {
+    ort: 'Anzahl am Ort → Summe → Preis',
+    summe: 'Summe am Ort → Preis',
+    preis: 'Höchster Einzelpreis',
+    tabelle: 'Reihenfolge wie in TAM',
+  };
   const NR_RE = /\b[A-Z]{0,4}\d{6,}(-\d{1,3})?/i;
   const nrBase = (s) => String(s || '').toUpperCase().trim().replace(/-\d{1,3}$/, '');
   const sameNr = (a, b) => { const x = String(a || '').toUpperCase().trim(), y = String(b || '').toUpperCase().trim();
@@ -1248,9 +1303,13 @@
         g.n++; g.sum += parseEuro(o.preis) || 0; loc.set(locKey(o), g);
       });
       const grp = (o) => loc.get(locKey(o)) || { n: 1, sum: parseEuro(o.preis) || 0 };
-      const hits = orders.filter((o) => matches(o) && !blocked(o))
-        .sort((a, b) => (grp(b).n - grp(a).n) || (grp(b).sum - grp(a).sum) ||
-          ((parseEuro(b.preis) ?? -1) - (parseEuro(a.preis) ?? -1)));
+      const byN = (a, b) => grp(b).n - grp(a).n, bySum = (a, b) => grp(b).sum - grp(a).sum;
+      const byPrice = (a, b) => (parseEuro(b.preis) ?? -1) - (parseEuro(a.preis) ?? -1);
+      const sorter = { ort: (a, b) => byN(a, b) || bySum(a, b) || byPrice(a, b),   // Anzahl am Ort → Summe → Preis
+        summe: (a, b) => bySum(a, b) || byPrice(a, b),                             // Summe am Ort → Preis
+        preis: byPrice,                                                           // nur Einzelpreis
+        tabelle: () => 0 }[cfg.prioMode] || ((a, b) => byN(a, b) || bySum(a, b) || byPrice(a, b)); // Reihenfolge wie in TAM
+      const hits = orders.filter((o) => matches(o) && !blocked(o)).sort(sorter);
       const blockedHits = orders.filter((o) => matches(o) && blocked(o));
       hits.forEach((o) => trackHit(o, 'passend'));        // Trefferquote: jeder passende Auftrag einmal
       blockedHits.forEach((o) => trackHit(o, 'gesperrt'));
@@ -1274,7 +1333,7 @@
         log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, bl ? 'err' : matches(o) ? 'ok' : 'info');
       });
       let n = 0;
-      if (hits.length > 1) log(`Reihenfolge (mehrere am Ort → Summe → Preis): ${hits.map((o) =>
+      if (hits.length > 1) log(`Reihenfolge (${(PRIO_MODES[cfg.prioMode] || PRIO_MODES.ort)}): ${hits.map((o) =>
         `${o.nr || o.ref} (${grp(o).n > 1 ? `${grp(o).n} am Ort, zus. ${fmtEuro(grp(o).sum)}, ` : ''}${o.preis || 'ohne Preis'})`).join(' → ')}`);
       for (const o of hits) {
         if (n >= cfg.maxPerCycle) { log(`Limit ${cfg.maxPerCycle}/Zyklus erreicht.`); break; }
@@ -1637,6 +1696,19 @@ Standard: 0 (aus).">?</span>
           </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
+              <b>Priorität</b>
+              <select id="tamauto-prio" style="margin:0;max-width:220px">
+                ${Object.entries(PRIO_MODES).map(([k, v]) => `<option value="${k}">${v}${k === 'ort' ? ' (Standard)' : ''}</option>`).join('')}
+              </select>
+              <span class="tamauto-help" title="Reihenfolge, wenn mehrere passende Aufträge gleichzeitig in der Tabelle stehen (jede Annahme dauert einige Sekunden – wer zuerst drankommt, hat die besten Chancen):
+• Anzahl am Ort → Summe → Preis (Standard): zuerst Adressen mit mehreren Aufträgen (gleiche Straße + PLZ + Ort – TAM legt sie gemeinsam in den Warenkorb, eine Annahme übernimmt alle), bei Gleichstand die höhere Summe, dann der höhere Einzelpreis.
+• Summe am Ort → Preis: die Adresse mit dem meisten Umsatz zuerst.
+• Höchster Einzelpreis: nur nach Preis (Nachteil: den teuersten Auftrag wollen oft alle).
+• Reihenfolge wie in TAM: so, wie die Tabelle sortiert ist.">?</span>
+            </span>
+          </div>
+          <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
+            <span class="tamauto-chk">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-hidetips"> <b>Tipps ausblenden</b></label>
               <span class="tamauto-help" title="Blendet alle ?-Erklärungen im Bedienfeld aus (auch dieses), für eine aufgeräumte Ansicht. Wieder einblenden: Haken entfernen.">?</span>
             </span>
@@ -1715,6 +1787,11 @@ Standard: 0 (aus).">?</span>
             ⚠ Die Lizenz ist in diesem Browser gespeichert und bleibt bei Updates erhalten. <b>Beim Löschen von
             Cookies/Website-Daten oder Deinstallieren von Tampermonkey kann sie verloren gehen</b> – dann neue ID
             an IB Thomée schicken. Tipp: tam.tuvsud.com beim Löschen ausnehmen.
+          </div>
+          <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd">
+            <b>Changelog</b> <span id="tamauto-cl-src" style="color:#555;font-size:11px"></span>
+            <button id="tamauto-cl-reload" style="margin-left:4px" title="Changelog erneut laden (GitHub, sonst OneDrive)">Neu laden</button>
+            <div id="tamauto-changelog" style="max-height:240px;overflow:auto;font-size:11px;line-height:1.35;margin-top:2px;padding-right:4px"></div>
           </div>
           <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd">
             <b>© 2026 IB Thomée GmbH. Alle Rechte vorbehalten.</b><br>
@@ -1873,7 +1950,9 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       if (id === 'tamauto-page-main') $('tamauto-ta').style.display = 'none';
       if (id === 'tamauto-page-main') renderBlacklist();
       if (id === 'tamauto-page-book') renderOrderbook();
+      if (id === 'tamauto-page-info' && !changelogLoaded) loadChangelog(); // erst beim Öffnen laden
     };
+    $('tamauto-cl-reload').onclick = () => loadChangelog();
     p.querySelectorAll('.tamauto-tabbtn').forEach((b) => { b.onclick = () => showPage(b.dataset.page); });
     showPage('tamauto-page-main');
     renderBlacklist();
@@ -1989,6 +2068,13 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       if (cfg.silentSec && cfg.silentSec < 5) log(`Achtung: ${Math.round(3600 / cfg.silentSec)} Anfragen/Stunde an TAM – hohe Serverlast, nur kurzzeitig nutzen.`, 'err');
     };
     $('tamauto-silent-test').onclick = () => silentTest();
+
+    // Priorität bei mehreren Treffern
+    $('tamauto-prio').value = PRIO_MODES[cfg.prioMode] ? cfg.prioMode : 'ort';
+    $('tamauto-prio').onchange = (e) => {
+      cfg.prioMode = e.target.value; GM_setValue('prioMode', cfg.prioMode);
+      log(`Priorität: ${PRIO_MODES[cfg.prioMode]}.`);
+    };
     renderSilent();
 
     // Burst-Refresh: nur die Dauer ist einstellbar (Auslöser: Button "⚡ Burst" oder manueller Refresh auf der Website)
@@ -2011,7 +2097,8 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       const settings = `Einstellungen: Auto-Refresh ${cfg.autoRefresh ? `alle ${cfg.intervalSec} s` : 'aus'} · Silent Reload ` +
         `${cfg.silentSec ? `alle ${cfg.silentSec} s` : 'aus'} · Burst ${cfg.burstSec} s · Verzögerung ` +
         `${cfg.delayOn ? `${cfg.delaySec} s${cfg.delayRandom ? ` + bis ${cfg.delayRandomMs} ms` : ''}` : 'aus'} · Ortsliste ` +
-        `${places.plz.length} PLZ / ${places.orte.length} Orte · Sperrliste ${(places.block || { plz: [] }).plz.length} PLZ`;
+        `${places.plz.length} PLZ / ${places.orte.length} Orte · Sperrliste ${(places.block || { plz: [] }).plz.length} PLZ` +
+        ` · Priorität ${PRIO_MODES[cfg.prioMode] || PRIO_MODES.ort}`;
       const txt = `TAM Auto-Annahme v${VERSION} · Log vom ${new Date().toLocaleString('de-DE')} · ${navigator.userAgent}\n` +
         `${settings}\n(letzte ${lines.length} von ${logHistory.length} Zeilen)\n\n${lines.join('\n')}`;
       let ok = false;
