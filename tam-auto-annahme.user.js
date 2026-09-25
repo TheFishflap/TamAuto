@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.12.7
+// @version      1.12.8
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -979,13 +979,15 @@
 
   // Verzögerung vor jedem Klickschritt der Annahme (Erweiterte Einstellungen):
   // eingestellte Sekunden (0,01–1,00) + optional Randomizer (zufällig 0 … x ms), bei jedem Schritt neu gewürfelt.
+  let delayStats = { ms: 0, n: 0 }; // Summe der Verzögerungen der laufenden Annahme (fürs Log)
   async function humanDelay(step) {
     if (!cfg.delayOn) return;
     const spread = cfg.delayRandom ? Math.random() * cfg.delayRandomMs / 1000 : 0;
-    const s = cfg.delaySec + spread;
-    if (s <= 0) return;
-    log(`Verzögerung vor: ${step}`, 'debug');
-    await sleep(s * 1000);
+    const ms = Math.round((cfg.delaySec + spread) * 1000);
+    if (ms <= 0) return;
+    delayStats.ms += ms; delayStats.n++;
+    log(`Verzögerung vor: ${step} · ${ms} ms`, 'debug');
+    await sleep(ms);
   }
 
   async function acceptOrder(order) {
@@ -1166,6 +1168,8 @@
     if (busy) { recheck = true; return; } // läuft gerade etwas → danach erneut prüfen
     busy = true;
     recheck = false; // Tabelle wird jetzt frisch gelesen
+    clearTimeout(obsTimer); // ausstehende Nachprüfung ist damit erledigt
+    lastGridNrs = gridNrs(visibleGrid()); // Stand für das Sicherheitsnetz (auch bei vorzeitigem Abbruch → kein Dauer-Neustart)
     lastCycleAt = Date.now();
     try {
       if (!places.plz.length && !places.orte.length) { log('Keine Ortsliste geladen – übersprungen.', 'err'); return; }
@@ -1221,7 +1225,11 @@
           log('Abbruch: Tab gewechselt oder Tabelle neu geladen – keine Annahme.', 'err'); recheck = true; break;
         }
         log(`Nehme an: ${desc}`);
+        delayStats = { ms: 0, n: 0 };
+        const t0 = Date.now();
         const ok = await acceptOrder(o);
+        log(`Dauer der Annahme: ${Date.now() - t0} ms` + (delayStats.n
+          ? ` · davon Verzögerung gesamt: ${delayStats.ms} ms (${delayStats.n} Schritte)` : ' · ohne Verzögerung'), 'debug');
         trackResult(o, ok ? 'angenommen' : o.failReason === 'vergeben' ? 'vergeben' : 'fehler');
         if (ok) {
           const plus = bulkOf(o).length ? ` + ${bulkLabel(o)}` : '';
@@ -2048,6 +2056,23 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     clearTimeout(obsTimer);
     obsTimer = setTimeout(() => cycle(reason), 800);
   }
+  // Sicherheitsnetz (alle 250 ms): steht eine AuftragsNr in der Tabelle, die beim letzten Abgleich noch nicht
+  // da war, sofort prüfen. TAM blendet neue Aufträge teils ein, ohne dass die Tabellenänderung erkannt wird
+  // (bzw. die Prüfung durch laufende Änderungen immer weiter verschoben wird) – dann wurden sie erst nach einem
+  // Refresh angenommen.
+  function gridNrs(grid) {
+    const body = grid && grid.querySelector('.x-grid3-body');
+    const txt = body ? [...body.querySelectorAll('td')].map((td) => td.textContent).join(' ') : ''; // je Zelle (sonst verschmelzen Nummern)
+    return new Set(txt.toUpperCase().match(/(MW)?\d{6,}/g) || []);
+  }
+  let lastGridNrs = new Set();
+  function watchNewRows() {
+    if (!cfg.enabled || busy || !onPublishedTab()) return;
+    const fresh = [...gridNrs(visibleGrid())].filter((x) => !lastGridNrs.has(x));
+    if (!fresh.length) return;
+    log(`Neue Zeile erkannt: ${fresh.slice(0, 3).join(', ')}${fresh.length > 3 ? ' …' : ''} → sofort prüfen`, 'debug');
+    cycle('Neue Zeile');
+  }
   function watchGrid() {
     new MutationObserver((muts) => {
       if (muts.some((m) => m.type === 'attributes' && m.target.tagName === 'LI' && (m.target.id || '').includes('__'))) {
@@ -2180,6 +2205,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     buildPanel();
     watchGrid();
     wasOnPublished = onPublishedTab(); // Ausgangszustand für die Tabwechsel-Erkennung
+    setInterval(watchNewRows, 250); // neue Aufträge auch ohne erkannte Tabellenänderung sofort prüfen
     setInterval(dismissAllMessagesNow, 100); // Sofort-Wächter als Rückfallebene (falls ein Einblenden nicht als Änderung auffällt)
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;
     // Excel (Ortsliste + Sperrliste) beim Start laden, wenn älter als 30 min oder altes Format, danach alle 30 min

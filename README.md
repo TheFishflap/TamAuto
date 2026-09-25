@@ -20,6 +20,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Bulk-Erfassung** | Alle im Warenkorb mit angenommenen Aufträge werden verbucht und nicht erneut versucht |
 | **Schnell zurück** | Terminvergabe-Fenster wird sofort weggeklickt, danach direkt zurück in „Veröffentlichte Aufträge“ |
 | **Wächter-Modus** | Schließt störende TAM-Meldungen **in Millisekunden** – „bereits vergeben“, „nicht verfügbar“, „falscher Status“, Warenkorb-Hinweise, technische Fehlerfenster – und wertet sie trotzdem richtig aus |
+| **Neue-Zeilen-Wächter** | Erkennt neue Aufträge in „Veröffentlichte Aufträge“ innerhalb von 250 ms – auch wenn TAM sie ohne Refresh einblendet |
 | **Verzögerung** | Standard an: 0,17 s + Randomizer (bis 100 ms) vor jedem Klickschritt, einstellbar 0,01–1 s |
 
 ### 🔄 Aktualisierung – gezielt statt dauerhaft
@@ -356,6 +357,13 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.12.8 – 2026-09-25
+- **Neue Aufträge ohne Refresh erkennen:** Ein Wächter prüft alle 250 ms, ob in „Veröffentlichte Aufträge“ eine
+  AuftragsNr steht, die beim letzten Abgleich noch nicht da war, und gleicht dann sofort ab. Bisher konnte eine
+  laufend aktualisierte Tabelle die Prüfung immer weiter verschieben – der Auftrag stand sichtbar da, wurde aber
+  erst nach einem Refresh gelesen.
+- Log: jede Verzögerung mit **ms**, nach jeder Annahme **Gesamtdauer** und **Verzögerung gesamt** (Summe + Schritte).
 
 ### 1.12.7 – 2026-09-25
 - Wächter-Modus schließt **alle Fehlermeldungen sofort**, ohne Verzögerung: auch allgemeine Fehlerfenster
