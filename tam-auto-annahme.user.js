@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.12.8
+// @version      1.12.9
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -70,9 +70,9 @@
     popups: GM_getValue('popups', true), // Desktop-Benachrichtigung (Popup) bei Annahme / fehlgeschlagener Annahme
     volume: GM_getValue('volume', 60),   // Lautstärke des Benachrichtigungstons in %
     delayOn: GM_getValue('delayOnV2', true),       // Verzögerung vor jedem Klickschritt der Annahme – Standard an (ab 1.11)
-    delaySec: Math.min(1, Math.max(0.01, GM_getValue('delaySec', 0.17))), // 0,01–1,00 s in 0,01-s-Schritten, Standard 0,17
+    delaySec: Math.min(0.5, Math.max(0.001, GM_getValue('delaySec', 0.17))), // 0,001–0,500 s in 1-ms-Schritten, Standard 0,17
     delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung
-    delayRandomMs: GM_getValue('delayRandomMsV2', 100), // Streuung 0 … x ms (Standard 100 ms)
+    delayRandomMs: Math.min(500, GM_getValue('delayRandomMsV3', 80)), // Streuung 0 … x ms (0–500, Standard 80 ms; V3 = neuer Standard für alle)
     burstOn: true, // Burst-Refresh nach manuellem Refresh immer aktiv (ohne Checkbox)
     hideTips: GM_getValue('hideTips', false), // alle ?-Erklärungen ausblenden
     wakeLock: GM_getValue('wakeLock', /android/i.test(navigator.userAgent)), // Bildschirm anlassen – auf Android standardmäßig an
@@ -855,6 +855,12 @@
   // Annahme-Logik sie trotzdem auswerten kann (Trefferquote, Log).
   const UNAVAILABLE = /nicht (mehr )?verfügbar|bereits vergeben|falschen Status|kann nicht bestätigt werden|Fehler bei Auftragsannahme|zum Warenkorb hinzugefügt/i;
   const ERROR_MSG = /fehler|error|nicht möglich/i;
+  // AuftragsNr: "MW3191767", "1002669965" oder mit Anhang "9601182381-10". Vergleich tolerant, falls TAM den
+  // Anhang an einer Stelle (Karte, Warenkorb, Meldung) weglässt.
+  const NR_RE = /(MW)?\d{6,}(-\d{1,3})?/i;
+  const nrBase = (s) => String(s || '').toUpperCase().trim().replace(/-\d{1,3}$/, '');
+  const sameNr = (a, b) => { const x = String(a || '').toUpperCase().trim(), y = String(b || '').toUpperCase().trim();
+    return x === y || (!!x && nrBase(x) === nrBase(y) && (x === nrBase(x) || y === nrBase(y))); };
   let lastUnavailable = { at: 0, text: '' };
   // Neben TAM-Fenstern (.x-window) auch Info-Einblendungen, Tooltips und Dialoge prüfen – TAM zeigt Hinweise
   // teils als kurze Einblendung, die sonst erst nach Sekunden von selbst verschwindet.
@@ -877,7 +883,7 @@
         // Reine Info ("… zum Warenkorb hinzugefügt") erscheint beim Öffnen der Auftragskarte → nur ausblenden,
         // NICHT als Fehler merken (sonst würde die laufende Annahme abgebrochen)
         if (!/zum Warenkorb hinzugefügt/i.test(msg)) {
-          lastUnavailable = { at: Date.now(), nr: ((all.match(/(MW)?\d{6,}/i) || [])[0] || '').toUpperCase(), text: msg };
+          lastUnavailable = { at: Date.now(), nr: ((all.match(NR_RE) || [])[0] || '').toUpperCase(), text: msg };
         }
         log(`TAM-Meldung sofort geschlossen: ${msg} · Aufbau: ${String(w.className).trim().slice(0, 60) || w.tagName}`, 'debug');
       }
@@ -966,7 +972,7 @@
     return [...card.querySelectorAll('.zusatzteilauftrag')].filter(visible).map((el) => {
       const km = text(el.querySelector('.entfernung'));
       const rest = text(el).replace(km, '').trim();
-      const nr = ((rest.match(/^((MW)?\d{6,})/i) || [])[1] || '').toUpperCase();
+      const nr = ((rest.match(/^((MW)?\d{6,}(-\d{1,3})?)/i) || [])[1] || '').toUpperCase();
       return { el, km, kmNum: parseFloat(km.replace(',', '.')), nr };
     });
   }
@@ -978,7 +984,7 @@
   }
 
   // Verzögerung vor jedem Klickschritt der Annahme (Erweiterte Einstellungen):
-  // eingestellte Sekunden (0,01–1,00) + optional Randomizer (zufällig 0 … x ms), bei jedem Schritt neu gewürfelt.
+  // eingestellte Sekunden (0,001–0,500) + optional Randomizer (zufällig 0 … x ms), bei jedem Schritt neu gewürfelt.
   let delayStats = { ms: 0, n: 0 }; // Summe der Verzögerungen der laufenden Annahme (fürs Log)
   async function humanDelay(step) {
     if (!cfg.delayOn) return;
@@ -993,7 +999,7 @@
   async function acceptOrder(order) {
     if (!onPublishedTab()) { log('Abbruch: nicht im Tab "Veröffentlichte Aufträge".', 'err'); return false; }
     const nr = (order.nr || '').trim();
-    if (!/^(MW)?\d{6,}$/i.test(nr)) { log(`Keine gültige AuftragsNr in der Zeile (${nr || 'leer'}).`, 'err'); return false; }
+    if (!/^(MW)?\d{6,}(-\d{1,3})?$/i.test(nr)) { log(`Keine gültige AuftragsNr in der Zeile (${nr || 'leer'}).`, 'err'); return false; }
 
     // 1) Doppelklick -> "Auftragskarte zu MW…"
     const before = new Set(visibleWindows());
@@ -1027,7 +1033,7 @@
     if (!card) { log(`Auftragskarte für ${nr} öffnete sich nicht.`, 'err'); dismissMessages(); return false; }
 
     // Sicherheitscheck: richtige Auftragskarte?
-    if (!winTitle(card).includes(nr)) {
+    if (!winTitle(card).toUpperCase().includes(nrBase(nr))) {
       log(`Falsche Auftragskarte ("${winTitle(card)}") – erwartet ${nr}. Abbruch.`, 'err');
       closeWindow(card); return false;
     }
@@ -1038,7 +1044,7 @@
     for (const item of nearbyItems(card).filter((n) => n.kmNum === 0 && n.nr && n.nr !== nr.toUpperCase())) {
       await humanDelay(`0-km-Auftrag ${item.nr}`);
       fire(item.el, ['mouseover', 'mousedown', 'mouseup', 'click']);
-      const w = await waitFor(() => warenkorbItems(card).find((x) => x.nr === item.nr), 4000);
+      const w = await waitFor(() => warenkorbItems(card).find((x) => sameNr(x.nr, item.nr)), 4000);
       if (w) { extra.push(item.nr); log(`+ ${item.nr} (0 km) in den Warenkorb`); }
       else log(`${item.nr} (0 km) erschien nicht im Warenkorb – übersprungen.`, 'err');
     }
@@ -1052,12 +1058,12 @@
     await setChecked(selectAll, true);
     const items = warenkorbItems(card);
     const unchecked = items.filter((w) => !w.cb.checked).map((w) => w.nr);
-    if (!items.some((w) => w.nr === nr.toUpperCase())) { log(`${nr} nicht im Warenkorb.`, 'err'); closeWindow(card); return false; }
+    if (!items.some((w) => sameNr(w.nr, nr))) { log(`${nr} nicht im Warenkorb.`, 'err'); closeWindow(card); return false; }
     if (unchecked.length) { log(`Nicht angehakt trotz "alle auswählen": ${unchecked.join(', ')}`, 'err'); closeWindow(card); return false; }
     // Alles, was jetzt im Warenkorb angehakt ist, wird mit "Annehmen" GEMEINSAM angenommen (Bulk) – nicht nur
     // die selbst angeklickten 0-km-Aufträge, sondern auch Einträge, die schon vorher im Warenkorb lagen.
-    const nrOf = (s) => ((String(s).match(/(MW)?\d{6,}/i) || [s])[0]).toUpperCase();
-    order.bulk = [...new Set(items.filter((w) => w.cb.checked).map((w) => nrOf(w.nr)))].filter((x) => x !== nr.toUpperCase());
+    const nrOf = (s) => ((String(s).match(NR_RE) || [s])[0]).toUpperCase();
+    order.bulk = [...new Set(items.filter((w) => w.cb.checked).map((w) => nrOf(w.nr)))].filter((x) => !sameNr(x, nr));
 
     // 3) "Annehmen" unten in der Auftragskarte
     const acceptBtn = findButton(cfg.acceptButton, card);
@@ -1122,9 +1128,9 @@
       if (/falschen Status|kann nicht bestätigt werden|Fehler bei Auftragsannahme/i.test(lastUnavailable.text)) {
         const bad = lastUnavailable.nr;
         log(`TAM meldet: ${lastUnavailable.text}`, 'err');
-        if (!bad || bad === nr.toUpperCase()) { order.failReason = 'vergeben'; closeWindow(card); return false; }
-        order.bulk = (order.bulk || []).filter((x) => x !== bad);
-        order.extra = (order.extra || []).filter((x) => x !== bad);
+        if (!bad || sameNr(bad, nr)) { order.failReason = 'vergeben'; closeWindow(card); return false; }
+        order.bulk = (order.bulk || []).filter((x) => !sameNr(x, bad));
+        order.extra = (order.extra || []).filter((x) => !sameNr(x, bad));
         log(`${bad} war nicht mehr frei – wird nicht als angenommen verbucht; ${nr} gilt als angenommen.`, 'err');
       } else if (!/nicht (mehr )?verfügbar/i.test(lastUnavailable.text)) {
         // sonstige Fehlermeldung nach "Bestätigen" (vom Wächter schon geschlossen) → nicht angenommen
@@ -1414,6 +1420,13 @@
     if (el) el.textContent = `Ortsliste: ${places.plz.length} PLZ / ${places.orte.length} Orte · ` +
       `Sperrliste: ${xb.plz.length + xb.orte.length}` +
       (places.loadedAt ? ` (geladen ${new Date(places.loadedAt).toLocaleString('de-DE')})` : ' – nicht geladen');
+    const upd = document.getElementById('tamauto-bl-updated');
+    if (upd) {
+      const at = places.loadedAt && new Date(places.loadedAt);
+      const when = !at ? 'noch nie' : at.toDateString() === new Date().toDateString()
+        ? at.toLocaleTimeString('de-DE') : at.toLocaleString('de-DE');
+      upd.textContent = `Zuletzt aktualisiert: ${when} · automatisch alle ${cfg.placesReloadMin} min`;
+    }
     const ex = extraPlaces();
     const exEl = document.getElementById('tamauto-extra');
     if (exEl) {
@@ -1474,12 +1487,12 @@
               <input type="checkbox" id="tamauto-delay-on"> <b>Verzögerung</b></label>
             <span style="color:#555"> – vor jedem Klickschritt der Annahme</span>
             <div class="tamauto-chk" style="margin-top:4px">
-              <input type="range" id="tamauto-delay" min="0.01" max="1" step="0.01" style="width:140px;margin:0">
+              <input type="range" id="tamauto-delay" min="0.001" max="0.5" step="0.001" style="width:140px;margin:0">
               <b id="tamauto-delay-val"></b>
             </div>
             <div class="tamauto-chk" style="margin-top:4px">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-delay-rnd"> Randomizer</label>
-              + zufällig bis <input id="tamauto-delay-ms" type="number" min="0" max="2000" step="10" style="width:56px;margin:0"> ms
+              + zufällig bis <input id="tamauto-delay-ms" type="number" min="0" max="500" step="10" style="width:56px;margin:0"> ms
             </div>
           </div>
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
@@ -1582,7 +1595,6 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
             alle <input id="tamauto-int" type="number" min="10" style="width:48px;margin:0" value="${cfg.intervalSec}"> s
             <span class="tamauto-help" title="Auto-Refresh lädt die Tabelle schneller neu, um neue Aufträge früher zu finden. Ein niedrigerer Wert bedeutet eine höhere Auslastung und sollte mit Bedacht gewählt werden, um Auffälligkeiten zu vermeiden. Standard: 60 s (aus), Minimum: 10 s. Am TAM-Takt ausgerichtet: Das Script liest mit, wann TAM selbst neu lädt (Einstellung „Automatisch alle … Minuten“), und lässt den eigenen Refresh aus, wenn TAM gleich ohnehin aktualisiert. Über 60 s schaltet sich der Auto-Refresh ab – der Abgleich läuft dann nur mit der TAM-eigenen Aktualisierung.">?</span>
           </span>
-          <button id="tamauto-once" title="Nimmt den obersten Auftrag der Tabelle EINMAL verbindlich an – ohne Ortsliste">Auftrag 1. Zeile annehmen</button>
           <span class="tamauto-chk">
             <button id="tamauto-burst-go" title="Burst-Refresh jetzt starten: für die eingestellte Zeit jede Sekunde aktualisieren – z. B. wenn eine Auftragswelle erwartet wird. Erneut klicken = wieder volle Zeit.">⚡ Burst</button>
             <input id="tamauto-burst-sec" type="number" min="3" max="120" title="Dauer des Burst-Refresh in Sekunden" style="width:44px;margin:0"> s
@@ -1601,7 +1613,8 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
             <div style="margin-top:6px"><b>Sperrliste aus Excel</b>
               <span class="tamauto-help" title="PLZ aus dem Excel-Blatt „nicht annehmen“. Diese PLZ werden NIE angenommen – dauerhaft, solange sie im Excel stehen (nicht nur heute). Sie sind vom Button „Alle freigeben“ NICHT betroffen und lassen sich hier nicht entfernen – ändern nur im Excel, danach „Neu laden“.">?</span>
               <span style="color:#555">– Blatt „nicht annehmen“</span>
-              <button id="tamauto-bl-reload" style="margin-left:4px">Neu laden</button></div>
+              <button id="tamauto-bl-reload" style="margin-left:4px">Neu laden</button>
+              <div id="tamauto-bl-updated" style="color:#555;font-size:11px;margin-top:2px"></div></div>
             <div id="tamauto-bl-excel" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
           </div>
           <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">
@@ -1679,24 +1692,6 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
         loadPlacesFromText(ta.value); ta.style.display = 'none'; $('tamauto-paste').textContent = 'Liste einfügen';
       }
     };
-    $('tamauto-once').onclick = async () => {
-      if (busy) { log('Script ist gerade beschäftigt – kurz warten.', 'err'); return; }
-      if (!onPublishedTab()) { log('Bitte Tab "Veröffentlichte Aufträge" öffnen.', 'err'); return; }
-      const grid = visibleGrid();
-      const rows = grid ? readOrders(grid) : [];
-      rememberRows(rows);
-      const o = rows.find((x) => x.valid && x.nr);
-      if (!o) { log('Kein Auftrag in der Tabelle.', 'err'); return; }
-      if (!confirm(`Auftrag ${o.nr} (${o.plz} ${o.ort}) jetzt VERBINDLICH annehmen – unabhängig von der Ortsliste?`)) return;
-      busy = true;
-      try {
-        log(`Annahme 1. Zeile gestartet: ${o.nr} · ${o.plz} ${o.ort}`);
-        const ok = await acceptOrder(o);
-        const plus = bulkOf(o).length ? ` + ${bulkLabel(o)}` : '';
-        log(ok ? `Annahme 1. Zeile erfolgreich: ${o.nr}${plus}` : `Annahme 1. Zeile fehlgeschlagen: ${o.nr}`, ok ? 'ok' : 'err');
-        if (ok) bookAccepted(o);
-      } finally { releaseBusy(); }
-    };
     $('tamauto-upd').onclick = () => checkUpdate(true);
 
     // Reiter im Bedienfeld
@@ -1729,7 +1724,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     $('tamauto-bl-add').onclick = addBl;
     $('tamauto-bl-in').onkeydown = (e) => { if (e.key === 'Enter') addBl(); };
     // Verzögerung: Checkbox + Slider 1,0–5,0 s (0,1-s-Schritte) + Randomizer (Streuung nicht angezeigt)
-    const fmtSec = (v) => `${v.toFixed(2).replace('.', ',')} s`;
+    const fmtSec = (v) => `${v.toFixed(3).replace('.', ',')} s`;
     const renderDelay = () => {
       $('tamauto-delay-on').checked = cfg.delayOn;
       $('tamauto-delay').value = cfg.delaySec;
@@ -1746,15 +1741,15 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       log(cfg.delayOn ? `An: ${delayInfo()}` : 'Verzögerung aus.');
     };
     $('tamauto-delay').oninput = (e) => {
-      cfg.delaySec = Math.round(Math.min(1, Math.max(0.01, +e.target.value || 0.01)) * 100) / 100; renderDelay();
+      cfg.delaySec = Math.round(Math.min(0.5, Math.max(0.001, +e.target.value || 0.001)) * 1000) / 1000; renderDelay();
     };
     $('tamauto-delay').onchange = () => { GM_setValue('delaySec', cfg.delaySec); log(delayInfo()); };
     $('tamauto-delay-rnd').onchange = (e) => {
       cfg.delayRandom = e.target.checked; GM_setValue('delayRandom', cfg.delayRandom); renderDelay(); log(delayInfo());
     };
     $('tamauto-delay-ms').onchange = (e) => {
-      cfg.delayRandomMs = Math.round(Math.min(2000, Math.max(0, +e.target.value || 0)));
-      GM_setValue('delayRandomMsV2', cfg.delayRandomMs); renderDelay(); log(delayInfo());
+      cfg.delayRandomMs = Math.round(Math.min(500, Math.max(0, +e.target.value || 0)));
+      GM_setValue('delayRandomMsV3', cfg.delayRandomMs); renderDelay(); log(delayInfo());
     };
     renderDelay();
 
@@ -2063,7 +2058,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
   function gridNrs(grid) {
     const body = grid && grid.querySelector('.x-grid3-body');
     const txt = body ? [...body.querySelectorAll('td')].map((td) => td.textContent).join(' ') : ''; // je Zelle (sonst verschmelzen Nummern)
-    return new Set(txt.toUpperCase().match(/(MW)?\d{6,}/g) || []);
+    return new Set(txt.toUpperCase().match(/(MW)?\d{6,}(-\d{1,3})?/g) || []);
   }
   let lastGridNrs = new Set();
   function watchNewRows() {

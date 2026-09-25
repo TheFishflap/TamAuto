@@ -21,7 +21,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Schnell zurück** | Terminvergabe-Fenster wird sofort weggeklickt, danach direkt zurück in „Veröffentlichte Aufträge“ |
 | **Wächter-Modus** | Schließt störende TAM-Meldungen **in Millisekunden** – „bereits vergeben“, „nicht verfügbar“, „falscher Status“, Warenkorb-Hinweise, technische Fehlerfenster – und wertet sie trotzdem richtig aus |
 | **Neue-Zeilen-Wächter** | Erkennt neue Aufträge in „Veröffentlichte Aufträge“ innerhalb von 250 ms – auch wenn TAM sie ohne Refresh einblendet |
-| **Verzögerung** | Standard an: 0,17 s + Randomizer (bis 100 ms) vor jedem Klickschritt, einstellbar 0,01–1 s |
+| **Verzögerung** | Standard an: 0,17 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0,001–0,5 s |
 
 ### 🔄 Aktualisierung – gezielt statt dauerhaft
 | | |
@@ -122,7 +122,6 @@ Browser genutzt wird, ist eine neue Aktivierung nötig.
 | **alle … s** | Intervall für Refresh und Abgleich – Standard **60 s**, Minimum **10 s**. Niedriger = höhere Auslastung, mit Bedacht wählen. **Über 60 s** schaltet sich Auto-Refresh ab; der Abgleich läuft dann synchron mit der TAM-eigenen Aktualisierung (bleibt immer an). Erklärung auch über das **?** |
 | **Ortslisten laden** | Lädt **beide** Listen neu: Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) aus dem Excel in SharePoint – ohne Anmeldung; Ergebnis im Log; automatisch alle 30 min |
 | **Liste einfügen** | **Bulk-Einfügen** – viele PLZ auf einmal (z. B. aus Excel kopiert) **zusätzlich** zur geladenen Ortsliste annehmen; für **einzelne** PLZ ist die **Tages-Annahmeliste** (nur 5-stellig) besser gedacht. (eine je Zeile, gleiche PLZ-Logik), wird **nach 24 h automatisch gelöscht**. Das Feld zeigt die aktuelle Zusatzliste; leer übernehmen = löschen. Anzeige „+ Zusätzlich: … (bis …)“. Erklärung über das **?** |
-| **Auftrag 1. Zeile annehmen** | Nimmt den obersten Auftrag **einmal verbindlich** an (mit Rückfrage, ohne Ortsliste) |
 
 ### Tages-Blacklist (Reiter „Bedienung“)
 
@@ -143,11 +142,11 @@ Steht eine PLZ zusätzlich auf einer Sperrliste, gilt die Sperre.
 werden im Reiter angezeigt (braun), ändern nur im Excel. Fehlt das Blatt, ist die Sperrliste leer –
 das Blatt „annehmen“ wird nie als Sperrliste verwendet.
 
-**Verzögerung** (ebenfalls in „Erweiterte Einstellungen“): Checkbox + Slider **0,01–1,00 s** in 0,01-s-Schritten
+**Verzögerung** (ebenfalls in „Erweiterte Einstellungen“): Checkbox + Slider **0,001–0,500 s** in 1-ms-Schritten
 (Standard **an**, **0,17 s**).
 Vor jedem Klickschritt der Annahme (Doppelklick, 0-km-Aufträge, alle auswählen, Annehmen, Haken, Bestätigen)
 wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt zufällig **0 bis x ms** dazu
-(Standard **100 ms**, einstellbar), bei jedem Schritt neu gewürfelt.
+(Standard **80 ms**, einstellbar 0–500 ms), bei jedem Schritt neu gewürfelt.
 
 ### Reiter „Erweiterte Einstellungen“
 
@@ -357,6 +356,14 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.12.9 – 2026-09-25
+- **AuftragsNr mit Anhang** (z. B. `9601182381-10`, Sixt) wird erkannt und angenommen – bisher „Keine gültige
+  AuftragsNr“, obwohl der Auftrag passte.
+- **Verzögerung** feiner und kürzer: **0,001–0,500 s** in 1-ms-Schritten; Randomizer 0–500 ms, **Standard 80 ms**
+  (gilt nach dem Update einmal für alle).
+- Sperrliste aus Excel: Anzeige **„Zuletzt aktualisiert: …“** (Uhrzeit des letzten Ladens, automatisch alle 30 min).
+- Button „Auftrag 1. Zeile annehmen“ entfernt (Testphase beendet).
 
 ### 1.12.8 – 2026-09-25
 - **Neue Aufträge ohne Refresh erkennen:** Ein Wächter prüft alle 250 ms, ob in „Veröffentlichte Aufträge“ eine
