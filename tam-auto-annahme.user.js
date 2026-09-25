@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.16.6
+// @version      1.16.7
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1654,7 +1654,7 @@
     const today = pushLog.filter((e) => e.at >= from && !e.test);
     const byDev = {};
     today.forEach((e) => { byDev[e.src] = (byDev[e.src] || 0) + 1; });
-    const lats = today.map((e) => e.tam).filter((v) => typeof v === 'number').sort((a, b) => a - b);
+    const lats = today.map((e) => e.tam).filter((v) => typeof v === 'number').map((v) => Math.max(0, v)).sort((a, b) => a - b);
     const med = lats.length ? lats[Math.floor(lats.length / 2)] : null;
     const sum = document.getElementById('tamauto-pl-sum');
     if (sum) sum.textContent = today.length
@@ -1664,7 +1664,9 @@
     const color = (r) => /Angenommen|neuer Auftrag/i.test(r || '') ? '#2e7d32' : /Fehler|gestoppt|nicht im Reiter/i.test(r || '') ? '#c62828' : '#555';
     rows.innerHTML = [...pushLog].reverse().slice(0, 100).map((e) => {
       const t = new Date(e.at).toLocaleTimeString('de-DE') + (new Date(e.at).toDateString() === new Date().toDateString() ? '' : ` ${new Date(e.at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}`);
-      const lat = typeof e.tam === 'number' ? `${e.tam} ms` : typeof e.lat === 'number' ? `${e.lat} ms*` : '–';
+      // Laufzeit = Uhr PC − Uhr Handy: weichen die Uhren ab, kann sie negativ werden → dann „≈ 0 ms“
+      const fmtLat = (v) => (v < 0 ? '≈ 0 ms¹' : `${v} ms`);
+      const lat = typeof e.tam === 'number' ? fmtLat(e.tam) : typeof e.lat === 'number' ? `${fmtLat(e.lat)}*` : '–';
       return `<tr style="border-bottom:1px solid #eee"><td style="padding:2px 4px;white-space:nowrap">${t}</td>` +
         `<td style="padding:2px 4px">${escHtml(e.src)}${e.test ? ' <span style="color:#1a4d8f">(Test)</span>' : ''}</td>` +
         `<td style="padding:2px 4px;white-space:nowrap" title="${typeof e.lat === 'number' ? `Handy → Script ${e.lat} ms` : ''}">${lat}</td>` +
@@ -1691,8 +1693,10 @@
   }
   function onPushSignal(sig) {
     const now = Date.now();
-    const lat = sig.ts ? ` · Handy→Script ${now - sig.ts} ms` : '';
-    const lat2 = sig.nts ? ` · TAM-Benachrichtigung→Script ${now - sig.nts} ms` : '';
+    // negative Werte = Handyuhr geht gegenüber dem PC etwas vor (keine echte Laufzeit)
+    const ms = (v) => (v < 0 ? `≈ 0 ms (Uhr Handy ${-v} ms voraus)` : `${v} ms`);
+    const lat = sig.ts ? ` · Handy→Script ${ms(now - sig.ts)}` : '';
+    const lat2 = sig.nts ? ` · TAM-Benachrichtigung→Script ${ms(now - sig.nts)}` : '';
     const from = `${sig.src || '?'}${sig.test ? ' (Test)' : ''}`;
     const entry = addPushEntry({ at: now, src: String(sig.src || '?').slice(0, 32), test: !!sig.test,
       lat: sig.ts ? now - sig.ts : null, tam: sig.nts ? now - sig.nts : null, res: '' });
@@ -2079,6 +2083,8 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
               <tbody id="tamauto-pl-rows"></tbody>
             </table>
           </div>
+          <div style="color:#777;font-size:10.5px;margin-top:3px">* = Handy → Script (Test-Signal ohne TAM-Zeitpunkt).
+            ¹ = Uhr des Handys geht gegenüber dem PC etwas vor; die echte Laufzeit ist dann sehr kurz (nahe 0 ms).</div>
         </div>
         <div id="tamauto-page-book" style="display:none;margin:6px 0">
           <div class="tamauto-chk" style="justify-content:space-between;width:100%">
