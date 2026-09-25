@@ -40,7 +40,6 @@ anhand der Ortsliste der IB Thomée GmbH.
 |---|---|
 | **Ortsliste** | Excel in SharePoint (Blatt „annehmen“), ohne Anmeldung, alle 30 min neu geladen |
 | **Sperrliste** | Excel-Blatt „nicht annehmen“ – diese PLZ werden nie angenommen |
-| **Tages-Blacklist** | PLZ heute sperren (z. B. nach Storno), leert sich um Mitternacht |
 | **Tages-Annahmeliste** | Einzelne 5-stellige PLZ heute zusätzlich annehmen |
 | **Liste einfügen** | Bulk: viele PLZ auf einmal für 24 h zusätzlich annehmen |
 
@@ -127,12 +126,10 @@ Browser genutzt wird, ist eine neue Aktivierung nötig.
 | **Ortslisten laden** | Lädt **beide** Listen neu: Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) aus dem Excel in SharePoint – ohne Anmeldung; Ergebnis im Log; automatisch alle 30 min |
 | **Liste einfügen** | **Bulk-Einfügen** – viele PLZ auf einmal (z. B. aus Excel kopiert) **zusätzlich** zur geladenen Ortsliste annehmen; für **einzelne** PLZ ist die **Tages-Annahmeliste** (nur 5-stellig) besser gedacht. (eine je Zeile, gleiche PLZ-Logik), wird **nach 24 h automatisch gelöscht**. Das Feld zeigt die aktuelle Zusatzliste; leer übernehmen = löschen. Anzeige „+ Zusätzlich: … (bis …)“. Erklärung über das **?** |
 
-### Tages-Blacklist (Reiter „Bedienung“)
+### Sperren (Reiter „Bedienung“)
 
-PLZ eintragen, die **heute nicht** angenommen werden sollen – z. B. nach einem Storno, damit der Auftrag
-nicht erneut angenommen wird. Gleiche Logik wie in der Ortsliste: `44` sperrt alle 44xxx, `47877` nur diese PLZ.
-Die Liste leert sich **automatisch um Mitternacht**. Freigeben: auf den roten Eintrag klicken oder
-„Alle freigeben“. Solange etwas gesperrt ist, zeigt der Reiter die Anzahl an („1 gesperrt“).
+Gesperrt wird nur noch über das Excel-Blatt **„nicht annehmen“** (Sperrliste aus Excel, Anzeige im Reiter „Bedienung“,
+Anzahl am Reiter „Bedienung (x PLZ gesperrt)“). Die frühere Tages-Blacklist ist seit 1.16.2 entfallen.
 Gesperrte Treffer stehen im Protokoll („Treffer, aber gesperrt: … → nicht angenommen“).
 
 **Tages-Annahmeliste** (Reiter „Bedienung“): PLZ, die **heute zusätzlich** angenommen werden – **nur vollständige
@@ -314,7 +311,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 2. Spalten werden über ihre Spalten-ID erkannt – Reihenfolge und ausgeblendete Spalten sind egal.
    Pflicht: Spalten **PLZ** und **Ort** vorhanden, PLZ 5-stellig.
 3. Treffer, wenn die PLZ mit einem Eintrag der Ortsliste **beginnt** (siehe [Ortsliste](#ortsliste))
-   und nicht auf der Tages-Blacklist steht.
+   und nicht auf der Sperrliste (Excel „nicht annehmen“) steht.
 4. Doppelklick auf den Auftrag → **Auftragskarte zu MW…** (Titel wird gegen die AuftragsNr geprüft).
 5. Aufträge unter **„Aufträge in der Umgebung“ mit 0 km** je einmal anklicken (→ Warenkorb).
 6. Danach **„Warenkorb – alle auswählen“** anhaken.
