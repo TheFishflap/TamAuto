@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.16.5
+// @version      1.16.6
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -508,7 +508,7 @@
     const p = (order.plz || '').trim();
     const xb = places.block || { plz: [], orte: [] };
     const xp = xb.plz.find((x) => p.startsWith(x));
-    if (xp) return `PLZ ${xp}${xp.length < 5 ? '…' : ''} (Excel „${cfg.blockSheet}“)`;
+    if (xp) return `PLZ ${xp.padEnd(5, '*')} (Excel „${cfg.blockSheet}“)`;
     if (xb.orte.includes(norm(order.ort))) return `Ort ${order.ort} (Excel „${cfg.blockSheet}“)`;
     return '';
   }
@@ -527,9 +527,11 @@
     const xb = places.block || { plz: [], orte: [] };
     if (xl) {
       xl.innerHTML = '';
-      const entries = [...xb.plz.map((x) => `${x}${x.length < 5 ? '…' : ''}`), ...xb.orte];
+      // PLZ-Anfang (weniger als 5 Ziffern) mit Sternchen auffüllen, z. B. „525**“ – sperrt alle PLZ, die so beginnen
+      const entries = [...xb.plz.map((x) => [x.padEnd(5, '*'), x.length < 5 ? `sperrt alle PLZ, die mit ${x} beginnen (${x.padEnd(5, '0')}–${x.padEnd(5, '9')})` : `PLZ ${x}`]),
+        ...xb.orte.map((o) => [o, `Ort ${o}`])];
       if (!entries.length) xl.textContent = 'Keine Einträge.';
-      entries.forEach((x) => xl.appendChild(chipEl(x, '#6d4c41', '#efebe9')));
+      entries.forEach(([label, tip]) => { const c = chipEl(label, '#6d4c41', '#efebe9'); c.title = tip; xl.appendChild(c); });
     }
     // Anzahl der Sperren steht im Kopf („Sperrliste: n“) – der Reiter heißt nur „Bedienung“
   }

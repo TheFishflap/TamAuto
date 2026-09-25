@@ -389,6 +389,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.16.6 – 2026-09-25
+- Sperrliste aus Excel: PLZ-Anfänge werden mit Sternchen aufgefüllt angezeigt (z. B. `525**` statt `525…`) –
+  Tooltip „sperrt alle PLZ, die mit 525 beginnen (52500–52599)“; ebenso im Log.
+
 ### 1.16.5 – 2026-09-25
 - Reiter heißt wieder nur **„Bedienung“** – die Zahl gesperrter PLZ steht bereits im Kopf („Sperrliste: x“).
 
