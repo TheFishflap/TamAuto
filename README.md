@@ -150,6 +150,9 @@ wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt 
 
 ### Reiter „Erweiterte Einstellungen“
 
+**Tipps ausblenden**: blendet alle **?**-Erklärungen im Bedienfeld aus (aufgeräumte Ansicht). Das **?** direkt
+hinter dieser Checkbox bleibt immer sichtbar, damit sich die Tipps jederzeit wieder einschalten lassen.
+
 **Benachrichtigungston** (Standard **an**): Gong bei angenommenem oder fehlgeschlagenem Auftrag ein/aus.
 **Schieberegler** für die Lautstärke (0–100 %, Standard 60 %), Doppelklick = 60 %;
 nach dem Verstellen wird der Ton einmal vorgespielt. **▶ Test** spielt ihn ab.
@@ -216,11 +219,13 @@ Statt die Tabelle dauerhaft im Sekundentakt neu zu laden, aktualisiert das Scrip
 
 - **Tabwechsel-Refresh:** Beim Wechsel **zurück** in „Veröffentlichte Aufträge“ (z. B. aus „Angenommene Aufträge“
   oder nach einer Annahme) wird **genau einmal** aktualisiert – so ist bei Auftragswellen sofort der aktuelle Stand da.
-- **Burst-Refresh** (Reiter „Erweiterte Einstellungen“, Standard **an**, **3 s**): **Nur** nach einem **manuellen
-  Klick** auf den Refresh-Pfeil der Website wird für die eingestellte Zeit **jede Sekunde** aktualisiert
-  (ein Tabwechsel löst keinen Burst aus).
-- **Button „⚡ Burst“** (Reiter „Bedienung“): startet den Burst-Refresh sofort – auch wenn die Checkbox aus ist.
-  Erneutes Klicken startet wieder die volle Zeit. Im Bedienfeld steht „⚡ Burst-Refresh läuft – noch 2 s“.
+- **Burst-Refresh** (Dauer in „Erweiterte Einstellungen“, Standard **3 s**): für die eingestellte Zeit **jede Sekunde**
+  aktualisieren. Auslösen auf zwei Wegen:
+  - Button **„⚡ Burst“** im Reiter „Bedienung“, oder
+  - **manueller Klick** auf den Refresh-Pfeil **⟳** der TAM-Website (Blätterleiste unten an der Tabelle).
+
+  Ein Tabwechsel löst keinen Burst aus. Erneutes Auslösen startet wieder die volle Zeit.
+  Im Bedienfeld steht „⚡ Burst-Refresh läuft – noch 2 s“.
 
 ## Auto-Refresh (ausgerichtet an der TAM-Aktualisierung)
 
@@ -307,6 +312,11 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.11.2 – 2026-09-25
+- Burst-Refresh: Checkbox entfernt (immer aktiv); Beschreibung verweist auf Button „⚡ Burst“ und den
+  Refresh-Pfeil ⟳ der TAM-Website.
+- Neue Checkbox **„Tipps ausblenden“** (blendet alle ?-Erklärungen aus, eigenes ? bleibt sichtbar).
 
 ### 1.11.1 – 2026-09-25
 - Burst-Refresh nur noch nach **manuellem Refresh**; Tabwechsel = genau **ein** Refresh.

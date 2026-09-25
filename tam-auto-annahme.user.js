@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.11.1
+// @version      1.11.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -65,7 +65,8 @@
     delaySec: Math.min(1, Math.max(0.01, GM_getValue('delaySec', 0.17))), // 0,01–1,00 s in 0,01-s-Schritten, Standard 0,17
     delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung
     delayRandomMs: GM_getValue('delayRandomMsV2', 100), // Streuung 0 … x ms (Standard 100 ms)
-    burstOn: GM_getValue('burstOn', true),  // Burst-Refresh nach manuellem Refresh / Tabwechsel
+    burstOn: true, // Burst-Refresh nach manuellem Refresh immer aktiv (ohne Checkbox)
+    hideTips: GM_getValue('hideTips', false), // alle ?-Erklärungen ausblenden
     burstSec: GM_getValue('burstSecV2', 3), // Dauer des Burst-Refresh in s (1 Refresh pro Sekunde), Standard 3
   });
 
@@ -1127,7 +1128,7 @@
     if (burstUntil > now) txt = `⚡ Burst-Refresh läuft – noch ${fmtDur(burstUntil - now)} · ${txt}`;
     el.textContent = txt;
     const bs = document.getElementById("tamauto-burst-state");
-    if (bs) bs.textContent = burstUntil > now ? `⚡ läuft – noch ${fmtDur(burstUntil - now)}` : (cfg.burstOn ? "bereit (Auslöser: manueller Refresh oder Button „⚡ Burst“)" : "aus – nur über den Button „⚡ Burst“");
+    if (bs) bs.textContent = burstUntil > now ? `⚡ läuft – noch ${fmtDur(burstUntil - now)}` : "bereit";
   }
 
   // Einmal refreshen (Refresh-Pfeil) und danach abgleichen – gemeinsam genutzt von Auto-Refresh,
@@ -1148,8 +1149,8 @@
   // Button „⚡ Burst“ im Reiter Bedienung (Erweiterte Einstellungen: an/aus + Dauer in s, Standard 3 s).
   let burstUntil = 0;
   let burstRunning = false;
-  async function startBurst(reason, force = false) { // force = Button „Burst starten“ (auch wenn Checkbox aus)
-    if ((!cfg.burstOn && !force) || !license) return;
+  async function startBurst(reason) {
+    if (!license) return;
     burstUntil = Date.now() + cfg.burstSec * 1000;
     log(`Burst-Refresh (${reason}): ${cfg.burstSec} s lang jede Sekunde aktualisieren.`, 'ok');
     if (burstRunning) return; // läuft schon → nur verlängert
@@ -1258,11 +1259,17 @@
         <div id="tamauto-page-adv" style="display:none;margin:6px 0">
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
-              <label class="tamauto-chk"><input type="checkbox" id="tamauto-burst-on"> <b>Burst-Refresh</b></label>
-              für <input id="tamauto-burst-sec" type="number" min="3" max="120" style="width:48px;margin:0"> s
-              <span class="tamauto-help" title="Gezielt statt dauerhaft Last erzeugen: Nur nach einem MANUELLEN Klick auf den Refresh-Pfeil der Website wird für die eingestellte Zeit (Standard 3 s) jede Sekunde aktualisiert – ideal bei Auftragswellen. Zusätzlich jederzeit über den Button „⚡ Burst“ im Reiter Bedienung startbar (auch wenn diese Checkbox aus ist). Beim Tabwechsel zurück in „Veröffentlichte Aufträge“ wird dagegen immer nur EINMAL aktualisiert.">?</span>
+              <b>Burst-Refresh</b> für <input id="tamauto-burst-sec" type="number" min="3" max="120" style="width:48px;margin:0"> s
+              <span class="tamauto-help" title="Burst-Refresh: für die eingestellte Zeit (Standard 3 s) jede Sekunde aktualisieren – ideal bei Auftragswellen, ohne dauerhaft Last zu erzeugen. Auslösen: über den Button „⚡ Burst“ im Reiter „Bedienung“ ODER direkt auf der TAM-Website über den Refresh-Pfeil ⟳ unten in der Blätterleiste der Tabelle. Beim Tabwechsel zurück in „Veröffentlichte Aufträge“ wird dagegen immer nur EINMAL aktualisiert.">?</span>
             </span>
+            <div style="color:#555;margin-top:2px">Auslösen: Button <b>„⚡ Burst“</b> im Reiter Bedienung oder Refresh-Pfeil <b>⟳</b> auf der TAM-Website.</div>
             <div id="tamauto-burst-state" style="color:#555;margin-top:2px"></div>
+          </div>
+          <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
+            <span class="tamauto-chk">
+              <label class="tamauto-chk"><input type="checkbox" id="tamauto-hidetips"> <b>Tipps ausblenden</b></label>
+              <span class="tamauto-help tamauto-help-keep" title="Blendet alle ?-Erklärungen im Bedienfeld aus, für eine aufgeräumte Ansicht. Dieses ? bleibt immer sichtbar, damit sich die Tipps jederzeit wieder einschalten lassen.">?</span>
+            </span>
           </div>
           <div>
             <label class="tamauto-chk" title="Wartet vor jedem Klickschritt der Annahme">
@@ -1566,17 +1573,20 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     // Button "⚡ Burst" (Reiter Bedienung): Burst sofort starten – funktioniert auch bei ausgeschalteter Checkbox
     $('tamauto-burst-go').onclick = () => {
       if (!onPublishedTab()) { log('Burst-Refresh: bitte zuerst den Reiter „Veröffentlichte Aufträge“ öffnen.', 'err'); return; }
-      startBurst('Button', true);
+      startBurst('Button');
     };
 
-    // Burst-Refresh an/aus + Dauer
-    $('tamauto-burst-on').checked = cfg.burstOn;
-    $('tamauto-burst-sec').value = cfg.burstSec;
-    $('tamauto-burst-on').onchange = (e) => {
-      cfg.burstOn = e.target.checked; GM_setValue('burstOn', cfg.burstOn);
-      if (!cfg.burstOn) burstUntil = 0; // laufenden Burst beenden
-      log(cfg.burstOn ? `Burst-Refresh an (${cfg.burstSec} s).` : 'Burst-Refresh aus.');
+    // Tipps ausblenden: alle "?"-Erklärungen weg – außer dem "?" direkt an dieser Checkbox
+    const applyTips = () => {
+      $('tamauto-hidetips').checked = cfg.hideTips;
+      p.querySelectorAll('.tamauto-help:not(.tamauto-help-keep)').forEach((h) => { h.style.display = cfg.hideTips ? 'none' : 'inline-flex'; });
+      if (cfg.hideTips) $('tamauto-popup-helpbox').style.display = 'none';
     };
+    $('tamauto-hidetips').onchange = (e) => { cfg.hideTips = e.target.checked; GM_setValue('hideTips', cfg.hideTips); applyTips(); };
+    applyTips();
+
+    // Burst-Refresh: nur die Dauer ist einstellbar (Auslöser: Button "⚡ Burst" oder manueller Refresh auf der Website)
+    $('tamauto-burst-sec').value = cfg.burstSec;
     $('tamauto-burst-sec').onchange = (e) => {
       cfg.burstSec = Math.round(Math.min(120, Math.max(3, +e.target.value || 3)));
       e.target.value = cfg.burstSec; GM_setValue('burstSecV2', cfg.burstSec);
