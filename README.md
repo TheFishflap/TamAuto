@@ -199,7 +199,7 @@ Die Popups kommen als Windows-Benachrichtigung vom Browser. Erscheint beim **▶
 
 Hinweis: Popups und Benachrichtigungston sind unabhängig – der Gong kommt auch ohne Popups.
 
-**Console Log** (ebenfalls in „Erweiterte Einstellungen“, Standard **aus**): blendet das Protokoll des Scripts
+**Console Log** (ebenfalls in „Erweiterte Einstellungen“, Standard **aus**) mit Button **„📋 Log kopieren“** (ganzes Protokoll in die Zwischenablage): blendet das Protokoll des Scripts
 unten im Bedienfeld ein/aus. Das Script schreibt nichts in die Browser-Konsole.
 
 ### Reiter „Info“
@@ -336,6 +336,18 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.12.3 – 2026-09-25
+- Button **„📋 Log kopieren“** neben „Console Log“: komplettes Protokoll (chronologisch, mit Version und Gerät)
+  in die Zwischenablage – auch wenn das Log ausgeblendet ist.
+
+### 1.12.2 – 2026-09-25
+- TAM-Meldung „scheduling autorefreshing timer in … seconds“ erscheint nicht mehr in der Browser-Konsole
+  (wird weiter mitgelesen).
+- **Touch-Bedienung** (Android): Bedienfeld per Finger an der Titelzeile verschieben; Griff unten rechts zum
+  Größe-Ändern auf Touch-Geräten.
+- Beim Schließen von „vergeben“/„nicht verfügbar“-Meldungen steht der Aufbau im Log (Diagnose ohne Konsole);
+  Diagnose-Befehl zusätzlich in docs/TAM-DEBUG.md.
 
 ### 1.12.1 – 2026-09-25
 - **Minimieren** jetzt wirklich kompakt: nur noch eine schmale Titelzeile mit Status (● bereit / ⏸ pausiert /

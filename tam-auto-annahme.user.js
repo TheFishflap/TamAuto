@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.12.1
+// @version      1.12.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -759,6 +759,7 @@
             if (mt) {
               const sec = parseFloat(mt[1].replace(',', '.'));
               if (sec >= 0 && sec < 3600) { tamNextSeenAt = Date.now(); tamNextAt = tamNextSeenAt + sec * 1000; }
+              return undefined; // nur mitlesen – TAM-Meldung nicht mehr in der Browser-Konsole ausgeben
             }
           } catch (e) { /* ignore */ }
           return orig.apply(this, args);
@@ -852,7 +853,7 @@
       if (tries === 1) {
         const body = text(w.querySelector('.x-window-body, .ext-mb-text, .x-info-body')) || all.replace(t, '');
         lastUnavailable = { at: Date.now(), text: `${t ? `„${t}“ – ` : ''}${body.replace(/(OK|Abbrechen|Schließen)\s*$/i, '').trim()}`.slice(0, 160) };
-        log(`TAM-Meldung sofort geschlossen: ${lastUnavailable.text}`, 'debug');
+        log(`TAM-Meldung sofort geschlossen: ${lastUnavailable.text} · Aufbau: ${String(w.className).trim().slice(0, 60) || w.tagName}`, 'debug');
       }
       // Erst regulär schließen (Button bzw. Schließen-Symbol); reagiert die Meldung nicht oder hat keinen
       // Button (Info-Einblendung), wird sie sofort bzw. beim nächsten Durchlauf direkt ausgeblendet
@@ -1389,7 +1390,8 @@
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
             <label class="tamauto-chk" title="Zeigt das Protokoll des Scripts unten im Bedienfeld">
               <input type="checkbox" id="tamauto-consolelog"> <b>Console Log</b></label>
-            <span style="color:#555"> – Protokoll des Scripts unten im Bedienfeld anzeigen</span>
+            <button id="tamauto-copylog" title="Komplettes Protokoll (alle Zeilen, chronologisch) in die Zwischenablage kopieren – z. B. zum Weiterschicken" style="margin-left:6px">📋 Log kopieren</button>
+            <div style="color:#555;margin-top:2px">Protokoll des Scripts unten im Bedienfeld anzeigen</div>
           </div>
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
             <span class="tamauto-chk">
@@ -1732,6 +1734,20 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     $('tamauto-consolelog').onchange = (e) => { cfg.consoleLog = e.target.checked; GM_setValue('consoleLogV2', cfg.consoleLog); renderConsole(); };
     renderConsole();
 
+    // Log kopieren (auch wenn das Log gerade ausgeblendet ist – es wird immer mitgeschrieben)
+    $('tamauto-copylog').onclick = async () => {
+      const b = $('tamauto-copylog');
+      const lines = [...$('tamauto-log').children].map((d) => d.textContent).reverse(); // älteste zuerst
+      const txt = `TAM Auto-Annahme v${VERSION} · Log vom ${new Date().toLocaleString('de-DE')} · ${navigator.userAgent}\n\n${lines.join('\n')}`;
+      let ok = false;
+      try { await navigator.clipboard.writeText(txt); ok = true; } catch (e) {
+        const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select();
+        try { ok = document.execCommand('copy'); } catch (e2) { ok = false; } ta.remove();
+      }
+      b.textContent = ok ? `✓ ${lines.length} Zeilen kopiert` : '✗ Kopieren nicht möglich';
+      setTimeout(() => { b.textContent = '📋 Log kopieren'; }, 3000);
+    };
+
     // Benachrichtigungston an/aus (+ Test)
     $('tamauto-sound').checked = cfg.sound;
     $('tamauto-sound').onchange = (e) => {
@@ -1823,6 +1839,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
         $('tamauto-min').textContent = '–'; $('tamauto-min').title = 'Minimieren';
       }
       $('tamauto-head-state').style.display = min ? '' : 'none';
+      const g = $('tamauto-grip'); if (g) g.style.display = min || !(matchMedia('(pointer: coarse)').matches || isAndroid) ? 'none' : '';
       GM_setValue('minimized', min);
       // Titelzeile im Fenster halten, wenn das Bedienfeld oben/links verankert ist
       if (p.style.left) { const r = p.getBoundingClientRect(); p.style.left = `${Math.max(0, Math.min(r.left, innerWidth - r.width))}px`; }
@@ -1868,13 +1885,18 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       const c = clampPos(left, top);
       Object.assign(p.style, { left: `${c.left}px`, top: `${c.top}px`, right: 'auto', bottom: 'auto' });
     };
+    // Ziehen mit Pointer-Ereignissen: funktioniert mit Maus, Finger (Android) und Stift gleichermaßen
     const startDrag = (e) => {
       e.preventDefault();
       anchorTopLeft();
       const dx = e.clientX - p.offsetLeft, dy = e.clientY - p.offsetTop;
-      const mv = (ev) => applyPos(ev.clientX - dx, ev.clientY - dy);
-      document.addEventListener('mousemove', mv);
-      document.addEventListener('mouseup', () => { document.removeEventListener('mousemove', mv); saveRect(); }, { once: true });
+      const mv = (ev) => { ev.preventDefault(); applyPos(ev.clientX - dx, ev.clientY - dy); };
+      const up = () => {
+        document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up);
+        document.removeEventListener('pointercancel', up); saveRect();
+      };
+      document.addEventListener('pointermove', mv, { passive: false });
+      document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
     };
     // Randzone (6 px links/rechts/oben) ist ebenfalls ein Griff – falls die Titelzeile schlecht erreichbar ist
     const EDGE = 6;
@@ -1884,11 +1906,37 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       return e.clientX - r.left < EDGE || r.right - e.clientX < EDGE || e.clientY - r.top < EDGE;
     };
 
-    // verschiebbar über die Titelzeile …
-    $('tamauto-head').onmousedown = (e) => { if (e.target.id !== 'tamauto-min') { e.stopPropagation(); startDrag(e); } };
+    // verschiebbar über die Titelzeile … (touch-action: none, damit der Finger nicht die Seite scrollt)
+    $('tamauto-head').style.touchAction = 'none';
+    $('tamauto-head').addEventListener('pointerdown', (e) => { if (e.target.id !== 'tamauto-min') { e.stopPropagation(); startDrag(e); } });
     // … oder über den äußeren Rand; Mauszeiger zeigt das an
-    p.addEventListener('mousemove', (e) => { p.style.cursor = edgeHit(e) ? 'move' : ''; });
-    p.addEventListener('mousedown', (e) => { if (edgeHit(e)) startDrag(e); });
+    p.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') p.style.cursor = edgeHit(e) ? 'move' : ''; });
+    p.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse' && edgeHit(e)) startDrag(e); });
+
+    // Griff unten rechts zum Größe-Ändern per Finger (die Browser-Ecke funktioniert auf Touch-Geräten nicht)
+    const grip = document.createElement('div');
+    grip.id = 'tamauto-grip'; grip.title = 'Größe ändern';
+    Object.assign(grip.style, { position: 'absolute', right: '0', bottom: '0', width: '22px', height: '22px', cursor: 'nwse-resize',
+      touchAction: 'none', zIndex: '1', background: 'linear-gradient(135deg, transparent 55%, #1a4d8f 55%, #1a4d8f 62%, transparent 62%, transparent 72%, #1a4d8f 72%, #1a4d8f 79%, transparent 79%)' });
+    grip.style.display = matchMedia('(pointer: coarse)').matches || isAndroid ? '' : 'none'; // nur auf Touch-Geräten
+    p.style.position = 'fixed';
+    p.appendChild(grip);
+    grip.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      anchorTopLeft();
+      const r0 = p.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY;
+      const mv = (ev) => {
+        ev.preventDefault();
+        p.style.width = `${Math.max(340, Math.min(innerWidth * 0.95, r0.width + ev.clientX - x0))}px`;
+        p.style.height = `${Math.max(120, Math.min(innerHeight * 0.95, r0.height + ev.clientY - y0))}px`;
+      };
+      const up = () => {
+        document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
+        $('tamauto-log').style.maxHeight = 'none'; saveRect();
+      };
+      document.addEventListener('pointermove', mv, { passive: false });
+      document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
+    });
     // Fenstergröße geändert → Bedienfeld wieder in den sichtbaren Bereich holen
     addEventListener('resize', () => { if (p.style.left) { const r = p.getBoundingClientRect(); applyPos(r.left, r.top); } });
 

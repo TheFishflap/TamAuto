@@ -153,6 +153,13 @@ const r=g.querySelector('.x-grid3-row');
 copy(JSON.stringify(hd.map(h=>({...h,wert:r?(r.querySelector('td.x-grid3-td-'+h.id)||{}).textContent?.trim().slice(0,15):null})),null,1)); })();
 ```
 
+Meldung „bereits vergeben“ / „nicht verfügbar“ – Aufbau erfassen (ausführen, **während die Meldung offen ist**;
+Ergebnis liegt danach in der Zwischenablage). Alternativ: Console Log einschalten – das Script schreibt beim
+Schließen solcher Meldungen den Aufbau („Aufbau: …“) selbst ins Log.
+```js
+copy([...document.querySelectorAll('div')].filter(e => /vergeben|verfügbar/i.test(e.textContent) && e.offsetParent && e.children.length < 15).slice(-3).map(e => e.className + ' | ' + e.textContent.trim().slice(0, 80)).join('\n'))
+```
+
 ## 10. Testumgebung
 
 `test/mock-tam.test.js` baut die TAM-Struktur mit jsdom nach (Tab, Grid mit versteckten Spalten,
