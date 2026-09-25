@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.16.2
+// @version      1.16.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1926,6 +1926,32 @@ Standard: 1 Anzahl am Ort · 2 Summe am Ort · 3 Einzelpreis.">?</span>
               ${[1, 2, 3].map((i) => `<span style="color:#555">${i}.</span><select id="tamauto-prio-${i}" data-stufe="${i - 1}" style="margin:0">
                 ${Object.entries(PRIO_CRIT).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>`).join('')}
             </div>
+            <details style="margin-top:6px;font-size:11px">
+              <summary style="cursor:pointer;color:#1a4d8f">Unterschied Anzahl am Ort / Summe am Ort – Beispiel</summary>
+              <div style="margin:4px 0">„Am Ort“ = gleiche Straße + PLZ + Ort. TAM legt alle Aufträge einer Adresse gemeinsam in den
+                Warenkorb – eine Annahme übernimmt sie alle.</div>
+              <table style="border-collapse:collapse;width:100%">
+                <tr style="background:#e8f0fb"><th style="text-align:left;padding:2px 4px">Kriterium</th><th style="text-align:left;padding:2px 4px">Bedeutung</th><th style="text-align:left;padding:2px 4px">Sinnvoll für</th></tr>
+                <tr><td style="padding:2px 4px"><b>Anzahl am Ort</b></td><td style="padding:2px 4px">Wie viele Aufträge an der Adresse? Mehr zuerst.</td><td style="padding:2px 4px">meiste Aufträge je Annahme/Anfahrt</td></tr>
+                <tr><td style="padding:2px 4px"><b>Summe am Ort</b></td><td style="padding:2px 4px">Wie viel € bringen alle Aufträge der Adresse zusammen? Mehr zuerst.</td><td style="padding:2px 4px">meister Umsatz je Annahme</td></tr>
+                <tr><td style="padding:2px 4px"><b>Einzelpreis</b></td><td style="padding:2px 4px">Preis des einzelnen Auftrags. Teuerster zuerst.</td><td style="padding:2px 4px">teuerster Auftrag (wollen oft alle)</td></tr>
+              </table>
+              <div style="margin:6px 0 2px">Beispiel mit drei Adressen:</div>
+              <table style="border-collapse:collapse;width:100%">
+                <tr style="background:#e8f0fb"><th style="text-align:left;padding:2px 4px">Adresse</th><th style="text-align:left;padding:2px 4px">Aufträge</th><th style="padding:2px 4px">Anzahl</th><th style="padding:2px 4px">Summe</th></tr>
+                <tr><td style="padding:2px 4px">Allee 9</td><td style="padding:2px 4px">90 € + 50 €</td><td style="text-align:center">2</td><td style="text-align:right;padding:2px 4px">140 €</td></tr>
+                <tr><td style="padding:2px 4px">Ringweg 5</td><td style="padding:2px 4px">60 € + 70 € + 20 €</td><td style="text-align:center">3</td><td style="text-align:right;padding:2px 4px">150 €</td></tr>
+                <tr><td style="padding:2px 4px">Hauptstr. 1</td><td style="padding:2px 4px">200 €</td><td style="text-align:center">1</td><td style="text-align:right;padding:2px 4px">200 €</td></tr>
+              </table>
+              <table style="border-collapse:collapse;width:100%;margin-top:6px">
+                <tr style="background:#e8f0fb"><th style="text-align:left;padding:2px 4px">Stufe 1</th><th style="text-align:left;padding:2px 4px">Reihenfolge der Annahme</th></tr>
+                <tr><td style="padding:2px 4px">Anzahl am Ort</td><td style="padding:2px 4px">Ringweg (3) → Allee (2) → Hauptstr. (1)</td></tr>
+                <tr><td style="padding:2px 4px">Summe am Ort</td><td style="padding:2px 4px">Hauptstr. (200 €) → Ringweg (150 €) → Allee (140 €)</td></tr>
+                <tr><td style="padding:2px 4px">Einzelpreis</td><td style="padding:2px 4px">Hauptstr. (200 €) → Allee (90 €) → Ringweg (70 €) → …</td></tr>
+              </table>
+              <div style="margin-top:4px;color:#555">Gleichstand → nächste Stufe entscheidet. Ohne Straße in der Tabelle wird nicht gruppiert
+                (jeder Auftrag zählt als eigene Adresse, Summe = Einzelpreis).</div>
+            </details>
           </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">

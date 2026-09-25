@@ -305,6 +305,37 @@ Anlässe: **Refresh** (Auto-Refresh des Scripts), **Tabelle aktualisiert** (TAM-
 manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start**, **Nachprüfung**
 (Tabelle hat sich während einer Annahme geändert).
 
+## Priorität (mehrere passende Aufträge gleichzeitig)
+
+Einstellung in „Erweiterte Einstellungen“ → **Priorität**, Stufe 1, 2, 3 (Standard: Anzahl am Ort → Summe am Ort → Einzelpreis).
+Stufe 1 entscheidet zuerst, bei Gleichstand Stufe 2, dann Stufe 3. Wählt man ein Kriterium, das schon in einer anderen
+Stufe steht, tauschen die beiden Stufen automatisch. „Am Ort“ = gleiche **Straße + PLZ + Ort** – TAM legt alle Aufträge
+einer Adresse gemeinsam in den Warenkorb, eine Annahme übernimmt sie alle.
+
+| Kriterium | Bedeutung | Sinnvoll für |
+|---|---|---|
+| **Anzahl am Ort** | Wie viele Aufträge stehen an der Adresse? Mehr zuerst. | meiste Aufträge je Annahme bzw. Anfahrt |
+| **Summe am Ort** | Wie viel € bringen alle Aufträge der Adresse zusammen? Mehr zuerst. | meister Umsatz je Annahme |
+| **Einzelpreis** | Preis des einzelnen Auftrags, teuerster zuerst. | teuerster Auftrag (den wollen allerdings oft alle) |
+| – (keine) | Stufe nicht verwenden; alle Stufen „keine“ = Reihenfolge wie in TAM | |
+
+**Beispiel** mit drei Adressen:
+
+| Adresse | Aufträge | Anzahl | Summe |
+|---|---|:-:|--:|
+| Allee 9 | 90 € + 50 € | 2 | 140 € |
+| Ringweg 5 | 60 € + 70 € + 20 € | 3 | 150 € |
+| Hauptstr. 1 | 200 € | 1 | 200 € |
+
+| Stufe 1 | Reihenfolge der Annahme |
+|---|---|
+| Anzahl am Ort | Ringweg (3) → Allee (2) → Hauptstr. (1) |
+| Summe am Ort | Hauptstr. (200 €) → Ringweg (150 €) → Allee (140 €) |
+| Einzelpreis | Hauptstr. (200 €) → Allee (90 €) → Ringweg (70 €) → … |
+
+Ohne Straße in der Tabelle wird nicht gruppiert: Jeder Auftrag zählt als eigene Adresse, die Summe ist dann sein Einzelpreis.
+Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
+
 ## Ablauf einer Annahme
 
 1. Nur wenn der Tab **Veröffentlichte Aufträge** aktiv ist (feste TAM-ID `AgentVeroeffentlichteAuftraege`).
@@ -357,6 +388,11 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.16.3 – 2026-09-25
+- **Priorität erklärt:** unter den drei Stufen aufklappbar „Unterschied Anzahl am Ort / Summe am Ort – Beispiel“ mit
+  Tabellen (Bedeutung, Beispiel mit drei Adressen, resultierende Reihenfolge). Gleiche Erklärung im README unter
+  „Priorität“.
 
 ### 1.16.2 – 2026-09-25
 - **Detailansicht „Auftrag MW…“ erkannt:** Ist ein Auftrag schon woanders angenommen, öffnet TAM statt der Auftragskarte
