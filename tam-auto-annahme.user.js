@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.16.7
+// @version      1.17.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -81,6 +81,10 @@
     prioOrder: GM_getValue('prioOrder', ({ ort: ['anzahl', 'summe', 'preis'], summe: ['summe', 'preis', 'keine'],
       preis: ['preis', 'keine', 'keine'], tabelle: ['keine', 'keine', 'keine'] })[GM_getValue('prioMode', 'ort')] || ['anzahl', 'summe', 'preis']),
     silentSec: GM_getValue('silentSec', 0),
+    // Arbeitszeit: außerhalb pausieren Auto-Refresh und Silent Reload (Einstellungen bleiben erhalten) – Standard an
+    schedOn: GM_getValue('schedOn', true),
+    schedFrom: GM_getValue('schedFrom', '07:30'),
+    schedTo: GM_getValue('schedTo', '18:15'),
     pushOn: GM_getValue('pushOnV2', false),         // Push-Signal (App „TAM-Signal“ über ntfy) – Standard aus (V2: gilt einmal für alle)
     pushTopic: GM_getValue('pushTopic', 'tam-zrd6g634b4wej7aqhsycc9qm'), // gemeinsamer Kanal der IB Thomée // Silent Reload: Hintergrund-Abfrage alle x s (0 = aus, Standard)
     burstSec: GM_getValue('burstSecV2', 3), // Dauer des Burst-Refresh in s (1 Refresh pro Sekunde), Standard 3
@@ -1424,7 +1428,25 @@
   // ---- Takt: läuft jede Sekunde, entscheidet aber anhand der TAM-Zeitbasis, ob ein eigener Refresh nötig ist
   let lastHousekeepAt = 0;
   let lastCycleAt = 0;
-  const arActive = () => cfg.autoRefresh && cfg.intervalSec <= 60;
+  // Arbeitszeit-Fenster (z. B. 07:30–18:15): nur darin laufen Auto-Refresh und Silent Reload
+  const hm = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '')); return m ? +m[1] * 60 + +m[2] : null; };
+  function inSchedule(d = new Date()) {
+    if (!cfg.schedOn) return true;
+    const from = hm(cfg.schedFrom), to = hm(cfg.schedTo);
+    if (from === null || to === null || from === to) return true;
+    const now = d.getHours() * 60 + d.getMinutes();
+    return from < to ? now >= from && now < to : now >= from || now < to; // auch über Mitternacht
+  }
+  let lastSchedState = null;
+  function checkScheduleChange() { // Wechsel ins/aus dem Fenster einmal protokollieren
+    const s = inSchedule();
+    if (lastSchedState !== null && s !== lastSchedState) {
+      log(s ? `Arbeitszeit beginnt (${cfg.schedFrom}): Auto-Refresh${cfg.silentSec ? ` und Silent Reload (alle ${cfg.silentSec} s)` : ''} wieder aktiv.`
+        : `Arbeitszeit endet (${cfg.schedTo}): Auto-Refresh und Silent Reload pausiert bis ${cfg.schedFrom}.`, 'ok');
+    }
+    lastSchedState = s;
+  }
+  const arActive = () => cfg.autoRefresh && cfg.intervalSec <= 60 && inSchedule();
 
   // Muss das Script jetzt selbst refreshen? Nein, wenn seit dem letzten Refresh (egal welcher Quelle) noch
   // kein Intervall vergangen ist oder die nächste TAM-Aktualisierung unmittelbar bevorsteht.
@@ -1491,6 +1513,10 @@
       txt = t.at ? `Nächste TAM-Aktualisierung in ${fmtDur(t.at - now)}${per} – ${t.src}` : `TAM-Aktualisierung${per}: wartet auf ersten Refresh`;
     }
     if (cfg.silentSec) txt += ` · Silent Reload alle ${cfg.silentSec} s`;
+    checkScheduleChange();
+    if (!inSchedule() && (cfg.autoRefresh || cfg.silentSec)) {
+      txt = `⏾ Außerhalb der Arbeitszeit (${cfg.schedFrom}–${cfg.schedTo}): Auto-Refresh und Silent Reload pausiert · ${txt}`;
+    }
     if (cfg.pushOn) txt += /verbunden/.test(pushState) ? ' · Push-Signal ✓' : ' · Push-Signal getrennt';
     if (burstUntil > now) txt = `⚡ Burst-Refresh läuft – noch ${fmtDur(burstUntil - now)} · ${txt}`;
     el.textContent = txt;
@@ -1581,6 +1607,7 @@
   async function silentPoll() {
     const now = Date.now();
     if (!cfg.silentSec || !cfg.enabled || !license || busy || silentFetching || !onPublishedTab() || burstUntil > now) return;
+    if (!inSchedule()) { if (!/Arbeitszeit/.test(silentState)) { silentState = `pausiert – außerhalb der Arbeitszeit (${cfg.schedFrom}–${cfg.schedTo})`; renderSilent(); } return; }
     if (now - lastSilentAt < cfg.silentSec * 1000) return;
     // Versetzt zum Refresh: direkt nach einem Refresh (Auto-Refresh, TAM, Burst, manuell) ist die Tabelle frisch –
     // Abfrage erst nach der Hälfte des kürzeren Intervalls → liegt mittig zwischen zwei Refreshes
@@ -1897,6 +1924,15 @@
           <button class="tamauto-tabbtn" data-page="tamauto-page-info">Info</button>
         </div>
         <div id="tamauto-page-adv" style="display:none;margin:6px 0">
+          <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
+            <span class="tamauto-chk">
+              <label class="tamauto-chk"><input type="checkbox" id="tamauto-sched"> <b>Arbeitszeit</b></label>
+              von <input id="tamauto-sched-from" type="time" style="margin:0;width:78px">
+              bis <input id="tamauto-sched-to" type="time" style="margin:0;width:78px">
+              <span class="tamauto-help" title="Nur in dieser Zeit laufen Auto-Refresh und Silent Reload. Außerhalb werden beide pausiert – die Einstellungen (an/aus, Intervall) bleiben erhalten und gelten ab Beginn der Arbeitszeit automatisch wieder. Die Annahme selbst (Abgleich bei TAM-Aktualisierung, Push-Signal, manueller Refresh, Burst) läuft weiter. Standard: an, 07:30–18:15.">?</span>
+            </span>
+            <div id="tamauto-sched-state" style="color:#555;font-size:11px;margin-top:2px"></div>
+          </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
               <b>Silent Reload</b> alle <input id="tamauto-silent" type="number" min="0" max="60" step="1" style="width:44px;margin:0"> s
@@ -2326,6 +2362,30 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     };
     $('tamauto-hidetips').onchange = (e) => { cfg.hideTips = e.target.checked; GM_setValue('hideTips', cfg.hideTips); applyTips(); };
     applyTips();
+
+    // Arbeitszeit-Fenster
+    const renderSched = () => {
+      $('tamauto-sched').checked = cfg.schedOn;
+      $('tamauto-sched-from').value = cfg.schedFrom; $('tamauto-sched-to').value = cfg.schedTo;
+      $('tamauto-sched-from').disabled = $('tamauto-sched-to').disabled = !cfg.schedOn;
+      $('tamauto-sched-state').textContent = !cfg.schedOn ? 'aus – Auto-Refresh und Silent Reload laufen rund um die Uhr'
+        : inSchedule() ? `jetzt in der Arbeitszeit – Auto-Refresh${cfg.silentSec ? ' und Silent Reload' : ''} aktiv`
+          : `jetzt außerhalb – pausiert bis ${cfg.schedFrom}`;
+    };
+    const saveSched = () => {
+      GM_setValue('schedOn', cfg.schedOn); GM_setValue('schedFrom', cfg.schedFrom); GM_setValue('schedTo', cfg.schedTo);
+      renderSched(); renderSync(Date.now());
+      log(cfg.schedOn ? `Arbeitszeit ${cfg.schedFrom}–${cfg.schedTo}: außerhalb pausieren Auto-Refresh und Silent Reload.` : 'Arbeitszeit aus – Auto-Refresh/Silent Reload rund um die Uhr.');
+    };
+    $('tamauto-sched').onchange = (e) => { cfg.schedOn = e.target.checked; saveSched(); };
+    ['from', 'to'].forEach((k) => {
+      $(`tamauto-sched-${k}`).onchange = (e) => {
+        if (hm(e.target.value) === null) { renderSched(); return; }
+        cfg[k === 'from' ? 'schedFrom' : 'schedTo'] = e.target.value; saveSched();
+      };
+    });
+    renderSched();
+    setInterval(renderSched, 30000);
 
     // Silent Reload: Intervall in s, 0 = aus
     $('tamauto-silent').value = cfg.silentSec;
