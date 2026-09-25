@@ -24,6 +24,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Silent Reload** | Optional (Erweiterte Einstellungen, Standard 0 = aus): fragt TAM alle x s im Hintergrund nach neuen Aufträgen – ohne Tabelle neu zu zeichnen; nur bei einem neuen Auftrag wird aktualisiert |
 | **Push-Signal** | Die App **TAM-Signal** auf 1–2 Master-Handys leitet die Push-Benachrichtigungen der TAM-App als Startsignal über ntfy.sh weiter – das Script fragt TAM **innerhalb von ca. 1 s** ab (Standard aus, gemeinsamer Kanal voreingestellt; eigener Reiter „Push-Signal“) |
 | **Priorität** | Mehrere passende Aufträge gleichzeitig → Reihenfolge nach **Stufe 1, 2, 3** frei wählbar (Anzahl am Ort, Summe am Ort, Einzelpreis) mit automatischer Zuordnung; Standard: Anzahl → Summe → Preis |
+| **Fern-Lizenzierung** | „Lizenz anfragen“ direkt im Script → Freischaltung in der Lizenzverwaltung von IB Thomée → das Script **aktiviert sich selbst**; Verlängerung per Klick (Reiter Info); signierte **Sperrliste** zum Entziehen (7 Tage offline erlaubt) |
 | **Verzögerung** | Standard an: 0,17 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0,001–0,5 s |
 
 ### 🔄 Aktualisierung – gezielt statt dauerhaft
@@ -359,6 +360,15 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.16.0 – 2026-09-25
+- **Fern-Lizenzierung:** Im Lizenzfenster „Lizenz anfragen“ (Name eintragen) – nach der Freischaltung durch IB Thomée
+  aktiviert sich das Script automatisch (auch nachträglich innerhalb von 12 h). Reiter Info: „Lizenz verlängern“ –
+  die neue Lizenz wird ebenfalls automatisch übernommen. Der Schlüsselkanal ist an die Installations-ID gebunden.
+- **Lebenszeichen** alle 15 min (ID, Name, Version, Ablaufdatum, an/aus) für die Nutzerübersicht der Lizenzverwaltung.
+- **Sperrliste:** signierte Liste entzogener Installationen (OneDrive/SharePoint), Prüfung beim Start und alle 6 h;
+  Schutz gegen Wiedereinspielen älterer Listen; ist sie **länger als 7 Tage** nicht abrufbar, pausiert das Script.
+  (Aktiv, sobald der Freigabelink der Sperrliste im Script hinterlegt ist.)
 
 ### 1.15.2 – 2026-09-25
 - **Push-Signal standardmäßig aus** (gilt nach dem Update einmal für alle); Einschalten und Kanal jetzt im Reiter

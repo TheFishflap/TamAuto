@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.15.2
+// @version      1.16.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1990,7 +1990,9 @@ Standard: 1 Anzahl am Ort · 2 Summe am Ort · 3 Einzelpreis.">?</span>
         <div id="tamauto-page-info" style="display:none;margin:6px 0;line-height:1.5">
           <div style="font-size:14px;font-weight:bold;color:#1a4d8f">TAM Auto-Annahme</div>
           <div style="color:#555">Version ${VERSION} · automatische Auftragsannahme im TÜV SÜD TAM</div>
-          <div style="margin-top:4px"><button id="tamauto-upd" title="Sucht auf GitHub nach einer neuen Version">Softwareupdate</button></div>
+          <div style="margin-top:4px"><button id="tamauto-upd" title="Sucht auf GitHub nach einer neuen Version">Softwareupdate</button>
+            <button id="tamauto-lic-renew" title="Schickt IB Thomée eine Anfrage zur Verlängerung. Nach der Freigabe wird die neue Lizenz automatisch übernommen – nichts eintippen.">Lizenz verlängern</button>
+            <span id="tamauto-lic-renew-msg" style="font-size:11px;color:#2e7d32"></span></div>
           <table style="border-collapse:collapse;margin-top:6px">
             <tr><td style="padding:1px 8px 1px 0;color:#555">Lizenziert für</td><td id="tamauto-info-name"></td></tr>
             <tr><td style="padding:1px 8px 1px 0;color:#555">Gültig bis</td><td id="tamauto-info-exp"></td></tr>
@@ -2257,6 +2259,11 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       `${daysLeft <= warnDays ? ` – noch ${daysLeft} Tage, neue Lizenz anfordern` : ''}`;
     if (daysLeft <= warnDays) $('tamauto-info-exp').style.color = '#c62828';
     $('tamauto-info-id').textContent = installId();
+    $('tamauto-lic-renew').onclick = () => {
+      requestLicense(license.name, 'Verlängerung')
+        .then(() => { $('tamauto-lic-renew-msg').textContent = '✓ Anfrage gesendet – neue Lizenz wird nach Freigabe automatisch übernommen.'; log('Lizenz-Verlängerung angefragt.', 'ok'); })
+        .catch(() => { $('tamauto-lic-renew-msg').style.color = '#c62828'; $('tamauto-lic-renew-msg').textContent = '✗ Senden fehlgeschlagen (Internet?).'; });
+    };
     if (isAndroid) $('tamauto-info-android').style.display = '';
     if (daysLeft <= warnDays) {
       const w = document.createElement('div');
@@ -2704,6 +2711,105 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     }
   }
 
+  // ---- Fern-Lizenzierung (ntfy) + Sperrliste
+  // Kanäle: Anfrage (Nutzer → IB Thomée), Status (Lebenszeichen alle 15 min), Schlüssel je Installation (IB Thomée →
+  // Script, aktiviert automatisch). Über ntfy laufen nur ID, Name, Version, Ablaufdatum – der Schlüssel selbst ist
+  // an genau diese Installations-ID gebunden und ohne privaten Schlüssel nicht fälschbar.
+  // Entzug: signierte Sperrliste im OneDrive/SharePoint ("TAMR1.<daten>.<signatur>", {v,issued,ids}). Ist sie länger
+  // als 7 Tage nicht abrufbar, pausiert das Script (Schutz gegen Blockieren der Liste).
+  const LIC_NTFY = 'https://ntfy.sh';
+  const LIC_PREFIX = 'tamlic-hnzqxgvxtcc49z6z';
+  const LIC_TOPIC_REQ = `${LIC_PREFIX}-anfrage`, LIC_TOPIC_STATUS = `${LIC_PREFIX}-status`;
+  const licKeyTopic = () => `${LIC_PREFIX}-key-${installId()}`;
+  const REVOKE_URL = ''; // Freigabelink (download.aspx?share=…) der Datei Script\sperrliste.txt – leer = keine Prüfung
+  const REVOKE_GRACE_MS = 7 * 24 * 3600 * 1000;
+  const licFetch = (url, opt) => (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).fetch(url, opt);
+  const licPost = (topic, obj) => licFetch(`${LIC_NTFY}/${topic}`, { method: 'POST', body: JSON.stringify(obj) });
+
+  // Signierte Daten "PREFIX.<b64url-json>.<b64url-sig>" prüfen (gleicher Schlüssel wie die Lizenzen)
+  async function verifySigned(str, prefix) {
+    const m = String(str || '').trim().match(new RegExp(`^${prefix}\\.([A-Za-z0-9_-]+)\\.([A-Za-z0-9_-]+)$`));
+    if (!m) return null;
+    const pub = await crypto.subtle.importKey('jwk', LICENSE_PUBKEY, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    const ok = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, fromB64Url(m[2]), new TextEncoder().encode(m[1]));
+    return ok ? JSON.parse(new TextDecoder().decode(fromB64Url(m[1]))) : null;
+  }
+
+  // Sperrliste laden; true = abgerufen und gültig. Merkt sich den Entzug dauerhaft (auch offline wirksam).
+  function loadRevocations() {
+    if (!REVOKE_URL) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      GM_xmlhttpRequest({ method: 'GET', url: REVOKE_URL, anonymous: true, nocache: true, timeout: 15000,
+        onload: async (r) => {
+          try {
+            const d = r.status === 200 ? await verifySigned(r.responseText.replace(/^﻿/, ''), 'TAMR1') : null;
+            if (!d || d.v !== 1 || !Array.isArray(d.ids)) { resolve(false); return; }
+            if (d.issued < GM_getValue('revokeIssued', '')) { resolve(false); return; } // ältere Liste (Wiedereinspielen) ignorieren
+            GM_setValue('revokeIssued', d.issued);
+            GM_setValue('revokeOkAt', Date.now());
+            const me = d.ids.includes(installId());
+            if (me !== GM_getValue('revoked', false)) GM_setValue('revoked', me);
+            resolve(true);
+          } catch (e) { resolve(false); }
+        },
+        onerror: () => resolve(false), ontimeout: () => resolve(false) });
+    });
+  }
+  // Grund, warum die Lizenz trotz gültigem Schlüssel nicht nutzbar ist (Entzug / Sperrliste zu lange nicht erreichbar)
+  function revokeBlock() {
+    if (GM_getValue('revoked', false)) return 'Die Lizenz wurde von IB Thomée entzogen.';
+    if (!REVOKE_URL) return '';
+    let ok = GM_getValue('revokeOkAt', 0);
+    if (!ok) { ok = Date.now(); GM_setValue('revokeOkAt', ok); } // erste Nutzung: Frist beginnt jetzt
+    if (Date.now() - ok > REVOKE_GRACE_MS) return 'Lizenzprüfung seit über 7 Tagen nicht möglich (Sperrliste nicht erreichbar) – Internetverbindung prüfen.';
+    return '';
+  }
+
+  // Lebenszeichen für die Nutzerübersicht in der Lizenz-GUI
+  function sendLicStatus() {
+    if (!license) return;
+    licPost(LIC_TOPIC_STATUS, { v: 1, t: 'status', id: installId(), name: license.name, ver: VERSION, exp: license.exp,
+      on: !!cfg.enabled, at: Date.now() }).catch(() => {});
+  }
+  // Auf neue Schlüssel für diese Installation hören (Freischaltung / Verlängerung) – aktiviert automatisch
+  let licES = null;
+  async function applyRemoteKey(key, fromPanel) {
+    const res = await checkLicense(key);
+    if (!res.ok) return false;
+    if (getLicenseKey() === key.trim()) return false;       // schon übernommen (ntfy liefert beim Nachholen erneut)
+    if (fromPanel && revokeBlock()) return false;            // entzogen: neuer Schlüssel hilft erst nach Aufheben des Entzugs
+    if (license && res.lic.exp < license.exp) return false; // nie auf eine kürzere Lizenz zurückfallen
+    setLicenseKey(key.trim());
+    if (fromPanel || !license) { setTimeout(() => location.reload(), 1500); return true; }
+    license = res.lic;
+    log(`Lizenz per Fernfreischaltung aktualisiert: gültig bis ${fmtDate(res.lic.exp)}.`, 'ok');
+    renderLicInfo();
+    return true;
+  }
+  function listenForKey(fromPanel, onKey) {
+    const topic = licKeyTopic();
+    const handle = async (msg) => { const k = String(msg || '').trim(); if (/^TAM1\./.test(k) && await applyRemoteKey(k, fromPanel)) onKey && onKey(); };
+    // verpasste Schlüssel der letzten 12 h nachholen (ntfy-Zwischenspeicher), dann live mithören
+    licFetch(`${LIC_NTFY}/${topic}/json?poll=1&since=12h`).then((r) => r.text()).then((t) => {
+      t.split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (e) { return null; } })
+        .filter((d) => d && d.event === 'message').forEach((d) => handle(d.message));
+    }).catch(() => {});
+    try {
+      const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+      licES = new W.EventSource(`${LIC_NTFY}/${topic}/sse`);
+      licES.onmessage = (ev) => { try { const d = JSON.parse(ev.data); if (d.event === 'message') handle(d.message); } catch (e) { /* ignore */ } };
+    } catch (e) { /* ohne Live-Verbindung: nur Nachholen */ }
+  }
+  function requestLicense(name, note) {
+    return licPost(LIC_TOPIC_REQ, { v: 1, t: 'anfrage', id: installId(), name: String(name || '').trim().slice(0, 60),
+      ver: VERSION, exp: license ? license.exp : '', note: note || '', at: Date.now() });
+  }
+  function renderLicInfo() {
+    const n = document.getElementById('tamauto-info-name'), e = document.getElementById('tamauto-info-exp');
+    if (n && license) n.textContent = license.name;
+    if (e && license) e.textContent = fmtDate(license.exp);
+  }
+
   // Bedienfeld ohne gültige Lizenz: nur Installations-ID und Schlüsseleingabe – das Script tut sonst nichts
   function buildLicensePanel(reason) {
     const p = document.createElement('div');
@@ -2711,10 +2817,17 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     p.innerHTML = `
       <b>TAM Auto-Annahme v${VERSION}</b> <span style="color:#555">– © IB Thomée GmbH</span>
       <div style="margin:6px 0;color:#c62828;font-weight:bold">Lizenz erforderlich: ${reason}</div>
-      <div>Diese Installations-ID an IB Thomée schicken, um einen Lizenzschlüssel zu erhalten:</div>
+      <div style="margin:4px 0 2px"><b>Lizenz anfragen</b> – Namen eintragen und absenden. Nach der Freigabe durch IB Thomée
+        aktiviert sich das Script automatisch (Seite offen lassen oder später neu laden).</div>
+      <div style="display:flex;gap:6px;align-items:center;margin:4px 0">
+        <input id="tamauto-lic-name" placeholder="Vor- und Nachname" style="flex:1;padding:2px 4px">
+        <button id="tamauto-lic-req">Lizenz anfragen</button></div>
+      <div id="tamauto-lic-req-msg" style="font-size:11px;color:#2e7d32;min-height:14px"></div>
+      <div style="margin-top:4px;color:#555">Installations-ID (für Rückfragen):</div>
       <div style="display:flex;gap:6px;align-items:center;margin:4px 0">
         <code id="tamauto-lic-id" style="font-size:14px;font-weight:bold;letter-spacing:1px">${installId()}</code>
         <button id="tamauto-lic-copy">Kopieren</button></div>
+      <div style="color:#555">Oder vorhandenen Lizenzschlüssel einfügen:</div>
       <textarea id="tamauto-lic-key" placeholder="Lizenzschlüssel (beginnt mit TAM1.)" style="width:100%;height:60px;font:11px monospace"></textarea>
       <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
         <button id="tamauto-lic-ok">Aktivieren</button><span id="tamauto-lic-msg" style="color:#c62828"></span></div>
@@ -2727,6 +2840,26 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     document.body.appendChild(p);
     const $ = (id) => document.getElementById(id);
     $('tamauto-lic-copy').onclick = () => { navigator.clipboard.writeText(installId()).then(() => { $('tamauto-lic-copy').textContent = 'Kopiert ✓'; }); };
+    $('tamauto-lic-name').value = GM_getValue('licReqName', '');
+    $('tamauto-lic-req').onclick = () => {
+      const name = $('tamauto-lic-name').value.trim();
+      const msg = $('tamauto-lic-req-msg');
+      if (name.length < 3) { msg.style.color = '#c62828'; msg.textContent = 'Bitte Vor- und Nachnamen eintragen.'; return; }
+      GM_setValue('licReqName', name);
+      requestLicense(name, reason).then(() => {
+        msg.style.color = '#2e7d32';
+        msg.textContent = `✓ Anfrage gesendet (${new Date().toLocaleTimeString('de-DE')}) – wartet auf Freischaltung durch IB Thomée …`;
+      }).catch(() => { msg.style.color = '#c62828'; msg.textContent = '✗ Senden fehlgeschlagen – Internetverbindung prüfen.'; });
+    };
+    // Freischaltung kommt automatisch (auch nachträglich innerhalb von 12 h)
+    const lockedByRevoke = /entzogen|Lizenzprüfung/.test(reason);
+    listenForKey(true, () => {
+      $('tamauto-lic-req-msg').style.color = '#2e7d32';
+      $('tamauto-lic-req-msg').textContent = '✓ Lizenz freigeschaltet – lade neu …';
+    });
+    if (lockedByRevoke && REVOKE_URL) { // Sperrliste erneut prüfen (z. B. Entzug aufgehoben / wieder online)
+      loadRevocations().then(() => { if (!revokeBlock()) location.reload(); });
+    }
     $('tamauto-lic-ok').onclick = async () => {
       const key = $('tamauto-lic-key').value.trim();
       const res = await checkLicense(key);
@@ -2743,12 +2876,17 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     const storedKey = getLicenseKey();
     const lc = await checkLicense(storedKey);
     if (lc.ok) setLicenseKey(storedKey); // Sicherung/Tampermonkey-Speicher gegenseitig auffüllen
+    if (lc.ok) { await loadRevocations(); const rb = revokeBlock(); if (rb) { lc.ok = false; lc.reason = rb; } }
     if (!lc.ok) {
       buildLicensePanel(lc.reason);
       checkUpdate(); // Updates auch ohne Lizenz
       return;
     }
     license = lc.lic;
+    // Fern-Lizenzierung: Lebenszeichen, neue Schlüssel (Verlängerung) übernehmen, Sperrliste alle 6 h
+    sendLicStatus(); setInterval(sendLicStatus, 15 * 60 * 1000);
+    listenForKey(false);
+    setInterval(async () => { await loadRevocations(); if (revokeBlock()) location.reload(); }, 6 * 3600 * 1000);
     buildPanel();
     watchGrid();
     wasOnPublished = onPublishedTab(); // Ausgangszustand für die Tabwechsel-Erkennung
