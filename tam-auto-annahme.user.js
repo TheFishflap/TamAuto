@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.12.6
+// @version      1.12.7
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -854,20 +854,23 @@
   // nach einer (erfolgreichen) Annahme oder unabhängig vom Script auftauchen. Die Meldung wird gemerkt, damit die
   // Annahme-Logik sie trotzdem auswerten kann (Trefferquote, Log).
   const UNAVAILABLE = /nicht (mehr )?verfügbar|bereits vergeben|falschen Status|kann nicht bestätigt werden|Fehler bei Auftragsannahme|zum Warenkorb hinzugefügt/i;
+  const ERROR_MSG = /fehler|error|nicht möglich/i;
   let lastUnavailable = { at: 0, text: '' };
   // Neben TAM-Fenstern (.x-window) auch Info-Einblendungen, Tooltips und Dialoge prüfen – TAM zeigt Hinweise
   // teils als kurze Einblendung, die sonst erst nach Sekunden von selbst verschwindet.
   const MSG_SELECTOR = '.x-window, .x-window-dlg, .x-info, .x-tip, .x-form-invalid-tip, [role="dialog"], [role="alertdialog"]';
-  const msgTries = new WeakMap(); // wie oft schon versucht (für Ausweich-Wege)
+  const msgTries = new WeakMap(); // Versuche je Meldung {n, at} (für Ausweich-Wege); nach 3 s gilt ein wiederverwendetes Fenster als neue Meldung
+  const nextTry = (w) => { const p = msgTries.get(w); const n = p && Date.now() - p.at < 3000 ? p.n + 1 : 1; msgTries.set(w, { n, at: n === 1 ? Date.now() : p.at }); return n; };
   function dismissUnavailable() {
     [...document.querySelectorAll(MSG_SELECTOR)].filter((w) => visible(w) && !w.closest('#tamauto')).forEach((w) => {
       if (w.parentElement && w.parentElement.closest(MSG_SELECTOR)) return; // nur das äußerste Element
       const t = winTitle(w);
       if (cfg.orderWindowTitle.test(t) || cfg.confirmDialogTitle.test(t)) return;
       const all = text(w);
-      if (!UNAVAILABLE.test(`${t} ${all}`)) return;
-      const tries = (msgTries.get(w) || 0) + 1;
-      msgTries.set(w, tries);
+      // bekannte Meldungen – oder jede andere kurze Fehlermeldung (technische JS-Fehler übernimmt dismissTamErrors)
+      const isErr = !UNAVAILABLE.test(`${t} ${all}`) && ERROR_MSG.test(`${t} ${all}`) && all.length < 400 && !TAM_JS_ERROR.test(all);
+      if (!UNAVAILABLE.test(`${t} ${all}`) && !isErr) return;
+      const tries = nextTry(w);
       if (tries === 1) {
         const body = text(w.querySelector('.x-window-body, .ext-mb-text, .x-info-body')) || all.replace(t, '');
         const msg = `${t ? `„${t}“ – ` : ''}${body.replace(/(OK|Abbrechen|Schließen)\s*$/i, '').trim()}`.slice(0, 160);
@@ -924,6 +927,7 @@
   let tamErrorCount = 0;
   function dismissTamErrors() {
     visibleWindows().filter((w) => /fehler/i.test(winTitle(w)) && TAM_JS_ERROR.test(text(w))).forEach((w) => {
+      if (nextTry(w) > 1) { w.style.display = 'none'; return; } // Klick wirkte nicht → ausblenden, nicht erneut loggen
       const msg = text(w).replace(winTitle(w), '').replace(/abbrechen|ok/gi, '').trim().slice(0, 100);
       const ago = lastScriptAction.at ? ((Date.now() - lastScriptAction.at) / 1000).toFixed(1) : null;
       tamErrorCount++;
@@ -933,6 +937,11 @@
       if (btn) clickBtn(btn); else closeWindow(w);
       lastScriptAction = { at: 0, what: '' }; // das Schließen selbst nicht als Auslöser werten
     });
+  }
+
+  // Wächter: alle Fehlermeldungen ohne Verzögerung schließen (unabhängig von der Klick-Verzögerung der Annahme)
+  function dismissAllMessagesNow() {
+    dismissUnavailable(); dismissTamErrors(); dismissTerminDialog();
   }
 
   // Alle offenen Meldungen mit OK-Button schließen (nicht Auftragskarte / Bestätigungsdialog)
@@ -1115,6 +1124,12 @@
         order.bulk = (order.bulk || []).filter((x) => x !== bad);
         order.extra = (order.extra || []).filter((x) => x !== bad);
         log(`${bad} war nicht mehr frei – wird nicht als angenommen verbucht; ${nr} gilt als angenommen.`, 'err');
+      } else if (!/nicht (mehr )?verfügbar/i.test(lastUnavailable.text)) {
+        // sonstige Fehlermeldung nach "Bestätigen" (vom Wächter schon geschlossen) → nicht angenommen
+        log(`TAM meldet: ${lastUnavailable.text}`, 'err');
+        if (/bereits|vergeben/i.test(lastUnavailable.text)) order.failReason = 'vergeben';
+        closeWindow(card);
+        return false;
       } else {
         log(`${nr}: TAM meldete nach der Annahme „nicht verfügbar“ – Meldung geschlossen, Annahme gilt als erfolgt.`, 'debug');
       }
@@ -2040,8 +2055,12 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
         checkTabEnter(); // zurück in "Veröffentlichte Aufträge" → einmal aktualisieren / Burst-Refresh
       }
       // TAM-Fenster zur Terminvergabe nach einer Annahme sofort wegklicken (ohne Verzögerung)
-      if (muts.some((m) => m.type === 'childList' && [...m.addedNodes].some((n) => n.nodeType === 1 &&
-        (n.matches('.x-window') || n.querySelector?.('.x-window'))))) { dismissUnavailable(); setTimeout(() => { dismissUnavailable(); dismissTerminDialog(); dismissTamErrors(); }, 50); }
+      // Meldungen sofort schließen: neu eingefügt oder (wiederverwendetes Fenster) per style wieder eingeblendet
+      if (muts.some((m) => (m.type === 'childList' && [...m.addedNodes].some((n) => n.nodeType === 1 &&
+        (n.matches(MSG_SELECTOR) || n.querySelector?.(MSG_SELECTOR)))) ||
+        (m.type === 'attributes' && m.attributeName === 'style' && m.target.matches?.(MSG_SELECTOR)))) {
+        dismissAllMessagesNow(); setTimeout(dismissAllMessagesNow, 50); // 2. Durchlauf: GXT füllt den Text teils erst danach
+      }
       const panel = document.getElementById(cfg.tabPanelId);
       if (!panel) return;
       const relevant = muts.some((m) => m.type === 'childList' && panel.contains(m.target) && m.target.closest &&
@@ -2056,7 +2075,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       // Während einer Prüfung/Annahme nicht verwerfen, sondern direkt danach erneut prüfen
       if (busy) { recheck = true; return; }
       scheduleCheck(tabSwitch ? 'Reiterwechsel' : src ? `Refresh (${src})` : 'Tabelle aktualisiert');
-    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
   }
 
   // ------------------------------------------------------------------ Lizenz
@@ -2161,7 +2180,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     buildPanel();
     watchGrid();
     wasOnPublished = onPublishedTab(); // Ausgangszustand für die Tabwechsel-Erkennung
-    setInterval(dismissUnavailable, 250); // Sofort-Wächter für "nicht verfügbar" / "bereits vergeben" (auch wiederverwendete Fenster)
+    setInterval(dismissAllMessagesNow, 100); // Sofort-Wächter als Rückfallebene (falls ein Einblenden nicht als Änderung auffällt)
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;
     // Excel (Ortsliste + Sperrliste) beim Start laden, wenn älter als 30 min oder altes Format, danach alle 30 min
     const reloadMs = cfg.placesReloadMin * 60 * 1000;

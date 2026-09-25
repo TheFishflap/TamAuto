@@ -239,8 +239,9 @@ Automatische Updates kommen in diesem Fall nicht; eine neue Version wird auf dem
 ## Wächter-Modus (TAM-Meldungen sofort schließen)
 
 TAM blendet während und nach einer Annahme Meldungen ein, die die Oberfläche blockieren oder das Bedienfeld
-verdecken. Der Wächter läuft **immer** (auch bei gestopptem Script), prüft alle 250 ms und zusätzlich in dem Moment,
-in dem TAM ein Fenster einblendet – und schließt diese Meldungen **ohne Verzögerung** (typisch 0–40 ms):
+verdecken. Der Wächter läuft **immer** (auch bei gestopptem Script), prüft alle 100 ms und zusätzlich in dem Moment,
+in dem TAM ein Fenster einfügt oder ein vorhandenes wieder einblendet – und schließt diese Meldungen **ohne Verzögerung**
+(typisch 10–20 ms, unabhängig von der Klick-Verzögerung der Annahme):
 
 | Meldung | Wirkung im Script |
 |---|---|
@@ -248,6 +249,7 @@ in dem TAM ein Fenster einblendet – und schließt diese Meldungen **ohne Verz�
 | „Auftrag nicht (mehr) verfügbar“ nach erfolgreicher Annahme | Annahme gilt als **erfolgt** (Vermerk im Log) |
 | „Fehler bei Auftragsannahme – … kann nicht bestätigt werden, da er im falschen Status ist“ | Betrifft es den Hauptauftrag → **nicht angenommen**; betrifft es einen mit angehakten Warenkorb-Auftrag → nur dieser wird nicht verbucht |
 | „Es wurden … weitere Aufträge am gleichen Standort automatisch zum Warenkorb hinzugefügt“ | Reine Info → nur ausgeblendet, beeinflusst die Annahme nicht |
+| Jede andere Fehlermeldung („Fehler“, „nicht möglich“ …), z. B. nach „Bestätigen“ | Sofort geschlossen; nach „Bestätigen“ gilt die Annahme als **fehlgeschlagen** |
 | Technische Fehlerfenster („TypeError … undefined“, v. a. Android) | Mit „Abbrechen“ geschlossen, Log mit letzter Script-Aktion |
 | Terminvergabe-Fenster (bis 30 s nach einer Annahme) | Sofort weggeklickt, zurück in „Veröffentlichte Aufträge“ |
 
@@ -315,7 +317,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 7. **Annehmen** → Dialog **„Auftragsannahme bestätigen“** → Haken „Ja, hiermit bestätige ich die
    Bedingungen …“ → **Bestätigen**.
 8. Fehlermeldungen von TAM werden im Protokoll angezeigt, die Auftragskarte wird geschlossen. Meldungen
-   „Auftrag nicht (mehr) verfügbar“ / „bereits vergeben“ werden **sofort** weggeklickt (Wächter alle 250 ms).
+   „Auftrag nicht (mehr) verfügbar“ / „bereits vergeben“ werden **sofort** weggeklickt (Wächter alle 100 ms).
 9. Öffnet TAM danach das Fenster zur **Terminvergabe**, wird es sofort (ohne Verzögerung) weggeklickt – nur in den
    ersten 30 s nach einer Annahme durch das Script, eine selbst geöffnete Terminvergabe bleibt unangetastet.
 10. Nach erfolgreicher Annahme wird **sofort** wieder in den Reiter **Veröffentlichte Aufträge** gewechselt und
@@ -354,6 +356,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.12.7 – 2026-09-25
+- Wächter-Modus schließt **alle Fehlermeldungen sofort**, ohne Verzögerung: auch allgemeine Fehlerfenster
+  (bisher bis zu 5 s), technische Fehlerfenster und von TAM wiederverwendete, erneut eingeblendete Fenster.
+  Prüfung alle 100 ms statt 250 ms; im Test 15–16 ms bis zum Schließen.
+- Allgemeine Fehlermeldung nach „Bestätigen“ wird trotz Sofort-Schließen ausgewertet (Annahme = fehlgeschlagen).
 
 ### 1.12.6 – 2026-09-25
 - Wächter-Modus erkennt zusätzlich **„Fehler bei Auftragsannahme – … im falschen Status“** (sofort geschlossen; Haupt-
