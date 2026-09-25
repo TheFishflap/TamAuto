@@ -359,6 +359,14 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.13.3 – 2026-09-25
+- **AuftragsNr-Format egal:** maßgeblich ist die Spalte „AuftragsNr“ – jede Nummer wird angenommen (z. B. `SA040647`,
+  `AB-47/11K`). Auch Silent Reload und Neue-Zeilen-Wächter arbeiten formatunabhängig.
+- **Log kopieren:** nur noch die **letzten 80 Zeilen** – mit Kopf (Version, Datum, Browser) und einer Zeile mit den
+  wichtigsten Einstellungen. Für mehr Zeilen das Log gezielt markieren.
+- **Silent Reload:** ausführliches **?** mit Erklärung und **Warnung zur Serverlast**; darunter rot die Anfragen pro
+  Stunde (unter 5 s zusätzlich Hinweis „nur kurzzeitig“).
+
 ### 1.13.2 – 2026-09-25
 - **AuftragsNr mit beliebigem Buchstaben-Präfix** (z. B. `SA040647`, Audi) wird angenommen – bisher nur `MW…`
   oder reine Ziffern („Keine gültige AuftragsNr“). Erlaubt: bis 4 Buchstaben + ab 6 Ziffern, optional `-10`.

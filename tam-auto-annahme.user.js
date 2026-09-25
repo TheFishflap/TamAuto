@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.13.2
+// @version      1.13.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -142,6 +142,7 @@
   // Verlauf für "Log kopieren": deutlich länger als die 200 sichtbaren Zeilen, mit Datum, übersteht ein
   // Neuladen der Seite (wird regelmäßig gespeichert). Die Anzeige im Bedienfeld bleibt auf 200 Zeilen begrenzt.
   const LOG_KEEP = 5000;
+  const COPY_LINES = 80; // "Log kopieren" nimmt nur die letzten 80 Zeilen (+ Kopf mit Version und Einstellungen)
   let logHistory = (() => { try { return JSON.parse(sessionStorage.getItem('tamauto.logHistory') || '[]'); } catch (e) { return []; } })();
   const saveLogHistory = () => { try { sessionStorage.setItem('tamauto.logHistory', JSON.stringify(logHistory.slice(-LOG_KEEP))); } catch (e) { /* voll */ } };
   setInterval(saveLogHistory, 15000);
@@ -890,6 +891,7 @@
   const ERROR_MSG = /fehler|error|nicht möglich/i;
   // AuftragsNr: "MW3191767", "SA040647", "1002669965" oder mit Anhang "9601182381-10" (bis 4 Buchstaben + ab 6 Ziffern). Vergleich tolerant, falls TAM den
   // Anhang an einer Stelle (Karte, Warenkorb, Meldung) weglässt.
+  // NR_RE nur als Rückfall, um eine Nummer in einem Meldungstext zu finden – maßgeblich ist die Spalte "AuftragsNr"
   const NR_RE = /\b[A-Z]{0,4}\d{6,}(-\d{1,3})?/i;
   const nrBase = (s) => String(s || '').toUpperCase().trim().replace(/-\d{1,3}$/, '');
   const sameNr = (a, b) => { const x = String(a || '').toUpperCase().trim(), y = String(b || '').toUpperCase().trim();
@@ -1005,7 +1007,7 @@
     return [...card.querySelectorAll('.zusatzteilauftrag')].filter(visible).map((el) => {
       const km = text(el.querySelector('.entfernung'));
       const rest = text(el).replace(km, '').trim();
-      const nr = ((rest.match(/^([A-Z]{0,4}\d{6,}(-\d{1,3})?)/i) || [])[1] || '').toUpperCase();
+      const nr = (rest.split(/\s+/)[0] || '').toUpperCase(); // AuftragsNr steht vorn (Format egal)
       return { el, km, kmNum: parseFloat(km.replace(',', '.')), nr };
     });
   }
@@ -1032,7 +1034,7 @@
   async function acceptOrder(order) {
     if (!onPublishedTab()) { log('Abbruch: nicht im Tab "Veröffentlichte Aufträge".', 'err'); return false; }
     const nr = (order.nr || '').trim();
-    if (!/^[A-Z]{0,4}\d{6,}(-\d{1,3})?$/i.test(nr)) { log(`Keine gültige AuftragsNr in der Zeile (${nr || 'leer'}).`, 'err'); return false; }
+    if (!nr) { log('Keine AuftragsNr in der Zeile (Spalte „AuftragsNr“ leer).', 'err'); return false; } // Format egal
 
     // 1) Doppelklick -> "Auftragskarte zu MW…"
     const before = new Set(visibleWindows());
@@ -1095,7 +1097,7 @@
     if (unchecked.length) { log(`Nicht angehakt trotz "alle auswählen": ${unchecked.join(', ')}`, 'err'); closeWindow(card); return false; }
     // Alles, was jetzt im Warenkorb angehakt ist, wird mit "Annehmen" GEMEINSAM angenommen (Bulk) – nicht nur
     // die selbst angeklickten 0-km-Aufträge, sondern auch Einträge, die schon vorher im Warenkorb lagen.
-    const nrOf = (s) => ((String(s).match(NR_RE) || [s])[0]).toUpperCase();
+    const nrOf = (s) => (String(s).trim().split(/\s+/)[0] || '').toUpperCase();
     order.bulk = [...new Set(items.filter((w) => w.cb.checked).map((w) => nrOf(w.nr)))].filter((x) => !sameNr(x, nr));
 
     // 3) "Annehmen" unten in der Auftragskarte
@@ -1159,7 +1161,10 @@
       // betrifft er den Hauptauftrag → nicht angenommen (war nicht mehr frei); betrifft er einen mit
       // angehakten Warenkorb-Auftrag → nur diesen nicht verbuchen
       if (/falschen Status|kann nicht bestätigt werden|Fehler bei Auftragsannahme/i.test(lastUnavailable.text)) {
-        const bad = lastUnavailable.nr;
+        // betroffenen Auftrag bestimmen: welche der beteiligten AuftragsNrn steht in der Meldung? (Format egal)
+        const msgUp = lastUnavailable.text.toUpperCase();
+        const bad = [nr, ...(order.bulk || []), ...(order.extra || [])].find((x) => x && msgUp.includes(nrBase(x))) ||
+          lastUnavailable.nr;
         log(`TAM meldet: ${lastUnavailable.text}`, 'err');
         if (!bad || sameNr(bad, nr)) { order.failReason = 'vergeben'; closeWindow(card); return false; }
         order.bulk = (order.bulk || []).filter((x) => !sameNr(x, bad));
@@ -1208,7 +1213,10 @@
     busy = true;
     recheck = false; // Tabelle wird jetzt frisch gelesen
     clearTimeout(obsTimer); // ausstehende Nachprüfung ist damit erledigt
+    const prevGridNrs = lastGridNrs;
     lastGridNrs = gridNrs(visibleGrid()); // Stand für das Sicherheitsnetz (auch bei vorzeitigem Abbruch → kein Dauer-Neustart)
+    // nach einem Silent-Reload-Refresh: neu aufgetauchte Aufträge als "per Silent Reload gefunden" merken
+    if (reason === 'Silent Reload') lastGridNrs.forEach((x) => { if (!prevGridNrs.has(x) && !silentFound.has(x)) { silentFound.add(x); silentFoundCount++; } });
     lastCycleAt = Date.now();
     try {
       if (!places.plz.length && !places.orte.length) { log('Keine Ortsliste geladen – übersprungen.', 'err'); return; }
@@ -1374,6 +1382,7 @@
   let lastSilentAt = 0, silentSeen = new Set(), silentFails = 0, silentState = '';
   let silentFoundCount = 0;             // in dieser Sitzung per Silent Reload gefundene Aufträge
   const silentFound = new Set();         // deren AuftragsNrn → Vermerk "per Silent Reload gefunden" im Log
+  const silentIgnore = new Set();        // Texte, die schon einmal einen Refresh ohne neuen Auftrag ausgelöst haben
   // Eine Hintergrund-Abfrage: liefert die AuftragsNrn, die TAM gerade als veröffentlicht meldet
   async function silentQuery() {
     const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
@@ -1382,10 +1391,10 @@
     const txt = await res.text();
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     if (!/^\/\/OK/.test(txt)) throw new Error(`TAM meldet ${txt.slice(0, 60)}`); // z. B. //EX = Sitzung abgelaufen
-    // nur Zeichenketten der Antwort auswerten, die komplett eine AuftragsNr sind (nicht z. B. Klassennamen
-    // wie "…BasePagingLoadResult/496878394")
+    // Alle Zeichenketten der Antwort (AuftragsNr, Adresse, Dienstleistung … – das Format der AuftragsNr ist
+    // egal), ohne Klassennamen wie "com.extjs…BasePagingLoadResult/496878394"
     const tokens = new Set((txt.match(/"(?:[^"\\]|\\.)*"/g) || []).map((s) => s.slice(1, -1).trim().toUpperCase())
-      .filter((s) => /^[A-Z]{0,4}\d{6,}(-\d{1,3})?$/.test(s)));
+      .filter((s) => s.length >= 3 && s.length <= 80 && !/^(COM|JAVA|JAVAX|DE|ORG)\.[\w.$]+(\/\d+)?$/i.test(s)));
     return { tokens, ms: Date.now() - t0, bytes: txt.length };
   }
   const silentStateText = (q) => `aktiv · letzte Abfrage ${new Date().toLocaleTimeString('de-DE')} (${q.ms} ms)` +
@@ -1397,12 +1406,13 @@
     silentFetching = true;
     try {
       const q = await silentQuery();
-      const inGrid = gridNrs(visibleGrid());
-      const list = [...q.tokens];
-      const fresh = list.filter((x) => !inGrid.has(x));
-      log(`Silent-Test OK: Antwort in ${q.ms} ms (${q.bytes} Zeichen) · TAM meldet ${list.length} Auftr.` +
-        (list.length ? ` (${list.slice(0, 5).join(', ')}${list.length > 5 ? ' …' : ''})` : '') +
-        ` · in der Tabelle: ${inGrid.size} · nur bei TAM (noch nicht in der Tabelle): ${fresh.length ? fresh.join(', ') : 'keine'}`, 'ok');
+      const grid = visibleGrid();
+      const inGrid = gridNrs(grid), cells = gridTexts(grid);
+      const fresh = [...q.tokens].filter((x) => !cells.has(x));
+      const short = (a) => (a.length ? `${a.slice(0, 5).join(', ')}${a.length > 5 ? ' …' : ''}` : 'keine');
+      log(`Silent-Test OK: Antwort in ${q.ms} ms (${q.bytes} Zeichen) · ${q.tokens.size ? `TAM meldet Daten (${q.tokens.size} Einträge)` : 'TAM meldet keine Aufträge'}` +
+        ` · in der Tabelle: ${inGrid.size} Auftr.` +
+        ` · nur bei TAM (noch nicht in der Tabelle): ${short(fresh)}`, 'ok');
       silentState = silentStateText(q);
     } catch (e) {
       log(`Silent-Test fehlgeschlagen: ${e.message}`, 'err'); silentState = `Fehler: ${e.message}`;
@@ -1419,15 +1429,21 @@
       const q = await silentQuery();
       const tokens = q.tokens;
       silentFails = 0;
-      const inGrid = gridNrs(visibleGrid());
-      const fresh = [...tokens].filter((x) => !inGrid.has(x) && !silentSeen.has(x));
+      // neu = Text, der weder in der Tabelle steht, noch in der vorigen Antwort war, noch sich schon einmal
+      // als "kein neuer Auftrag" erwiesen hat
+      const cells = gridTexts(visibleGrid());
+      const fresh = [...tokens].filter((x) => !cells.has(x) && !silentSeen.has(x) && !silentIgnore.has(x));
       silentState = silentStateText(q);
       if (!fresh.length) { silentSeen = tokens; return; }
-      fresh.forEach((x) => { if (!silentFound.has(x)) { silentFound.add(x); silentFoundCount++; } });
-      silentState = silentStateText(q);
-      log(`Silent Reload: neuer Auftrag in TAM (${fresh.slice(0, 3).join(', ')}${fresh.length > 3 ? ' …' : ''}) → Tabelle aktualisieren`, 'ok');
+      log(`Silent Reload: neue Daten in TAM (${fresh.slice(0, 3).join(', ')}${fresh.length > 3 ? ' …' : ''}) → Tabelle aktualisieren`, 'ok');
       silentFetching = false;
-      if (await refreshAndCheck('Silent Reload')) silentSeen = tokens; // sonst beim nächsten Mal erneut versuchen
+      const before = silentFoundCount;
+      if (await refreshAndCheck('Silent Reload')) {
+        silentSeen = tokens;
+        // keine neue Zeile gekommen → diese Texte künftig nicht mehr als "neu" werten (kein Dauer-Refresh)
+        if (silentFoundCount === before) fresh.forEach((x) => silentIgnore.add(x));
+      } // sonst beim nächsten Mal erneut versuchen
+      silentState = silentStateText(q);
     } catch (e) {
       silentFails++;
       silentState = `Fehler: ${e.message}`;
@@ -1438,6 +1454,13 @@
   function renderSilent() {
     const el = document.getElementById('tamauto-silent-state');
     if (el) el.textContent = cfg.silentSec ? silentState || 'aktiv' : 'aus';
+    const w = document.getElementById('tamauto-silent-warn');
+    if (w) {
+      const perH = cfg.silentSec ? Math.round(3600 / cfg.silentSec) : 0;
+      w.style.display = cfg.silentSec ? '' : 'none';
+      w.textContent = cfg.silentSec ? `⚠ ${perH.toLocaleString('de-DE')} Server-Anfragen pro Stunde` +
+        (cfg.silentSec < 5 ? ' – hohe Serverlast, nur kurzzeitig nutzen (Empfehlung 5–10 s)' : ' – Serverlast beachten') : '';
+    }
   }
 
   // ---- Burst-Refresh: gezielt für kurze Zeit jede Sekunde aktualisieren (Auftragswellen), statt dauerhaft
@@ -1582,9 +1605,16 @@
               <b>Silent Reload</b> alle <input id="tamauto-silent" type="number" min="0" max="60" step="1" style="width:44px;margin:0"> s
               <span style="color:#555">(0 = aus)</span>
               <button id="tamauto-silent-test" title="Eine Hintergrund-Abfrage sofort ausführen und das Ergebnis ins Log schreiben (funktioniert auch bei 0 = aus)">Jetzt testen</button>
-              <span class="tamauto-help" title="Fragt TAM im Hintergrund nach neuen Aufträgen – mit derselben Anfrage, die TAM beim Aktualisieren sendet, aber ohne die Tabelle neu zu zeichnen. Nur wenn ein neuer Auftrag dabei ist, wird die Tabelle einmal aktualisiert und abgeglichen. Die Anfrage wird beim ersten Refresh im Reiter „Veröffentlichte Aufträge“ übernommen. Jede Abfrage belastet TAM wie ein Refresh – niedrige Werte mit Bedacht wählen. Standard: 0 (aus).">?</span>
+              <span class="tamauto-help" title="SILENT RELOAD – was es macht:
+Fragt den TAM-Server alle x Sekunden im Hintergrund nach veröffentlichten Aufträgen – mit genau der Anfrage, die TAM selbst beim Klick auf den Aktualisieren-Pfeil sendet (wird beim ersten Refresh im Reiter „Veröffentlichte Aufträge“ übernommen). Die Tabelle wird dabei NICHT neu gezeichnet. Nur wenn die Antwort einen neuen Auftrag enthält, aktualisiert das Script die Tabelle einmal und nimmt passende Aufträge an. „Jetzt testen“ zeigt im Log, was TAM gerade meldet.
+
+⚠ WARNUNG – Serverlast:
+Jede Abfrage ist eine echte Anfrage an den TAM-Server – genauso viel Last wie ein Klick auf Aktualisieren. 2 s = 30 Anfragen pro Minute = 1.800 pro Stunde, dauerhaft, solange die Seite offen ist. Das kann bei TÜV SÜD auffallen (Protokolle, Sperre des Zugangs, Verstoß gegen Nutzungsbedingungen) und belastet den Server für alle Nutzer. Empfehlung: 5–10 s, kürzer nur kurzzeitig bei erwarteten Auftragswellen. Nutzung auf eigene Verantwortung.
+
+Standard: 0 (aus).">?</span>
             </span>
             <div id="tamauto-silent-state" style="color:#555;font-size:11px;margin-top:2px"></div>
+            <div id="tamauto-silent-warn" style="display:none;color:#b00020;font-size:11px;margin-top:2px"></div>
           </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
@@ -1615,7 +1645,7 @@
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
             <label class="tamauto-chk" title="Zeigt das Protokoll des Scripts unten im Bedienfeld">
               <input type="checkbox" id="tamauto-consolelog"> <b>Console Log</b></label>
-            <button id="tamauto-copylog" title="Verlauf der letzten bis zu 5000 Zeilen (mit Datum, chronologisch) in die Zwischenablage kopieren – auch über ein Neuladen der Seite hinweg. Z. B. zum Weiterschicken." style="margin-left:6px">📋 Log kopieren</button>
+            <button id="tamauto-copylog" title="Die letzten 80 Zeilen (mit Datum, chronologisch) plus Kopf mit Version und Einstellungen in die Zwischenablage kopieren – z. B. zum Weiterschicken. Für mehr Zeilen das Log gezielt markieren und kopieren." style="margin-left:6px">📋 Log kopieren</button>
             <div style="color:#555;margin-top:2px">Protokoll des Scripts unten im Bedienfeld anzeigen</div>
           </div>
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
@@ -1937,6 +1967,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       silentState = ''; lastSilentAt = 0; renderSilent();
       log(cfg.silentSec ? `Silent Reload an: alle ${cfg.silentSec} s Hintergrund-Abfrage` +
         (tamLoadReq ? '.' : ' (startet nach dem nächsten Refresh).') : 'Silent Reload aus.');
+      if (cfg.silentSec && cfg.silentSec < 5) log(`Achtung: ${Math.round(3600 / cfg.silentSec)} Anfragen/Stunde an TAM – hohe Serverlast, nur kurzzeitig nutzen.`, 'err');
     };
     $('tamauto-silent-test').onclick = () => silentTest();
     renderSilent();
@@ -1956,8 +1987,14 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     // Log kopieren (auch wenn das Log gerade ausgeblendet ist – es wird immer mitgeschrieben)
     $('tamauto-copylog').onclick = async () => {
       const b = $('tamauto-copylog');
-      const lines = logHistory.slice(-LOG_KEEP); // kompletter Verlauf (bis 5000 Zeilen, älteste zuerst)
-      const txt = `TAM Auto-Annahme v${VERSION} · Log vom ${new Date().toLocaleString('de-DE')} · ${navigator.userAgent}\n\n${lines.join('\n')}`;
+      // nur die letzten 80 Zeilen (älteste zuerst) – reicht für eine Fehlermeldung; mehr lieber gezielt markieren
+      const lines = logHistory.slice(-COPY_LINES);
+      const settings = `Einstellungen: Auto-Refresh ${cfg.autoRefresh ? `alle ${cfg.intervalSec} s` : 'aus'} · Silent Reload ` +
+        `${cfg.silentSec ? `alle ${cfg.silentSec} s` : 'aus'} · Burst ${cfg.burstSec} s · Verzögerung ` +
+        `${cfg.delayOn ? `${cfg.delaySec} s${cfg.delayRandom ? ` + bis ${cfg.delayRandomMs} ms` : ''}` : 'aus'} · Ortsliste ` +
+        `${places.plz.length} PLZ / ${places.orte.length} Orte · Sperrliste ${(places.block || { plz: [] }).plz.length} PLZ`;
+      const txt = `TAM Auto-Annahme v${VERSION} · Log vom ${new Date().toLocaleString('de-DE')} · ${navigator.userAgent}\n` +
+        `${settings}\n(letzte ${lines.length} von ${logHistory.length} Zeilen)\n\n${lines.join('\n')}`;
       let ok = false;
       try { await navigator.clipboard.writeText(txt); ok = true; } catch (e) {
         const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select();
@@ -2184,10 +2221,15 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
   // da war, sofort prüfen. TAM blendet neue Aufträge teils ein, ohne dass die Tabellenänderung erkannt wird
   // (bzw. die Prüfung durch laufende Änderungen immer weiter verschoben wird) – dann wurden sie erst nach einem
   // Refresh angenommen.
+  // AuftragsNrn aus der Spalte "AuftragsNr" – egal in welchem Format
   function gridNrs(grid) {
+    if (!grid) return new Set();
+    return new Set(readOrders(grid).map((o) => (o.nr || '').trim().toUpperCase()).filter(Boolean));
+  }
+  // alle Zellinhalte der Tabelle (für den Silent Reload: was TAM meldet und schon sichtbar ist)
+  function gridTexts(grid) {
     const body = grid && grid.querySelector('.x-grid3-body');
-    const txt = body ? [...body.querySelectorAll('td')].map((td) => td.textContent).join(' ') : ''; // je Zelle (sonst verschmelzen Nummern)
-    return new Set(txt.toUpperCase().match(/\b[A-Z]{0,4}\d{6,}(-\d{1,3})?/g) || []);
+    return new Set(body ? [...body.querySelectorAll('td')].map((td) => td.textContent.trim().toUpperCase()).filter(Boolean) : []);
   }
   let lastGridNrs = new Set();
   function watchNewRows() {
