@@ -359,6 +359,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.13.1 – 2026-09-25
+- Silent Reload prüfbar: Button **„Jetzt testen“** (auch bei 0 = aus) führt eine Abfrage sofort aus und schreibt
+  ins Log, welche Aufträge TAM meldet, was in der Tabelle steht und was nur bei TAM ist.
+- Status zeigt die Zahl der **silent gefundenen** Aufträge; „Angenommen: …“ bekommt den Vermerk
+  **„per Silent Reload gefunden“**.
+
 ### 1.13.0 – 2026-09-25
 - **Silent Reload** (Erweiterte Einstellungen, alle x s, **Standard 0 = aus**): Das Script übernimmt beim ersten
   Refresh TAMs eigene Tabellen-Anfrage (`loadTeilauftraege`) und wiederholt sie im Hintergrund. Nur wenn die

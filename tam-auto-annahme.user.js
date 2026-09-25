@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.13.0
+// @version      1.13.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1275,7 +1275,7 @@
         trackResult(o, ok ? 'angenommen' : o.failReason === 'vergeben' ? 'vergeben' : 'fehler');
         if (ok) {
           const plus = bulkOf(o).length ? ` + ${bulkLabel(o)}` : '';
-          log(`Angenommen: ${desc}${plus}`, 'ok'); notify('TAM: Auftrag angenommen', desc + plus);
+          log(`Angenommen: ${desc}${plus}${silentFound.has((o.nr || '').toUpperCase()) ? ' · per Silent Reload gefunden' : ''}`, 'ok'); notify('TAM: Auftrag angenommen', desc + plus);
           bookAccepted(o); n++;
         } else {
           log(`Annahme fehlgeschlagen: ${desc}`, 'err');
@@ -1372,6 +1372,42 @@
   // AuftragsNr, die weder in der Tabelle steht noch in der vorigen Antwort war → Tabelle einmal aktualisieren
   // (Refresh-Pfeil) und abgleichen. Die Tabelle selbst bleibt sonst unberührt (kein Flackern).
   let lastSilentAt = 0, silentSeen = new Set(), silentFails = 0, silentState = '';
+  let silentFoundCount = 0;             // in dieser Sitzung per Silent Reload gefundene Aufträge
+  const silentFound = new Set();         // deren AuftragsNrn → Vermerk "per Silent Reload gefunden" im Log
+  // Eine Hintergrund-Abfrage: liefert die AuftragsNrn, die TAM gerade als veröffentlicht meldet
+  async function silentQuery() {
+    const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    const t0 = Date.now();
+    const res = await W.fetch(tamLoadReq.url, { method: 'POST', credentials: 'include', headers: tamLoadReq.headers, body: tamLoadReq.body });
+    const txt = await res.text();
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!/^\/\/OK/.test(txt)) throw new Error(`TAM meldet ${txt.slice(0, 60)}`); // z. B. //EX = Sitzung abgelaufen
+    // nur Zeichenketten der Antwort auswerten, die komplett eine AuftragsNr sind (nicht z. B. Klassennamen
+    // wie "…BasePagingLoadResult/496878394")
+    const tokens = new Set((txt.match(/"(?:[^"\\]|\\.)*"/g) || []).map((s) => s.slice(1, -1).trim().toUpperCase())
+      .filter((s) => /^(MW)?\d{6,}(-\d{1,3})?$/.test(s)));
+    return { tokens, ms: Date.now() - t0, bytes: txt.length };
+  }
+  const silentStateText = (q) => `aktiv · letzte Abfrage ${new Date().toLocaleTimeString('de-DE')} (${q.ms} ms)` +
+    (silentFoundCount ? ` · ${silentFoundCount} Auftr. silent gefunden` : '');
+  // Button "Jetzt testen": eine Abfrage sofort, Ergebnis ins Log – unabhängig vom eingestellten Intervall
+  async function silentTest() {
+    if (!tamLoadReq) { log('Silent-Test: Noch keine TAM-Anfrage übernommen – bitte einmal im Reiter „Veröffentlichte Aufträge“ aktualisieren (Refresh-Pfeil) und erneut testen.', 'err'); return; }
+    if (silentFetching) { log('Silent-Test: Abfrage läuft gerade – gleich erneut versuchen.', 'err'); return; }
+    silentFetching = true;
+    try {
+      const q = await silentQuery();
+      const inGrid = gridNrs(visibleGrid());
+      const list = [...q.tokens];
+      const fresh = list.filter((x) => !inGrid.has(x));
+      log(`Silent-Test OK: Antwort in ${q.ms} ms (${q.bytes} Zeichen) · TAM meldet ${list.length} Auftr.` +
+        (list.length ? ` (${list.slice(0, 5).join(', ')}${list.length > 5 ? ' …' : ''})` : '') +
+        ` · in der Tabelle: ${inGrid.size} · nur bei TAM (noch nicht in der Tabelle): ${fresh.length ? fresh.join(', ') : 'keine'}`, 'ok');
+      silentState = silentStateText(q);
+    } catch (e) {
+      log(`Silent-Test fehlgeschlagen: ${e.message}`, 'err'); silentState = `Fehler: ${e.message}`;
+    } finally { silentFetching = false; renderSilent(); }
+  }
   async function silentPoll() {
     const now = Date.now();
     if (!cfg.silentSec || !cfg.enabled || !license || busy || silentFetching || !onPublishedTab() || burstUntil > now) return;
@@ -1380,20 +1416,15 @@
     lastSilentAt = now;
     silentFetching = true;
     try {
-      const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-      const res = await W.fetch(tamLoadReq.url, { method: 'POST', credentials: 'include', headers: tamLoadReq.headers, body: tamLoadReq.body });
-      const txt = await res.text();
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      if (!/^\/\/OK/.test(txt)) throw new Error(`TAM meldet ${txt.slice(0, 60)}`); // z. B. //EX = Sitzung abgelaufen
+      const q = await silentQuery();
+      const tokens = q.tokens;
       silentFails = 0;
-      // nur Zeichenketten der Antwort auswerten, die komplett eine AuftragsNr sind (nicht z. B. Klassennamen
-      // wie "…BasePagingLoadResult/496878394")
-      const tokens = new Set((txt.match(/"(?:[^"\\]|\\.)*"/g) || []).map((s) => s.slice(1, -1).trim().toUpperCase())
-        .filter((s) => /^(MW)?\d{6,}(-\d{1,3})?$/.test(s)));
       const inGrid = gridNrs(visibleGrid());
       const fresh = [...tokens].filter((x) => !inGrid.has(x) && !silentSeen.has(x));
-      silentState = `aktiv · letzte Abfrage ${new Date().toLocaleTimeString('de-DE')} (${Date.now() - now} ms)`;
+      silentState = silentStateText(q);
       if (!fresh.length) { silentSeen = tokens; return; }
+      fresh.forEach((x) => { if (!silentFound.has(x)) { silentFound.add(x); silentFoundCount++; } });
+      silentState = silentStateText(q);
       log(`Silent Reload: neuer Auftrag in TAM (${fresh.slice(0, 3).join(', ')}${fresh.length > 3 ? ' …' : ''}) → Tabelle aktualisieren`, 'ok');
       silentFetching = false;
       if (await refreshAndCheck('Silent Reload')) silentSeen = tokens; // sonst beim nächsten Mal erneut versuchen
@@ -1550,6 +1581,7 @@
             <span class="tamauto-chk">
               <b>Silent Reload</b> alle <input id="tamauto-silent" type="number" min="0" max="60" step="1" style="width:44px;margin:0"> s
               <span style="color:#555">(0 = aus)</span>
+              <button id="tamauto-silent-test" title="Eine Hintergrund-Abfrage sofort ausführen und das Ergebnis ins Log schreiben (funktioniert auch bei 0 = aus)">Jetzt testen</button>
               <span class="tamauto-help" title="Fragt TAM im Hintergrund nach neuen Aufträgen – mit derselben Anfrage, die TAM beim Aktualisieren sendet, aber ohne die Tabelle neu zu zeichnen. Nur wenn ein neuer Auftrag dabei ist, wird die Tabelle einmal aktualisiert und abgeglichen. Die Anfrage wird beim ersten Refresh im Reiter „Veröffentlichte Aufträge“ übernommen. Jede Abfrage belastet TAM wie ein Refresh – niedrige Werte mit Bedacht wählen. Standard: 0 (aus).">?</span>
             </span>
             <div id="tamauto-silent-state" style="color:#555;font-size:11px;margin-top:2px"></div>
@@ -1906,6 +1938,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       log(cfg.silentSec ? `Silent Reload an: alle ${cfg.silentSec} s Hintergrund-Abfrage` +
         (tamLoadReq ? '.' : ' (startet nach dem nächsten Refresh).') : 'Silent Reload aus.');
     };
+    $('tamauto-silent-test').onclick = () => silentTest();
     renderSilent();
 
     // Burst-Refresh: nur die Dauer ist einstellbar (Auslöser: Button "⚡ Burst" oder manueller Refresh auf der Website)
