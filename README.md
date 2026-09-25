@@ -359,6 +359,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.14.2 – 2026-09-25
+- **Auftragskarte, die schon offen ist oder von TAM wiederverwendet wird, wird erkannt** – bisher wartete das Script
+  nur auf ein *neues* Fenster und lief ins Leere („öffnete sich nicht“), während die Karte offen blieb.
+- Offene Auftragskarte eines **anderen** Auftrags wird vor der nächsten Annahme geschlossen.
+- Diagnose im Log: offene Fenster beim Warten/Aufgeben und wie lange die Seite blockiert war.
+
 ### 1.14.1 – 2026-09-25
 - **Langsame Auftragskarte:** Das Script wartet jetzt bis 20 s (vorher 8 s) auf die Karte, mit Log-Hinweis „lädt noch“
   nach 5 s und der Öffnungszeit im Log – eine späte Karte wird trotzdem angenommen. Kommt sie erst nach dem

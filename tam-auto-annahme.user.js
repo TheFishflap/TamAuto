@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.14.1
+// @version      1.14.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1105,6 +1105,10 @@
     if (!nr) { log('Keine AuftragsNr in der Zeile (Spalte „AuftragsNr“ leer).', 'err'); return false; } // Format egal
 
     // 1) Doppelklick -> "Auftragskarte zu MW…"
+    // Noch offene Auftragskarte eines ANDEREN Auftrags vorher schließen – sie verdeckt die Tabelle und würde
+    // die Erkennung der neuen Karte stören
+    visibleWindows().filter((w) => cfg.orderWindowTitle.test(winTitle(w)) && !winTitle(w).toUpperCase().includes(nrBase(nr)))
+      .forEach((w) => { log(`Noch offene Auftragskarte („${winTitle(w)}“) vor der Annahme geschlossen.`, 'err'); closeWindow(w); });
     const before = new Set(visibleWindows());
     // sichtbare Zelle anklicken (die ersten Zellen sind im TAM ausgeblendete Spalten)
     const cell = [...order.row.querySelectorAll('td.x-grid3-cell')].find(visible) || order.row;
@@ -1117,16 +1121,23 @@
     // Warten auf die Auftragskarte – oder auf eine TAM-Meldung statt der Karte
     // (z. B. "Auftrag bereits vergeben!": ein anderer Anbieter war schneller). Die Meldung wird ggf. schon vom
     // Sofort-Wächter geschlossen → dann über lastUnavailable erkennen.
-    const cardOrMsg = () => visibleWindows().find((w) => !before.has(w) &&
-      (cfg.orderWindowTitle.test(winTitle(w)) || MSG_TITLE.test(winTitle(w)))) ||
+    // Karte dieses Auftrags zählt auch, wenn sie schon vorher offen war bzw. TAM das Fenster wiederverwendet
+    // (sonst wartet das Script auf ein "neues" Fenster, das nie kommt)
+    const cardOrMsg = () => visibleWindows().find((w) => cfg.orderWindowTitle.test(winTitle(w)) &&
+      winTitle(w).toUpperCase().includes(nrBase(nr))) ||
+      visibleWindows().find((w) => !before.has(w) && (cfg.orderWindowTitle.test(winTitle(w)) || MSG_TITLE.test(winTitle(w)))) ||
       (lastUnavailable.at >= clickedAt ? 'unavailable' : null);
-    // TAM ist teils sehr langsam (Karte erst nach > 8 s) → bis 20 s warten, nach 5 s einen Hinweis ins Log
-    let opened = await waitFor(cardOrMsg, 5000);
+    // Diagnose: größte Lücke zwischen zwei Prüfungen = wie lange die Seite blockiert war (TAM rechnet/lädt)
+    let lastTick = Date.now(), maxGap = 0;
+    const probe = () => { const n = Date.now(); maxGap = Math.max(maxGap, n - lastTick); lastTick = n; return cardOrMsg(); };
+    // TAM ist teils sehr langsam → bis 20 s warten, nach 5 s einen Hinweis ins Log
+    let opened = await waitFor(probe, 5000);
     if (!opened) {
-      log(`${nr}: Auftragskarte lädt noch (TAM langsam) – warte weiter …`, 'debug');
-      opened = await waitFor(cardOrMsg, 15000);
+      log(`${nr}: Auftragskarte noch nicht da – warte weiter … (Fenster offen: ${visibleWindows().map((w) => `„${winTitle(w) || '?'}“`).join(', ') || 'keine'})`, 'debug');
+      opened = await waitFor(probe, 15000);
     }
     const openMs = Date.now() - clickedAt;
+    if (maxGap > 2000) log(`${nr}: Seite war beim Warten auf die Karte bis zu ${(maxGap / 1000).toFixed(1)} s blockiert (TAM ausgelastet oder Tab im Hintergrund).`, 'debug');
     if (opened && opened !== 'unavailable' && openMs > 3000) log(`${nr}: Fenster nach ${(openMs / 1000).toFixed(1)} s geöffnet.`, 'debug');
     if (opened === 'unavailable') {
       log(`${nr}: TAM meldet – ${lastUnavailable.text}`, 'err');
@@ -1142,7 +1153,8 @@
     }
     const card = opened;
     if (!card) {
-      log(`Auftragskarte für ${nr} öffnete sich nicht (nach ${(openMs / 1000).toFixed(1)} s aufgegeben).`, 'err');
+      log(`Auftragskarte für ${nr} öffnete sich nicht (nach ${(openMs / 1000).toFixed(1)} s aufgegeben). Offene Fenster: ` +
+        (visibleWindows().map((w) => `„${winTitle(w) || '?'}“ [${String(w.className).trim().slice(0, 50)}]`).join(', ') || 'keine'), 'err');
       dismissMessages();
       lateCard = { nr, until: Date.now() + 30000 }; // kommt sie doch noch → sofort schließen (Wächter)
       return false;
