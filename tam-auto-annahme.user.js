@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.13.4
+// @version      1.13.5
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1393,16 +1393,18 @@
     if (!/^\/\/OK/.test(txt)) throw new Error(`TAM meldet ${txt.slice(0, 60)}`); // z. B. //EX = Sitzung abgelaufen
     // Alle Zeichenketten der Antwort (AuftragsNr, Adresse, Dienstleistung … – das Format der AuftragsNr ist
     // egal), ohne Klassennamen wie "com.extjs…BasePagingLoadResult/496878394"
-    const tokens = new Set((txt.match(/"(?:[^"\\]|\\.)*"/g) || []).map((s) => s.slice(1, -1).trim().toUpperCase())
-      .filter((s) => s.length >= 3 && s.length <= 80 && !/^(COM|JAVA|JAVAX|DE|ORG)\.[\w.$]+(\/\d+)?$/i.test(s)));
-    return { tokens, ms: Date.now() - t0, bytes: txt.length };
+    const raw = new Map(); // Großschreibung (Vergleich) → Originaltext (Log)
+    const tokens = new Set((txt.match(/"(?:[^"\\]|\\.)*"/g) || []).map((s) => s.slice(1, -1).trim())
+      .filter((s) => s.length >= 3 && s.length <= 80 && !/^(COM|JAVA|JAVAX|DE|ORG)\.[\w.$]+(\/\d+)?$/i.test(s))
+      .map((s) => { const u = s.toUpperCase(); if (!raw.has(u)) raw.set(u, s); return u; }));
+    lastSilentRaw = raw;
+    return { tokens, raw, ms: Date.now() - t0, bytes: txt.length };
   }
-  // Fürs Log nur Einträge zeigen, die wie eine AuftragsNr aussehen – keine Namen, Telefonnummern, E-Mails
-  // oder Adressen aus TAMs Antwort (Datenschutz; das Log wird ggf. weitergeschickt)
-  const silentLabel = (arr) => {
-    const nrs = arr.filter((s) => /^([A-Z]{1,4}\d{6,}|[1-9]\d{5,})(-\d{1,3})?$/.test(s)); // ohne führende 0 → keine Telefonnummern
-    return `${arr.length} neue Einträge` + (nrs.length ? `, u. a. ${nrs.slice(0, 3).join(', ')}` : '');
-  };
+  // Fürs Log (Entwicklung): neue Einträge ungekürzt und roh, getrennt durch " | " – so fallen auch
+  // ungewöhnliche Zeichen/Formate auf (vgl. AuftragsNr "SA040647", "9601182381-10")
+  let lastSilentRaw = new Map();
+  const silentLabel = (arr) => `${arr.length} neue Einträge: ${arr.slice(0, 8).map((x) => lastSilentRaw.get(x) || x).join(' | ')}` +
+    (arr.length > 8 ? ' | …' : '');
   const silentStateText = (q) => `aktiv · letzte Abfrage ${new Date().toLocaleTimeString('de-DE')} (${q.ms} ms)` +
     (silentFoundCount ? ` · ${silentFoundCount} Auftr. silent gefunden` : '');
   // Button "Jetzt testen": eine Abfrage sofort, Ergebnis ins Log – unabhängig vom eingestellten Intervall

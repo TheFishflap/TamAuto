@@ -359,6 +359,10 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.13.5 – 2026-09-25
+- Log (für Entwicklung) zeigt beim Silent Reload / „Jetzt testen“ wieder die **vollständigen neuen Einträge im
+  Original** (Groß-/Kleinschreibung, Sonderzeichen), getrennt durch ` | ` – damit ungewöhnliche Formate auffallen.
+
 ### 1.13.4 – 2026-09-25
 - **Datenschutz im Log:** Silent Reload / „Jetzt testen“ schreiben keine Namen, Telefonnummern, E-Mails oder
   Adressen aus TAMs Antwort mehr ins Log – nur die Anzahl neuer Einträge und ggf. AuftragsNrn.
