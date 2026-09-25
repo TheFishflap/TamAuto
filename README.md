@@ -25,8 +25,8 @@ anhand der Ortsliste der IB Thomée GmbH.
 ### 🔄 Aktualisierung – gezielt statt dauerhaft
 | | |
 |---|---|
-| **Tabwechsel-Refresh** | Beim Zurückwechseln in „Veröffentlichte Aufträge“ wird immer einmal aktualisiert |
-| **Burst-Refresh** | Nach manuellem Refresh oder Tabwechsel für 15 s jede Sekunde aktualisieren – ideal bei Auftragswellen |
+| **Tabwechsel-Refresh** | Beim Zurückwechseln in „Veröffentlichte Aufträge“ wird genau einmal aktualisiert |
+| **Burst-Refresh** | Nach manuellem Refresh oder per Button „⚡ Burst“ für 3 s jede Sekunde aktualisieren – ideal bei Auftragswellen |
 | **Auto-Refresh** | Optional (Standard aus, 60 s), am TAM-Takt ausgerichtet – kein doppeltes Laden |
 | **TAM-Takt mitlesen** | Nächste TAM-Aktualisierung wird aus TAM selbst gelesen („laut TAM“) statt geschätzt |
 
@@ -215,12 +215,12 @@ Automatische Updates kommen in diesem Fall nicht; eine neue Version wird auf dem
 Statt die Tabelle dauerhaft im Sekundentakt neu zu laden, aktualisiert das Script **gezielt dann, wenn es darauf ankommt**:
 
 - **Tabwechsel-Refresh:** Beim Wechsel **zurück** in „Veröffentlichte Aufträge“ (z. B. aus „Angenommene Aufträge“
-  oder nach einer Annahme) wird **immer einmal** aktualisiert – so ist bei Auftragswellen sofort der aktuelle Stand da.
-- **Burst-Refresh** (Reiter „Erweiterte Einstellungen“, Standard **an**, **15 s**): Nach einem **manuellen Klick**
-  auf den Refresh-Pfeil der Website und nach dem Tabwechsel wird für die eingestellte Zeit **jede Sekunde**
-  aktualisiert. Ein Tabwechsel löst den Burst einmal aus; ein weiterer Auslöser verlängert ihn.
-  Im Bedienfeld steht „⚡ Burst-Refresh läuft – noch 12 s“. Ist Burst-Refresh aus, bleibt es beim einmaligen
-  Tabwechsel-Refresh.
+  oder nach einer Annahme) wird **genau einmal** aktualisiert – so ist bei Auftragswellen sofort der aktuelle Stand da.
+- **Burst-Refresh** (Reiter „Erweiterte Einstellungen“, Standard **an**, **3 s**): **Nur** nach einem **manuellen
+  Klick** auf den Refresh-Pfeil der Website wird für die eingestellte Zeit **jede Sekunde** aktualisiert
+  (ein Tabwechsel löst keinen Burst aus).
+- **Button „⚡ Burst“** (Reiter „Bedienung“): startet den Burst-Refresh sofort – auch wenn die Checkbox aus ist.
+  Erneutes Klicken startet wieder die volle Zeit. Im Bedienfeld steht „⚡ Burst-Refresh läuft – noch 2 s“.
 
 ## Auto-Refresh (ausgerichtet an der TAM-Aktualisierung)
 
@@ -272,7 +272,7 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 9. Öffnet TAM danach das Fenster zur **Terminvergabe**, wird es sofort (ohne Verzögerung) weggeklickt – nur in den
    ersten 30 s nach einer Annahme durch das Script, eine selbst geöffnete Terminvergabe bleibt unangetastet.
 10. Nach erfolgreicher Annahme wird **sofort** wieder in den Reiter **Veröffentlichte Aufträge** gewechselt und
-    aktualisiert (bzw. Burst-Refresh).
+    einmal aktualisiert.
 
 ## Sicherheit
 
@@ -307,6 +307,11 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.11.1 – 2026-09-25
+- Burst-Refresh nur noch nach **manuellem Refresh**; Tabwechsel = genau **ein** Refresh.
+- Neuer Button **„⚡ Burst“** im Reiter Bedienung (startet sofort, auch bei ausgeschalteter Checkbox).
+- Burst-Dauer Standard **3 s**.
 
 ### 1.11.0 – 2026-09-25
 - **Tabwechsel-Refresh:** Beim Wechsel zurück in „Veröffentlichte Aufträge“ wird immer einmal aktualisiert.

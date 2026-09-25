@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.11.0
+// @version      1.11.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -66,7 +66,7 @@
     delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung
     delayRandomMs: GM_getValue('delayRandomMsV2', 100), // Streuung 0 … x ms (Standard 100 ms)
     burstOn: GM_getValue('burstOn', true),  // Burst-Refresh nach manuellem Refresh / Tabwechsel
-    burstSec: GM_getValue('burstSec', 15),  // Dauer des Burst-Refresh in s (1 Refresh pro Sekunde)
+    burstSec: GM_getValue('burstSecV2', 3), // Dauer des Burst-Refresh in s (1 Refresh pro Sekunde), Standard 3
   });
 
   let places = GM_getValue('places', { plz: [], orte: [], loadedAt: null, source: '' });
@@ -1127,7 +1127,7 @@
     if (burstUntil > now) txt = `⚡ Burst-Refresh läuft – noch ${fmtDur(burstUntil - now)} · ${txt}`;
     el.textContent = txt;
     const bs = document.getElementById("tamauto-burst-state");
-    if (bs) bs.textContent = burstUntil > now ? `⚡ läuft – noch ${fmtDur(burstUntil - now)}` : (cfg.burstOn ? "bereit (Auslöser: manueller Refresh, Tabwechsel)" : "aus – beim Tabwechsel wird einmal aktualisiert");
+    if (bs) bs.textContent = burstUntil > now ? `⚡ läuft – noch ${fmtDur(burstUntil - now)}` : (cfg.burstOn ? "bereit (Auslöser: manueller Refresh oder Button „⚡ Burst“)" : "aus – nur über den Button „⚡ Burst“");
   }
 
   // Einmal refreshen (Refresh-Pfeil) und danach abgleichen – gemeinsam genutzt von Auto-Refresh,
@@ -1144,12 +1144,12 @@
   }
 
   // ---- Burst-Refresh: gezielt für kurze Zeit jede Sekunde aktualisieren (Auftragswellen), statt dauerhaft
-  // Last zu erzeugen. Auslöser: manueller Klick auf den Refresh-Pfeil der Website und Wechsel zurück in
-  // "Veröffentlichte Aufträge" (Erweiterte Einstellungen: an/aus + Dauer in s).
+  // Last zu erzeugen. Auslöser: NUR ein manueller Klick auf den Refresh-Pfeil der Website (falls an) oder der
+  // Button „⚡ Burst“ im Reiter Bedienung (Erweiterte Einstellungen: an/aus + Dauer in s, Standard 3 s).
   let burstUntil = 0;
   let burstRunning = false;
-  async function startBurst(reason) {
-    if (!cfg.burstOn || !license) return;
+  async function startBurst(reason, force = false) { // force = Button „Burst starten“ (auch wenn Checkbox aus)
+    if ((!cfg.burstOn && !force) || !license) return;
     burstUntil = Date.now() + cfg.burstSec * 1000;
     log(`Burst-Refresh (${reason}): ${cfg.burstSec} s lang jede Sekunde aktualisieren.`, 'ok');
     if (burstRunning) return; // läuft schon → nur verlängert
@@ -1164,7 +1164,7 @@
     } finally { burstRunning = false; burstUntil = 0; }
   }
 
-  // Wechsel zurück in "Veröffentlichte Aufträge": immer einmal aktualisieren (bzw. Burst-Refresh, falls an),
+  // Wechsel zurück in "Veröffentlichte Aufträge": immer genau EINMAL aktualisieren (kein Burst),
   // damit bei Auftragswellen sofort der aktuelle Stand da ist. Einmal pro Wechsel genügt.
   let wasOnPublished = false;
   let enterPending = false;
@@ -1179,8 +1179,7 @@
   function onEnterPublished() {
     enterPending = false;
     if (!license) return;
-    if (cfg.burstOn) startBurst('Tabwechsel');
-    else setTimeout(() => refreshAndCheck('Tabwechsel-Refresh'), 300);
+    setTimeout(() => refreshAndCheck('Tabwechsel-Refresh'), 300); // Tabwechsel: immer genau EIN Refresh (kein Burst)
   }
 
   async function tick() {
@@ -1261,7 +1260,7 @@
             <span class="tamauto-chk">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-burst-on"> <b>Burst-Refresh</b></label>
               für <input id="tamauto-burst-sec" type="number" min="3" max="120" style="width:48px;margin:0"> s
-              <span class="tamauto-help" title="Gezielt statt dauerhaft Last erzeugen: Nach einem MANUELLEN Klick auf den Refresh-Pfeil der Website und nach dem Wechsel zurück in „Veröffentlichte Aufträge“ wird für die eingestellte Zeit (Standard 15 s) jede Sekunde aktualisiert – ideal bei Auftragswellen. Ein Tabwechsel löst den Burst einmal aus. Ist Burst-Refresh aus, wird beim Tabwechsel trotzdem immer einmal aktualisiert.">?</span>
+              <span class="tamauto-help" title="Gezielt statt dauerhaft Last erzeugen: Nur nach einem MANUELLEN Klick auf den Refresh-Pfeil der Website wird für die eingestellte Zeit (Standard 3 s) jede Sekunde aktualisiert – ideal bei Auftragswellen. Zusätzlich jederzeit über den Button „⚡ Burst“ im Reiter Bedienung startbar (auch wenn diese Checkbox aus ist). Beim Tabwechsel zurück in „Veröffentlichte Aufträge“ wird dagegen immer nur EINMAL aktualisiert.">?</span>
             </span>
             <div id="tamauto-burst-state" style="color:#555;margin-top:2px"></div>
           </div>
@@ -1375,6 +1374,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
             <span class="tamauto-help" title="Auto-Refresh lädt die Tabelle schneller neu, um neue Aufträge früher zu finden. Ein niedrigerer Wert bedeutet eine höhere Auslastung und sollte mit Bedacht gewählt werden, um Auffälligkeiten zu vermeiden. Standard: 60 s (aus), Minimum: 10 s. Am TAM-Takt ausgerichtet: Das Script liest mit, wann TAM selbst neu lädt (Einstellung „Automatisch alle … Minuten“), und lässt den eigenen Refresh aus, wenn TAM gleich ohnehin aktualisiert. Über 60 s schaltet sich der Auto-Refresh ab – der Abgleich läuft dann nur mit der TAM-eigenen Aktualisierung.">?</span>
           </span>
           <button id="tamauto-once" title="Nimmt den obersten Auftrag der Tabelle EINMAL verbindlich an – ohne Ortsliste">Auftrag 1. Zeile annehmen</button>
+          <button id="tamauto-burst-go" title="Burst-Refresh jetzt starten: für die eingestellte Zeit (Erweiterte Einstellungen, Standard 3 s) jede Sekunde aktualisieren – z. B. wenn eine Auftragswelle erwartet wird. Erneut klicken = wieder volle Zeit.">⚡ Burst</button>
           <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">
             <b>Tages-Blacklist</b>
             <span class="tamauto-help" title="PLZ, die heute NICHT angenommen werden, z. B. nach einem Storno (sonst würde der Auftrag erneut angenommen). 2–5 Ziffern: „43“ sperrt alle 43xxx, „47877“ nur diese PLZ. Die Liste leert sich um Mitternacht automatisch. Freigeben: auf den roten Eintrag klicken.">?</span>
@@ -1563,6 +1563,12 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       $('tamauto-body').prepend(w);
     }
 
+    // Button "⚡ Burst" (Reiter Bedienung): Burst sofort starten – funktioniert auch bei ausgeschalteter Checkbox
+    $('tamauto-burst-go').onclick = () => {
+      if (!onPublishedTab()) { log('Burst-Refresh: bitte zuerst den Reiter „Veröffentlichte Aufträge“ öffnen.', 'err'); return; }
+      startBurst('Button', true);
+    };
+
     // Burst-Refresh an/aus + Dauer
     $('tamauto-burst-on').checked = cfg.burstOn;
     $('tamauto-burst-sec').value = cfg.burstSec;
@@ -1572,8 +1578,8 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       log(cfg.burstOn ? `Burst-Refresh an (${cfg.burstSec} s).` : 'Burst-Refresh aus.');
     };
     $('tamauto-burst-sec').onchange = (e) => {
-      cfg.burstSec = Math.round(Math.min(120, Math.max(3, +e.target.value || 15)));
-      e.target.value = cfg.burstSec; GM_setValue('burstSec', cfg.burstSec);
+      cfg.burstSec = Math.round(Math.min(120, Math.max(3, +e.target.value || 3)));
+      e.target.value = cfg.burstSec; GM_setValue('burstSecV2', cfg.burstSec);
     };
 
     // Console Log: Protokoll des Scripts ein-/ausblenden (keine Ausgaben in die Browser-Konsole)
