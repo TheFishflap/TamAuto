@@ -19,7 +19,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Komplette Annahme** | Auftragskarte öffnen → 0-km-Aufträge dazu → Warenkorb „alle auswählen“ → Annehmen → Bedingungen bestätigen |
 | **Bulk-Erfassung** | Alle im Warenkorb mit angenommenen Aufträge werden verbucht und nicht erneut versucht |
 | **Schnell zurück** | Terminvergabe-Fenster wird sofort weggeklickt, danach direkt zurück in „Veröffentlichte Aufträge“ |
-| **„Bereits vergeben“** | TAM-Meldung wird erkannt, mit OK geschlossen und protokolliert |
+| **Wächter-Modus** | Schließt störende TAM-Meldungen **in Millisekunden** – „bereits vergeben“, „nicht verfügbar“, „falscher Status“, Warenkorb-Hinweise, technische Fehlerfenster – und wertet sie trotzdem richtig aus |
 | **Verzögerung** | Standard an: 0,17 s + Randomizer (bis 100 ms) vor jedem Klickschritt, einstellbar 0,01–1 s |
 
 ### 🔄 Aktualisierung – gezielt statt dauerhaft
@@ -236,6 +236,24 @@ Nur das **automatische Update** und die Installation über den Link fallen aus �
 
 Automatische Updates kommen in diesem Fall nicht; eine neue Version wird auf demselben Weg eingespielt.
 
+## Wächter-Modus (TAM-Meldungen sofort schließen)
+
+TAM blendet während und nach einer Annahme Meldungen ein, die die Oberfläche blockieren oder das Bedienfeld
+verdecken. Der Wächter läuft **immer** (auch bei gestopptem Script), prüft alle 250 ms und zusätzlich in dem Moment,
+in dem TAM ein Fenster einblendet – und schließt diese Meldungen **ohne Verzögerung** (typisch 0–40 ms):
+
+| Meldung | Wirkung im Script |
+|---|---|
+| „Auftrag bereits vergeben!“ (statt Auftragskarte) | Auftrag zählt als **bereits vergeben**, kein 8-s-Warten auf die Karte |
+| „Auftrag nicht (mehr) verfügbar“ nach erfolgreicher Annahme | Annahme gilt als **erfolgt** (Vermerk im Log) |
+| „Fehler bei Auftragsannahme – … kann nicht bestätigt werden, da er im falschen Status ist“ | Betrifft es den Hauptauftrag → **nicht angenommen**; betrifft es einen mit angehakten Warenkorb-Auftrag → nur dieser wird nicht verbucht |
+| „Es wurden … weitere Aufträge am gleichen Standort automatisch zum Warenkorb hinzugefügt“ | Reine Info → nur ausgeblendet, beeinflusst die Annahme nicht |
+| Technische Fehlerfenster („TypeError … undefined“, v. a. Android) | Mit „Abbrechen“ geschlossen, Log mit letzter Script-Aktion |
+| Terminvergabe-Fenster (bis 30 s nach einer Annahme) | Sofort weggeklickt, zurück in „Veröffentlichte Aufträge“ |
+
+Erfasst werden TAM-Fenster, Info-Einblendungen, Tooltips und Dialoge. Reagiert eine Meldung nicht auf den Klick,
+wird sie direkt ausgeblendet. Im Log (Console Log) steht jede geschlossene Meldung mit Text und Aufbau.
+
 ## Tabwechsel-Refresh und Burst-Refresh (gezielt statt dauerhaft)
 
 Statt die Tabelle dauerhaft im Sekundentakt neu zu laden, aktualisiert das Script **gezielt dann, wenn es darauf ankommt**:
@@ -336,6 +354,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.12.6 – 2026-09-25
+- Wächter-Modus erkennt zusätzlich **„Fehler bei Auftragsannahme – … im falschen Status“** (sofort geschlossen; Haupt-
+  oder Warenkorb-Auftrag wird korrekt als nicht angenommen gewertet) und die Info **„… zum Warenkorb hinzugefügt“**
+  (nur ausgeblendet, bricht die Annahme nicht ab).
+- README: Abschnitt **Wächter-Modus** und Eintrag in „Funktionen auf einen Blick“.
 
 ### 1.12.5 – 2026-09-25
 - Nutzungsvorbehalt für KI-Systeme/Agenten (Text- und Data-Mining, § 44b UrhG) im Code und in der LICENSE.

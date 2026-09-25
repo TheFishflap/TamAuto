@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.12.5
+// @version      1.12.6
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -853,7 +853,7 @@
   // "Auftrag nicht (mehr) verfügbar" / "bereits vergeben": SOFORT wegklicken, ohne Verzögerung – auch wenn sie
   // nach einer (erfolgreichen) Annahme oder unabhängig vom Script auftauchen. Die Meldung wird gemerkt, damit die
   // Annahme-Logik sie trotzdem auswerten kann (Trefferquote, Log).
-  const UNAVAILABLE = /nicht (mehr )?verfügbar|bereits vergeben/i;
+  const UNAVAILABLE = /nicht (mehr )?verfügbar|bereits vergeben|falschen Status|kann nicht bestätigt werden|Fehler bei Auftragsannahme|zum Warenkorb hinzugefügt/i;
   let lastUnavailable = { at: 0, text: '' };
   // Neben TAM-Fenstern (.x-window) auch Info-Einblendungen, Tooltips und Dialoge prüfen – TAM zeigt Hinweise
   // teils als kurze Einblendung, die sonst erst nach Sekunden von selbst verschwindet.
@@ -870,8 +870,13 @@
       msgTries.set(w, tries);
       if (tries === 1) {
         const body = text(w.querySelector('.x-window-body, .ext-mb-text, .x-info-body')) || all.replace(t, '');
-        lastUnavailable = { at: Date.now(), text: `${t ? `„${t}“ – ` : ''}${body.replace(/(OK|Abbrechen|Schließen)\s*$/i, '').trim()}`.slice(0, 160) };
-        log(`TAM-Meldung sofort geschlossen: ${lastUnavailable.text} · Aufbau: ${String(w.className).trim().slice(0, 60) || w.tagName}`, 'debug');
+        const msg = `${t ? `„${t}“ – ` : ''}${body.replace(/(OK|Abbrechen|Schließen)\s*$/i, '').trim()}`.slice(0, 160);
+        // Reine Info ("… zum Warenkorb hinzugefügt") erscheint beim Öffnen der Auftragskarte → nur ausblenden,
+        // NICHT als Fehler merken (sonst würde die laufende Annahme abgebrochen)
+        if (!/zum Warenkorb hinzugefügt/i.test(msg)) {
+          lastUnavailable = { at: Date.now(), nr: ((all.match(/(MW)?\d{6,}/i) || [])[0] || '').toUpperCase(), text: msg };
+        }
+        log(`TAM-Meldung sofort geschlossen: ${msg} · Aufbau: ${String(w.className).trim().slice(0, 60) || w.tagName}`, 'debug');
       }
       // Erst regulär schließen (Button bzw. Schließen-Symbol); reagiert die Meldung nicht oder hat keinen
       // Button (Info-Einblendung), wird sie sofort bzw. beim nächsten Durchlauf direkt ausgeblendet
@@ -1094,13 +1099,25 @@
     }
     // Vom Sofort-Wächter bereits geschlossene Meldung nach "Bestätigen":
     // "bereits vergeben" = nicht angenommen; "nicht verfügbar" kommt teils trotz erfolgreicher Annahme → nur vermerken
-    if (lastUnavailable.at >= lastAcceptAt) {
+    if (lastUnavailable.at >= lastAcceptAt && !/zum Warenkorb hinzugefügt/i.test(lastUnavailable.text)) {
       if (/bereits vergeben/i.test(lastUnavailable.text)) {
         log(`TAM meldet: ${lastUnavailable.text}`, 'err');
         order.failReason = 'vergeben'; closeWindow(card);
         return false;
       }
-      log(`${nr}: TAM meldete nach der Annahme „nicht verfügbar“ – Meldung geschlossen, Annahme gilt als erfolgt.`, 'debug');
+      // "Fehler bei Auftragsannahme – Auftrag … kann nicht bestätigt werden, da er im falschen Status ist":
+      // betrifft er den Hauptauftrag → nicht angenommen (war nicht mehr frei); betrifft er einen mit
+      // angehakten Warenkorb-Auftrag → nur diesen nicht verbuchen
+      if (/falschen Status|kann nicht bestätigt werden|Fehler bei Auftragsannahme/i.test(lastUnavailable.text)) {
+        const bad = lastUnavailable.nr;
+        log(`TAM meldet: ${lastUnavailable.text}`, 'err');
+        if (!bad || bad === nr.toUpperCase()) { order.failReason = 'vergeben'; closeWindow(card); return false; }
+        order.bulk = (order.bulk || []).filter((x) => x !== bad);
+        order.extra = (order.extra || []).filter((x) => x !== bad);
+        log(`${bad} war nicht mehr frei – wird nicht als angenommen verbucht; ${nr} gilt als angenommen.`, 'err');
+      } else {
+        log(`${nr}: TAM meldete nach der Annahme „nicht verfügbar“ – Meldung geschlossen, Annahme gilt als erfolgt.`, 'debug');
+      }
     }
     // Hinweis-/Erfolgsfenster wegklicken, Auftragskarte schließen
     visibleWindows().filter((w) => w !== card && !before.has(w)).forEach((w) => {
