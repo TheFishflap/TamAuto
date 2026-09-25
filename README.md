@@ -22,6 +22,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Wächter-Modus** | Schließt störende TAM-Meldungen **in Millisekunden** – „bereits vergeben“, „nicht verfügbar“, „falscher Status“, Warenkorb-Hinweise, technische Fehlerfenster – und wertet sie trotzdem richtig aus |
 | **Neue-Zeilen-Wächter** | Erkennt neue Aufträge in „Veröffentlichte Aufträge“ innerhalb von 250 ms – auch wenn TAM sie ohne Refresh einblendet |
 | **Silent Reload** | Optional (Erweiterte Einstellungen, Standard 0 = aus): fragt TAM alle x s im Hintergrund nach neuen Aufträgen – ohne Tabelle neu zu zeichnen; nur bei einem neuen Auftrag wird aktualisiert |
+| **Push-Signal** | Die App **TAM-Signal** auf 1–2 Master-Handys leitet die Push-Benachrichtigungen der TAM-App als Startsignal über ntfy.sh weiter – das Script fragt TAM **innerhalb von ca. 1 s** ab (Standard an, gemeinsamer Kanal voreingestellt) |
 | **Priorität** | Mehrere passende Aufträge gleichzeitig → zuerst **mehrere Aufträge am selben Ort** (landen gemeinsam im Warenkorb), dann **höchste Summe am Ort**, dann **höchster Preis** |
 | **Verzögerung** | Standard an: 0,17 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0,001–0,5 s |
 
@@ -358,6 +359,14 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.15.0 – 2026-09-25
+- **Push-Signal-Empfänger:** Das Script lauscht dauerhaft auf dem ntfy-Kanal der App **TAM-Signal** (Master-Handys lesen
+  die Push-Benachrichtigungen der TAM-App). Bei einem Signal: eine Silent-Abfrage mit Zufallsversatz 0–1,5 s, Tabelle nur
+  bei neuem Auftrag laden; Test-Signale nur protokollieren; doppelte Signale (2 Handys) innerhalb 10 s zusammengefasst.
+  Log mit Laufzeiten (TAM-Benachrichtigung → Script). **Standard an, gemeinsamer Kanal voreingestellt (Plug & Play).**
+  Einstellung in „Erweiterte Einstellungen“ (an/aus, Kanal, **?**); Statuszeile zeigt „Push-Signal ✓“.
+- „Angenommen: …“ vermerkt „per Push-Signal gefunden“.
 
 ### 1.14.2 – 2026-09-25
 - **Auftragskarte, die schon offen ist oder von TAM wiederverwendet wird, wird erkannt** – bisher wartete das Script

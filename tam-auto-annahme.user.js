@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.14.2
+// @version      1.15.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -77,7 +77,9 @@
     hideTips: GM_getValue('hideTips', false), // alle ?-Erklärungen ausblenden
     wakeLock: GM_getValue('wakeLock', /android/i.test(navigator.userAgent)), // Bildschirm anlassen – auf Android standardmäßig an
     prioMode: GM_getValue('prioMode', 'ort'), // Reihenfolge bei mehreren Treffern (siehe PRIO_MODES)
-    silentSec: GM_getValue('silentSec', 0), // Silent Reload: Hintergrund-Abfrage alle x s (0 = aus, Standard)
+    silentSec: GM_getValue('silentSec', 0),
+    pushOn: GM_getValue('pushOn', true),            // Push-Signal (App „TAM-Signal“ über ntfy) – Standard an (Plug & Play)
+    pushTopic: GM_getValue('pushTopic', 'tam-zrd6g634b4wej7aqhsycc9qm'), // gemeinsamer Kanal der IB Thomée // Silent Reload: Hintergrund-Abfrage alle x s (0 = aus, Standard)
     burstSec: GM_getValue('burstSecV2', 3), // Dauer des Burst-Refresh in s (1 Refresh pro Sekunde), Standard 3
   });
 
@@ -1310,6 +1312,7 @@
     lastGridNrs = gridNrs(visibleGrid()); // Stand für das Sicherheitsnetz (auch bei vorzeitigem Abbruch → kein Dauer-Neustart)
     // nach einem Silent-Reload-Refresh: neu aufgetauchte Aufträge als "per Silent Reload gefunden" merken
     if (reason === 'Silent Reload') lastGridNrs.forEach((x) => { if (!prevGridNrs.has(x) && !silentFound.has(x)) { silentFound.add(x); silentFoundCount++; } });
+    if (/^Push-Signal/.test(reason)) lastGridNrs.forEach((x) => { if (!prevGridNrs.has(x)) pushFound.add(x); });
     lastCycleAt = Date.now();
     try {
       if (!places.plz.length && !places.orte.length) { log('Keine Ortsliste geladen – übersprungen.', 'err'); return; }
@@ -1391,7 +1394,9 @@
         trackResult(o, ok ? 'angenommen' : o.failReason === 'vergeben' ? 'vergeben' : 'fehler');
         if (ok) {
           const plus = bulkOf(o).length ? ` + ${bulkLabel(o)}` : '';
-          log(`Angenommen: ${desc}${plus}${silentFound.has((o.nr || '').toUpperCase()) ? ' · per Silent Reload gefunden' : ''}`, 'ok'); notify('TAM: Auftrag angenommen', desc + plus);
+          const via = pushFound.has((o.nr || '').toUpperCase()) ? ' · per Push-Signal gefunden'
+            : silentFound.has((o.nr || '').toUpperCase()) ? ' · per Silent Reload gefunden' : '';
+          log(`Angenommen: ${desc}${plus}${via}`, 'ok'); notify('TAM: Auftrag angenommen', desc + plus);
           bookAccepted(o); n++;
         } else {
           log(`Annahme fehlgeschlagen: ${desc}`, 'err');
@@ -1475,6 +1480,7 @@
       txt = t.at ? `Nächste TAM-Aktualisierung in ${fmtDur(t.at - now)}${per} – ${t.src}` : `TAM-Aktualisierung${per}: wartet auf ersten Refresh`;
     }
     if (cfg.silentSec) txt += ` · Silent Reload alle ${cfg.silentSec} s`;
+    if (cfg.pushOn) txt += /verbunden/.test(pushState) ? ' · Push-Signal ✓' : ' · Push-Signal getrennt';
     if (burstUntil > now) txt = `⚡ Burst-Refresh läuft – noch ${fmtDur(burstUntil - now)} · ${txt}`;
     el.textContent = txt;
     const bs = document.getElementById("tamauto-burst-state");
@@ -1500,6 +1506,7 @@
   let lastSilentAt = 0, silentSeen = new Set(), silentFails = 0, silentState = '';
   let silentFoundCount = 0;             // in dieser Sitzung per Silent Reload gefundene Aufträge
   const silentFound = new Set();         // deren AuftragsNrn → Vermerk "per Silent Reload gefunden" im Log
+  const pushFound = new Set();           // AuftragsNrn, die nach einem Push-Signal neu in der Tabelle standen
   const silentIgnore = new Set();        // Texte, die schon einmal einen Refresh ohne neuen Auftrag ausgelöst haben
   // Eine Hintergrund-Abfrage: liefert die AuftragsNrn, die TAM gerade als veröffentlicht meldet
   async function silentQuery() {
@@ -1609,6 +1616,77 @@
       w.textContent = !s ? '' : `${s < 30 ? '⚠ ' : ''}${perH.toLocaleString('de-DE')} Server-Anfragen pro Stunde` +
         (s < 5 ? ' – hohe Serverlast, nur kurzzeitig nutzen (Empfehlung 5–10 s)' : s < 30 ? ' – Serverlast beachten' : '') +
         ' · versetzt zum Refresh';
+    }
+  }
+
+  // ---- Push-Signal: Die App „TAM-Signal“ auf 1–2 Master-Handys liest die Push-Benachrichtigungen der TAM-App
+  // und schickt ein reines Startsignal an einen ntfy-Kanal ({v,src,ts,nts,test} – keine Auftragsdaten).
+  // Das Script lauscht dauerhaft (EventSource, verbindet sich selbst neu) und fragt TAM daraufhin einmal ab:
+  // Silent-Abfrage mit Zufallsversatz 0–1,5 s (viele Nutzer → keine gleichzeitige Last-Spitze), Tabelle nur
+  // bei neuem Auftrag laden. Doppelte Signale (2 Master-Handys) innerhalb von 10 s werden zusammengefasst.
+  const PUSH_SERVER = 'https://ntfy.sh';
+  let pushES = null, pushState = 'aus', lastPushAt = 0, pushCount = 0;
+  function startPush() {
+    if (pushES) { try { pushES.close(); } catch (e) { /* ignore */ } pushES = null; }
+    if (!cfg.pushOn || !cfg.pushTopic) { pushState = 'aus'; renderPush(); return; }
+    const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    try {
+      pushES = new W.EventSource(`${PUSH_SERVER}/${encodeURIComponent(cfg.pushTopic)}/sse`);
+    } catch (e) { pushState = `Fehler: ${e.message}`; renderPush(); return; }
+    pushState = 'verbindet …'; renderPush();
+    pushES.onopen = () => { pushState = 'verbunden – wartet auf Signal'; renderPush(); };
+    pushES.onerror = () => { pushState = 'Verbindung unterbrochen – verbindet neu …'; renderPush(); };
+    pushES.onmessage = (ev) => {
+      let d, sig = {};
+      try { d = JSON.parse(ev.data); } catch (e) { return; }
+      if (!d || d.event !== 'message') return; // keepalive / open
+      try { sig = JSON.parse(d.message || '{}'); } catch (e) { sig = { src: '?', raw: String(d.message || '').slice(0, 60) }; }
+      onPushSignal(sig);
+    };
+  }
+  function onPushSignal(sig) {
+    const now = Date.now();
+    const lat = sig.ts ? ` · Handy→Script ${now - sig.ts} ms` : '';
+    const lat2 = sig.nts ? ` · TAM-Benachrichtigung→Script ${now - sig.nts} ms` : '';
+    const from = `${sig.src || '?'}${sig.test ? ' (Test)' : ''}`;
+    if (sig.test) { log(`Push-Signal empfangen: ${from}${lat} – Test, keine Abfrage.`, 'ok'); pushState = `verbunden · Test von ${from} ${new Date().toLocaleTimeString('de-DE')}`; renderPush(); return; }
+    if (now - lastPushAt < 10000) { log(`Push-Signal von ${from}${lat} – doppelt (innerhalb 10 s), zusammengefasst.`, 'debug'); return; }
+    lastPushAt = now; pushCount++;
+    pushState = `verbunden · letztes Signal ${new Date().toLocaleTimeString('de-DE')} von ${from} (${pushCount} heute)`;
+    renderPush();
+    log(`Push-Signal von ${from}${lat}${lat2} → TAM abfragen`, 'ok');
+    if (!cfg.enabled || !license) { log('Push-Signal: Script gestoppt – keine Abfrage.', 'debug'); return; }
+    if (!onPublishedTab()) { log('Push-Signal: nicht im Reiter „Veröffentlichte Aufträge“ – keine Abfrage.', 'err'); return; }
+    const jitter = Math.round(Math.random() * 1500);
+    setTimeout(() => pushQuery(from), jitter);
+  }
+  async function pushQuery(from) {
+    if (busy) { log('Push-Signal: Annahme läuft gerade – danach wird ohnehin neu geprüft.', 'debug'); recheck = true; return; }
+    if (!tamLoadReq || silentFetching) { await refreshAndCheck(`Push-Signal (${from})`); return; } // ohne übernommene Anfrage: einmal Refresh
+    silentFetching = true;
+    try {
+      const q = await silentQuery();
+      const cells = gridTexts(visibleGrid());
+      const fresh = [...q.tokens].filter((x) => !cells.has(x) && !silentIgnore.has(x));
+      if (!fresh.length) { log(`Push-Signal: TAM meldet nichts Neues (Abfrage ${q.ms} ms) – Tabelle ist aktuell.`, 'debug'); return; }
+      log(`Push-Signal: neue Daten in TAM (${silentLabel(fresh)})${silentPlzInfo(q.tokens)} → Tabelle aktualisieren`, 'ok');
+      silentFetching = false;
+      const before = silentFoundCount;
+      if (await refreshAndCheck(`Push-Signal (${from})`)) {
+        silentSeen = q.tokens;
+        if (silentFoundCount === before) fresh.forEach((x) => silentIgnore.add(x));
+      }
+    } catch (e) {
+      log(`Push-Signal: Abfrage fehlgeschlagen (${e.message}) – einmal normal aktualisieren.`, 'err');
+      silentFetching = false;
+      await refreshAndCheck(`Push-Signal (${from})`);
+    } finally { silentFetching = false; }
+  }
+  function renderPush() {
+    const el = document.getElementById('tamauto-push-state');
+    if (el) {
+      el.textContent = cfg.pushOn ? pushState : 'aus';
+      el.style.color = /verbunden ·|wartet auf Signal/.test(pushState) && cfg.pushOn ? '#2e7d32' : /Fehler|unterbrochen/.test(pushState) ? '#b36b00' : '#555';
     }
   }
 
@@ -1766,6 +1844,19 @@ Standard: 0 (aus).">?</span>
             </span>
             <div id="tamauto-silent-state" style="color:#555;font-size:11px;margin-top:2px"></div>
             <div id="tamauto-silent-warn" style="display:none;color:#b00020;font-size:11px;margin-top:2px"></div>
+          </div>
+          <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
+            <span class="tamauto-chk">
+              <label class="tamauto-chk"><input type="checkbox" id="tamauto-push"> <b>Push-Signal</b></label>
+              Kanal <input id="tamauto-push-topic" style="width:190px;margin:0;font-family:monospace;font-size:11px">
+              <span class="tamauto-help" title="PUSH-SIGNAL – was es macht:
+Die App „TAM-Signal“ auf 1–2 Master-Handys erkennt die Push-Benachrichtigungen der TAM-App („Mehrere Aufträge wurden hinzugefügt …“) und schickt sofort ein reines Startsignal an diesen Kanal (ntfy.sh). Das Script lauscht dauerhaft und fragt TAM daraufhin einmal ab – mit Zufallsversatz 0–1,5 s (damit nicht alle Nutzer in derselben Sekunde anfragen). Nur wenn wirklich ein neuer Auftrag da ist, wird die Tabelle geladen und abgeglichen. Doppelte Signale (2 Master-Handys) innerhalb von 10 s zählen einmal.
+
+Über den Kanal laufen keine Auftragsdaten. Wer den Kanalnamen kennt, kann nur zusätzliche Abfragen auslösen – den Namen nicht öffentlich weitergeben.
+
+Standard: an, Kanal der IB Thomée (Plug & Play). Test: in der App „Test-Signal senden“ → im Log erscheint „Push-Signal empfangen … Test“.">?</span>
+            </span>
+            <div id="tamauto-push-state" style="color:#555;font-size:11px;margin-top:2px"></div>
           </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
@@ -2141,6 +2232,21 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       if (cfg.silentSec && cfg.silentSec < 5) log(`Achtung: ${Math.round(3600 / cfg.silentSec)} Anfragen/Stunde an TAM – hohe Serverlast, nur kurzzeitig nutzen.`, 'err');
     };
     $('tamauto-silent-test').onclick = () => silentTest();
+
+    // Push-Signal (App „TAM-Signal“ über ntfy)
+    $('tamauto-push').checked = cfg.pushOn;
+    $('tamauto-push-topic').value = cfg.pushTopic;
+    $('tamauto-push').onchange = (e) => {
+      cfg.pushOn = e.target.checked; GM_setValue('pushOn', cfg.pushOn);
+      log(cfg.pushOn ? `Push-Signal an (Kanal ${cfg.pushTopic}).` : 'Push-Signal aus.'); startPush();
+    };
+    $('tamauto-push-topic').onchange = (e) => {
+      const t = e.target.value.trim();
+      if (t && !/^[A-Za-z0-9_-]{1,64}$/.test(t)) { log('Push-Kanal: nur Buchstaben, Ziffern, - und _ (max. 64 Zeichen).', 'err'); e.target.value = cfg.pushTopic; return; }
+      cfg.pushTopic = t || 'tam-zrd6g634b4wej7aqhsycc9qm'; e.target.value = cfg.pushTopic; GM_setValue('pushTopic', cfg.pushTopic);
+      log(`Push-Kanal: ${cfg.pushTopic}.`); startPush();
+    };
+    renderPush();
 
     // Priorität bei mehreren Treffern
     $('tamauto-prio').value = PRIO_MODES[cfg.prioMode] ? cfg.prioMode : 'ort';
@@ -2551,6 +2657,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     watchGrid();
     wasOnPublished = onPublishedTab(); // Ausgangszustand für die Tabwechsel-Erkennung
     setInterval(silentPoll, 250);  // Silent Reload (falls eingestellt)
+    startPush();                   // Push-Signal (App „TAM-Signal“) empfangen
     setInterval(watchNewRows, 250); // neue Aufträge auch ohne erkannte Tabellenänderung sofort prüfen
     setInterval(dismissAllMessagesNow, 100); // Sofort-Wächter als Rückfallebene (falls ein Einblenden nicht als Änderung auffällt)
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;
