@@ -389,6 +389,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.16.4 – 2026-09-25
+- „Erweiterte Einstellungen“: **Console Log** (mit „Log kopieren“) steht jetzt immer **ganz unten** – direkt über dem
+  Protokoll, das darunter aufklappt.
+
 ### 1.16.3 – 2026-09-25
 - **Priorität erklärt:** unter den drei Stufen aufklappbar „Unterschied Anzahl am Ort / Summe am Ort – Beispiel“ mit
   Tabellen (Bedeutung, Beispiel mit drei Adressen, resultierende Reihenfolge). Gleiche Erklärung im README unter

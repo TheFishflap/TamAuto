@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.16.3
+// @version      1.16.4
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1980,12 +1980,6 @@ Standard: 1 Anzahl am Ort · 2 Summe am Ort · 3 Einzelpreis.">?</span>
             </div>
           </div>
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
-            <label class="tamauto-chk" title="Zeigt das Protokoll des Scripts unten im Bedienfeld">
-              <input type="checkbox" id="tamauto-consolelog"> <b>Console Log</b></label>
-            <button id="tamauto-copylog" title="Die letzten 80 Zeilen (mit Datum, chronologisch) plus Kopf mit Version und Einstellungen in die Zwischenablage kopieren – z. B. zum Weiterschicken. Für mehr Zeilen das Log gezielt markieren und kopieren." style="margin-left:6px">📋 Log kopieren</button>
-            <div style="color:#555;margin-top:2px">Protokoll des Scripts unten im Bedienfeld anzeigen</div>
-          </div>
-          <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
             <span class="tamauto-chk">
               <label class="tamauto-chk" title="Gong bei angenommenem oder fehlgeschlagenem Auftrag">
                 <input type="checkbox" id="tamauto-sound"> <b>Benachrichtigungston</b></label>
@@ -2014,6 +2008,13 @@ Standard: 1 Anzahl am Ort · 2 Summe am Ort · 3 Einzelpreis.">?</span>
               <b>4.</b> Browser neu starten, TAM neu laden, <b>▶ Test</b> erneut klicken.<br>
               <span style="color:#555">Der Benachrichtigungston funktioniert auch ohne Popups.</span>
             </div>
+          </div>
+          <!-- Console Log immer ganz unten – direkt über dem Protokoll, das darunter aufklappt -->
+          <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
+            <label class="tamauto-chk" title="Zeigt das Protokoll des Scripts direkt darunter im Bedienfeld">
+              <input type="checkbox" id="tamauto-consolelog"> <b>Console Log</b></label>
+            <button id="tamauto-copylog" title="Die letzten 80 Zeilen (mit Datum, chronologisch) plus Kopf mit Version und Einstellungen in die Zwischenablage kopieren – z. B. zum Weiterschicken. Für mehr Zeilen das Log gezielt markieren und kopieren." style="margin-left:6px">📋 Log kopieren</button>
+            <div style="color:#555;margin-top:2px">Protokoll des Scripts direkt hier darunter anzeigen</div>
           </div>
         </div>
         <div id="tamauto-page-info" style="display:none;margin:6px 0;line-height:1.5">
