@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.13.3
+// @version      1.13.4
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1397,6 +1397,12 @@
       .filter((s) => s.length >= 3 && s.length <= 80 && !/^(COM|JAVA|JAVAX|DE|ORG)\.[\w.$]+(\/\d+)?$/i.test(s)));
     return { tokens, ms: Date.now() - t0, bytes: txt.length };
   }
+  // Fürs Log nur Einträge zeigen, die wie eine AuftragsNr aussehen – keine Namen, Telefonnummern, E-Mails
+  // oder Adressen aus TAMs Antwort (Datenschutz; das Log wird ggf. weitergeschickt)
+  const silentLabel = (arr) => {
+    const nrs = arr.filter((s) => /^([A-Z]{1,4}\d{6,}|[1-9]\d{5,})(-\d{1,3})?$/.test(s)); // ohne führende 0 → keine Telefonnummern
+    return `${arr.length} neue Einträge` + (nrs.length ? `, u. a. ${nrs.slice(0, 3).join(', ')}` : '');
+  };
   const silentStateText = (q) => `aktiv · letzte Abfrage ${new Date().toLocaleTimeString('de-DE')} (${q.ms} ms)` +
     (silentFoundCount ? ` · ${silentFoundCount} Auftr. silent gefunden` : '');
   // Button "Jetzt testen": eine Abfrage sofort, Ergebnis ins Log – unabhängig vom eingestellten Intervall
@@ -1408,11 +1414,11 @@
       const q = await silentQuery();
       const grid = visibleGrid();
       const inGrid = gridNrs(grid), cells = gridTexts(grid);
-      const fresh = [...q.tokens].filter((x) => !cells.has(x));
-      const short = (a) => (a.length ? `${a.slice(0, 5).join(', ')}${a.length > 5 ? ' …' : ''}` : 'keine');
+      // ohne Einträge, die schon als "kein neuer Auftrag" bekannt sind (z. B. Ansprechpartner, nie in der Tabelle)
+      const fresh = [...q.tokens].filter((x) => !cells.has(x) && !silentIgnore.has(x));
       log(`Silent-Test OK: Antwort in ${q.ms} ms (${q.bytes} Zeichen) · ${q.tokens.size ? `TAM meldet Daten (${q.tokens.size} Einträge)` : 'TAM meldet keine Aufträge'}` +
         ` · in der Tabelle: ${inGrid.size} Auftr.` +
-        ` · nur bei TAM (noch nicht in der Tabelle): ${short(fresh)}`, 'ok');
+        ` · nur bei TAM (noch nicht in der Tabelle): ${fresh.length ? silentLabel(fresh) : 'nichts – Tabelle ist aktuell'}`, 'ok');
       silentState = silentStateText(q);
     } catch (e) {
       log(`Silent-Test fehlgeschlagen: ${e.message}`, 'err'); silentState = `Fehler: ${e.message}`;
@@ -1435,7 +1441,7 @@
       const fresh = [...tokens].filter((x) => !cells.has(x) && !silentSeen.has(x) && !silentIgnore.has(x));
       silentState = silentStateText(q);
       if (!fresh.length) { silentSeen = tokens; return; }
-      log(`Silent Reload: neue Daten in TAM (${fresh.slice(0, 3).join(', ')}${fresh.length > 3 ? ' …' : ''}) → Tabelle aktualisieren`, 'ok');
+      log(`Silent Reload: neue Daten in TAM (${silentLabel(fresh)}) → Tabelle aktualisieren`, 'ok');
       silentFetching = false;
       const before = silentFoundCount;
       if (await refreshAndCheck('Silent Reload')) {

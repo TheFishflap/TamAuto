@@ -359,6 +359,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.13.4 – 2026-09-25
+- **Datenschutz im Log:** Silent Reload / „Jetzt testen“ schreiben keine Namen, Telefonnummern, E-Mails oder
+  Adressen aus TAMs Antwort mehr ins Log – nur die Anzahl neuer Einträge und ggf. AuftragsNrn.
+- „Jetzt testen“ zeigt unter „nur bei TAM“ keine Felder mehr, die nie in der Tabelle stehen (z. B. Ansprechpartner),
+  sobald sie einmal als „kein neuer Auftrag“ erkannt wurden.
+
 ### 1.13.3 – 2026-09-25
 - **AuftragsNr-Format egal:** maßgeblich ist die Spalte „AuftragsNr“ – jede Nummer wird angenommen (z. B. `SA040647`,
   `AB-47/11K`). Auch Silent Reload und Neue-Zeilen-Wächter arbeiten formatunabhängig.
