@@ -31,7 +31,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Tabwechsel-Refresh** | Beim Zurückwechseln in „Veröffentlichte Aufträge“ wird genau einmal aktualisiert |
 | **Burst-Refresh** | Nach manuellem Refresh oder per Button „⚡ Burst“ für 3 s jede Sekunde aktualisieren – ideal bei Auftragswellen |
 | **Auto-Refresh** | Optional (Standard aus, 60 s), am TAM-Takt ausgerichtet – kein doppeltes Laden |
-| **TAM-Takt mitlesen** | Nächste TAM-Aktualisierung wird aus TAM selbst gelesen („laut TAM“) statt geschätzt |
+| **TAM-Takt mitlesen** | Ohne Auto-Refresh wird die nächste TAM-Aktualisierung aus TAM selbst gelesen („laut TAM“); mit Auto-Refresh zeigt die Statuszeile nur dessen Countdown |
 
 ### 📋 Listen
 | | |
@@ -358,6 +358,11 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.13.9 – 2026-09-25
+- Statuszeile: Mit aktivem Auto-Refresh nur noch **„Auto-Refresh in x s (alle y s)“** – die Anzeige „Nächste
+  TAM-Aktualisierung“ entfällt, da jeder Refresh auch TAMs eigenen Timer zurücksetzt (zwei gleichzeitig neu startende
+  Countdowns). Ohne Auto-Refresh wird weiter der TAM-Timer angezeigt. Silent Reload steht mit in der Zeile.
 
 ### 1.13.8 – 2026-09-25
 - Changelog-Ersatzquelle **OneDrive** hinterlegt (README-Kopie im Ordner „Script“), falls GitHub nicht erreichbar ist.

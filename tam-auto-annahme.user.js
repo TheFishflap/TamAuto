@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.13.8
+// @version      1.13.9
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1420,13 +1420,19 @@
     const el = document.getElementById('tamauto-sync');
     if (!el) return;
     const t = tamNext();
-    if (!t.enabled) { el.textContent = 'TAM-Aktualisierung ist aus (Checkbox „Automatisch alle … Minuten“)'; return; }
-    const per = t.periodMs ? ` (alle ${fmtDur(t.periodMs)})` : '';
-    let txt = t.at ? `Nächste TAM-Aktualisierung in ${fmtDur(t.at - now)}${per} – ${t.src}` : `TAM-Aktualisierung${per}: wartet auf ersten Refresh`;
+    let txt;
     if (arActive()) {
-      const nextOwn = lastAnyRefreshAt + cfg.intervalSec * 1000 - now;
-      txt += t.at && nextOwn >= t.at - now ? ' · Auto-Refresh wartet auf TAM' : ` · Auto-Refresh in ${fmtDur(nextOwn)}`;
+      // Mit Auto-Refresh nur dessen Countdown: jeder Refresh setzt auch TAMs eigenen Timer zurück – der
+      // TAM-Timer (z. B. 60 s) läuft dann nie ab, ein zweiter Countdown wäre nur verwirrend
+      const nextOwn = Math.max(0, lastAnyRefreshAt + cfg.intervalSec * 1000 - now);
+      txt = `Auto-Refresh in ${fmtDur(nextOwn)} (alle ${cfg.intervalSec} s)`;
+    } else if (!t.enabled) {
+      txt = 'Auto-Refresh aus · TAM-Aktualisierung aus (Checkbox „Automatisch alle … Minuten“)';
+    } else {
+      const per = t.periodMs ? ` (alle ${fmtDur(t.periodMs)})` : '';
+      txt = t.at ? `Nächste TAM-Aktualisierung in ${fmtDur(t.at - now)}${per} – ${t.src}` : `TAM-Aktualisierung${per}: wartet auf ersten Refresh`;
     }
+    if (cfg.silentSec) txt += ` · Silent Reload alle ${cfg.silentSec} s`;
     if (burstUntil > now) txt = `⚡ Burst-Refresh läuft – noch ${fmtDur(burstUntil - now)} · ${txt}`;
     el.textContent = txt;
     const bs = document.getElementById("tamauto-burst-state");
