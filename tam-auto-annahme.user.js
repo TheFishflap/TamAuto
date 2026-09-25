@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.12.3
+// @version      1.12.4
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -130,8 +130,18 @@
   }
 
   // Protokoll im Bedienfeld ("Console Log", ein-/ausblendbar). level 'debug' = Details wie Verzögerungen.
+  // Verlauf für "Log kopieren": deutlich länger als die 200 sichtbaren Zeilen, mit Datum, übersteht ein
+  // Neuladen der Seite (wird regelmäßig gespeichert). Die Anzeige im Bedienfeld bleibt auf 200 Zeilen begrenzt.
+  const LOG_KEEP = 5000;
+  let logHistory = (() => { try { return JSON.parse(sessionStorage.getItem('tamauto.logHistory') || '[]'); } catch (e) { return []; } })();
+  const saveLogHistory = () => { try { sessionStorage.setItem('tamauto.logHistory', JSON.stringify(logHistory.slice(-LOG_KEEP))); } catch (e) { /* voll */ } };
+  setInterval(saveLogHistory, 15000);
+  addEventListener('pagehide', saveLogHistory);
+
   function log(msg, level = 'info') {
     const line = `${new Date().toLocaleTimeString('de-DE')}  ${msg}`;
+    logHistory.push(`${new Date().toLocaleDateString('de-DE')} ${line}${level === 'err' ? '  [Fehler]' : ''}`);
+    if (logHistory.length > LOG_KEEP + 500) logHistory = logHistory.slice(-LOG_KEEP);
     const box = document.getElementById('tamauto-log');
     if (box) {
       const d = document.createElement('div');
@@ -1209,7 +1219,36 @@
   }
 
   const fmtDur = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} min` : `${s} s`; };
+  // Kompakter Überblick im minimierten Zustand: Status groß, nächster Refresh, letzter Auftrag, Trefferquote heute
+  function renderMini(now) {
+    const box = document.getElementById('tamauto-mini');
+    if (!box || box.style.display === 'none') return;
+    const [st, col] = !cfg.enabled ? ['■ GESTOPPT', '#c62828'] : onPublishedTab() ? ['● AKTIV', '#2e7d32'] : ['⏸ PAUSIERT', '#b26a00'];
+    const s = document.getElementById('tamauto-mini-state'); s.textContent = st; s.style.color = col;
+    // nächster Refresh: laufender Burst, sonst der frühere von eigenem Auto-Refresh und TAM-Aktualisierung
+    const t = tamNext();
+    let next = !t.enabled ? 'TAM-Aktualisierung aus' : 'nach der nächsten TAM-Aktualisierung';
+    if (burstUntil > now) next = `⚡ Burst läuft – noch ${fmtDur(burstUntil - now)}`;
+    else {
+      const cands = [];
+      if (t.enabled && t.at) cands.push(['TAM', t.at - now]);
+      if (arActive()) cands.push(['Auto-Refresh', lastAnyRefreshAt + cfg.intervalSec * 1000 - now]);
+      if (cands.length) { const [w, ms] = cands.sort((a, b) => a[1] - b[1])[0]; next = `in ${fmtDur(ms)} (${w})`; }
+    }
+    document.getElementById('tamauto-mini-next').textContent = next;
+    const book = GM_getValue('orderbook', []);
+    const last = [...book].reverse().find((e) => !e.zu) || book[book.length - 1];
+    document.getElementById('tamauto-mini-last').textContent = last
+      ? `${last.nr} · ${last.plz} ${last.ort} · ${new Date(last.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+      : 'noch keiner';
+    const from = new Date(new Date().setHours(0, 0, 0, 0));
+    const rows = Object.values(hitStats()).filter((e) => new Date(e.ts) >= from && e.s !== 'gesperrt');
+    const ang = rows.filter((e) => e.s === 'angenommen').length;
+    document.getElementById('tamauto-mini-rate').textContent = rows.length ? `${ang} von ${rows.length} passenden (${pct(ang, rows.length)})` : 'heute noch keine passenden';
+  }
+
   function renderSync(now) {
+    renderMini(now);
     const el = document.getElementById('tamauto-sync');
     if (!el) return;
     const t = tamNext();
@@ -1346,6 +1385,14 @@
     p.innerHTML = `
       <div id="tamauto-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:move;white-space:nowrap">
         <b>TAM Auto-Annahme v${VERSION}</b><span id="tamauto-head-state" style="display:none;font-weight:bold"></span><span id="tamauto-min" style="cursor:pointer;padding:0 6px;font-weight:bold">–</span></div>
+      <div id="tamauto-mini" style="display:none;margin-top:4px;line-height:1.5">
+        <div id="tamauto-mini-state" style="font-size:18px;font-weight:bold"></div>
+        <table style="border-collapse:collapse">
+          <tr><td style="color:#555;padding-right:8px">Nächster Refresh</td><td id="tamauto-mini-next" style="font-weight:bold"></td></tr>
+          <tr><td style="color:#555;padding-right:8px">Letzter Auftrag</td><td id="tamauto-mini-last"></td></tr>
+          <tr><td style="color:#555;padding-right:8px">Trefferquote heute</td><td id="tamauto-mini-rate"></td></tr>
+        </table>
+      </div>
       <div id="tamauto-body">
         <a id="tamauto-update" href="${UPDATE_URL}" target="_blank" style="display:none;font-weight:bold;color:#1a4d8f;margin:4px 0"></a>
         <div id="tamauto-tab" style="font-weight:bold;margin:4px 0"></div>
@@ -1390,7 +1437,7 @@
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
             <label class="tamauto-chk" title="Zeigt das Protokoll des Scripts unten im Bedienfeld">
               <input type="checkbox" id="tamauto-consolelog"> <b>Console Log</b></label>
-            <button id="tamauto-copylog" title="Komplettes Protokoll (alle Zeilen, chronologisch) in die Zwischenablage kopieren – z. B. zum Weiterschicken" style="margin-left:6px">📋 Log kopieren</button>
+            <button id="tamauto-copylog" title="Verlauf der letzten bis zu 5000 Zeilen (mit Datum, chronologisch) in die Zwischenablage kopieren – auch über ein Neuladen der Seite hinweg. Z. B. zum Weiterschicken." style="margin-left:6px">📋 Log kopieren</button>
             <div style="color:#555;margin-top:2px">Protokoll des Scripts unten im Bedienfeld anzeigen</div>
           </div>
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
@@ -1737,7 +1784,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     // Log kopieren (auch wenn das Log gerade ausgeblendet ist – es wird immer mitgeschrieben)
     $('tamauto-copylog').onclick = async () => {
       const b = $('tamauto-copylog');
-      const lines = [...$('tamauto-log').children].map((d) => d.textContent).reverse(); // älteste zuerst
+      const lines = logHistory.slice(-LOG_KEEP); // kompletter Verlauf (bis 5000 Zeilen, älteste zuerst)
       const txt = `TAM Auto-Annahme v${VERSION} · Log vom ${new Date().toLocaleString('de-DE')} · ${navigator.userAgent}\n\n${lines.join('\n')}`;
       let ok = false;
       try { await navigator.clipboard.writeText(txt); ok = true; } catch (e) {
@@ -1838,7 +1885,8 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
         Object.assign(p.style, { height: prev.h || '', width: prev.w && prev.w !== 'max-content' ? prev.w : '420px', minWidth: '340px', minHeight: '120px', resize: 'both', padding: '8px', display: 'flex' });
         $('tamauto-min').textContent = '–'; $('tamauto-min').title = 'Minimieren';
       }
-      $('tamauto-head-state').style.display = min ? '' : 'none';
+      $('tamauto-mini').style.display = min ? '' : 'none'; // kompakter Überblick statt Kurzstatus
+      if (min) renderMini(Date.now());
       const g = $('tamauto-grip'); if (g) g.style.display = min || !(matchMedia('(pointer: coarse)').matches || isAndroid) ? 'none' : '';
       GM_setValue('minimized', min);
       // Titelzeile im Fenster halten, wenn das Bedienfeld oben/links verankert ist

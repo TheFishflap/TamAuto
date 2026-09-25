@@ -337,6 +337,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.12.4 – 2026-09-25
+- Minimiert: **kompakter Überblick** – Status groß (● AKTIV / ⏸ PAUSIERT / ■ GESTOPPT), nächster Refresh (Countdown),
+  letzter Auftrag und Trefferquote heute.
+- „📋 Log kopieren“ kopiert jetzt den **Verlauf der letzten bis zu 5000 Zeilen** (mit Datum), nicht nur die 200 sichtbaren;
+  der Verlauf übersteht ein Neuladen der Seite.
+
 ### 1.12.3 – 2026-09-25
 - Button **„📋 Log kopieren“** neben „Console Log“: komplettes Protokoll (chronologisch, mit Version und Gerät)
   in die Zwischenablage – auch wenn das Log ausgeblendet ist.
