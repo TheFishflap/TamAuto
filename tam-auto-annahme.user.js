@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.13.1
+// @version      1.13.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -888,9 +888,9 @@
   // Annahme-Logik sie trotzdem auswerten kann (Trefferquote, Log).
   const UNAVAILABLE = /nicht (mehr )?verfügbar|bereits vergeben|falschen Status|kann nicht bestätigt werden|Fehler bei Auftragsannahme|zum Warenkorb hinzugefügt/i;
   const ERROR_MSG = /fehler|error|nicht möglich/i;
-  // AuftragsNr: "MW3191767", "1002669965" oder mit Anhang "9601182381-10". Vergleich tolerant, falls TAM den
+  // AuftragsNr: "MW3191767", "SA040647", "1002669965" oder mit Anhang "9601182381-10" (bis 4 Buchstaben + ab 6 Ziffern). Vergleich tolerant, falls TAM den
   // Anhang an einer Stelle (Karte, Warenkorb, Meldung) weglässt.
-  const NR_RE = /(MW)?\d{6,}(-\d{1,3})?/i;
+  const NR_RE = /\b[A-Z]{0,4}\d{6,}(-\d{1,3})?/i;
   const nrBase = (s) => String(s || '').toUpperCase().trim().replace(/-\d{1,3}$/, '');
   const sameNr = (a, b) => { const x = String(a || '').toUpperCase().trim(), y = String(b || '').toUpperCase().trim();
     return x === y || (!!x && nrBase(x) === nrBase(y) && (x === nrBase(x) || y === nrBase(y))); };
@@ -1005,7 +1005,7 @@
     return [...card.querySelectorAll('.zusatzteilauftrag')].filter(visible).map((el) => {
       const km = text(el.querySelector('.entfernung'));
       const rest = text(el).replace(km, '').trim();
-      const nr = ((rest.match(/^((MW)?\d{6,}(-\d{1,3})?)/i) || [])[1] || '').toUpperCase();
+      const nr = ((rest.match(/^([A-Z]{0,4}\d{6,}(-\d{1,3})?)/i) || [])[1] || '').toUpperCase();
       return { el, km, kmNum: parseFloat(km.replace(',', '.')), nr };
     });
   }
@@ -1032,7 +1032,7 @@
   async function acceptOrder(order) {
     if (!onPublishedTab()) { log('Abbruch: nicht im Tab "Veröffentlichte Aufträge".', 'err'); return false; }
     const nr = (order.nr || '').trim();
-    if (!/^(MW)?\d{6,}(-\d{1,3})?$/i.test(nr)) { log(`Keine gültige AuftragsNr in der Zeile (${nr || 'leer'}).`, 'err'); return false; }
+    if (!/^[A-Z]{0,4}\d{6,}(-\d{1,3})?$/i.test(nr)) { log(`Keine gültige AuftragsNr in der Zeile (${nr || 'leer'}).`, 'err'); return false; }
 
     // 1) Doppelklick -> "Auftragskarte zu MW…"
     const before = new Set(visibleWindows());
@@ -1385,7 +1385,7 @@
     // nur Zeichenketten der Antwort auswerten, die komplett eine AuftragsNr sind (nicht z. B. Klassennamen
     // wie "…BasePagingLoadResult/496878394")
     const tokens = new Set((txt.match(/"(?:[^"\\]|\\.)*"/g) || []).map((s) => s.slice(1, -1).trim().toUpperCase())
-      .filter((s) => /^(MW)?\d{6,}(-\d{1,3})?$/.test(s)));
+      .filter((s) => /^[A-Z]{0,4}\d{6,}(-\d{1,3})?$/.test(s)));
     return { tokens, ms: Date.now() - t0, bytes: txt.length };
   }
   const silentStateText = (q) => `aktiv · letzte Abfrage ${new Date().toLocaleTimeString('de-DE')} (${q.ms} ms)` +
@@ -2187,7 +2187,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
   function gridNrs(grid) {
     const body = grid && grid.querySelector('.x-grid3-body');
     const txt = body ? [...body.querySelectorAll('td')].map((td) => td.textContent).join(' ') : ''; // je Zelle (sonst verschmelzen Nummern)
-    return new Set(txt.toUpperCase().match(/(MW)?\d{6,}(-\d{1,3})?/g) || []);
+    return new Set(txt.toUpperCase().match(/\b[A-Z]{0,4}\d{6,}(-\d{1,3})?/g) || []);
   }
   let lastGridNrs = new Set();
   function watchNewRows() {

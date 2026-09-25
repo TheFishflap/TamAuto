@@ -359,6 +359,10 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.13.2 – 2026-09-25
+- **AuftragsNr mit beliebigem Buchstaben-Präfix** (z. B. `SA040647`, Audi) wird angenommen – bisher nur `MW…`
+  oder reine Ziffern („Keine gültige AuftragsNr“). Erlaubt: bis 4 Buchstaben + ab 6 Ziffern, optional `-10`.
+
 ### 1.13.1 – 2026-09-25
 - Silent Reload prüfbar: Button **„Jetzt testen“** (auch bei 0 = aus) führt eine Abfrage sofort aus und schreibt
   ins Log, welche Aufträge TAM meldet, was in der Tabelle steht und was nur bei TAM ist.
