@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.12.9
+// @version      1.13.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -76,6 +76,7 @@
     burstOn: true, // Burst-Refresh nach manuellem Refresh immer aktiv (ohne Checkbox)
     hideTips: GM_getValue('hideTips', false), // alle ?-Erklärungen ausblenden
     wakeLock: GM_getValue('wakeLock', /android/i.test(navigator.userAgent)), // Bildschirm anlassen – auf Android standardmäßig an
+    silentSec: GM_getValue('silentSec', 0), // Silent Reload: Hintergrund-Abfrage alle x s (0 = aus, Standard)
     burstSec: GM_getValue('burstSecV2', 3), // Dauer des Burst-Refresh in s (1 Refresh pro Sekunde), Standard 3
   });
 
@@ -789,6 +790,38 @@
   function hookAllConsoles() {
     hookConsole(typeof unsafeWindow !== 'undefined' ? unsafeWindow : window);
     document.querySelectorAll('iframe').forEach((f) => { try { hookConsole(f.contentWindow); } catch (e) { /* ignore */ } });
+    hookAllXhr();
+  }
+
+  // ---- Silent Reload: TAMs eigene Tabellen-Anfrage (GWT-RPC "loadTeilauftraege" an /gwt-rpc/auftrag) beim
+  // Aktualisieren im Reiter "Veröffentlichte Aufträge" mitschneiden. Das Script kann sie dann im Hintergrund
+  // wiederholen, ohne die Tabelle neu zu zeichnen – neu geladen wird nur, wenn ein neuer Auftrag dabei ist.
+  let tamLoadReq = null;       // { url, body, headers }
+  let silentFetching = false;  // eigene Hintergrund-Abfrage läuft (nicht erneut mitschneiden)
+  function hookXhr(w) {
+    try {
+      const P = w && w.XMLHttpRequest && w.XMLHttpRequest.prototype;
+      if (!P || P.__tamautoHooked) return;
+      const open = P.open, send = P.send, setH = P.setRequestHeader;
+      P.open = function (m, u) { this.__tamU = String(u || ''); this.__tamH = {}; return open.apply(this, arguments); };
+      P.setRequestHeader = function (k, v) { if (this.__tamH) this.__tamH[k] = v; return setH.apply(this, arguments); };
+      P.send = function (b) {
+        try {
+          if (!silentFetching && /\/gwt-rpc\/auftrag/i.test(this.__tamU || '') && typeof b === 'string' &&
+            /\|loadTeilauftraege\|/.test(b) && onPublishedTab()) {
+            const first = !tamLoadReq;
+            tamLoadReq = { url: new URL(this.__tamU, location.href).href, body: b, headers: Object.assign({}, this.__tamH) };
+            if (first && cfg.silentSec) log('Silent Reload: TAM-Anfrage übernommen – Hintergrund-Abfrage aktiv.', 'ok');
+          }
+        } catch (e) { /* ignore */ }
+        return send.apply(this, arguments);
+      };
+      P.__tamautoHooked = true;
+    } catch (e) { /* fremde Herkunft – nicht erreichbar */ }
+  }
+  function hookAllXhr() {
+    hookXhr(typeof unsafeWindow !== 'undefined' ? unsafeWindow : window);
+    document.querySelectorAll('iframe').forEach((f) => { try { hookXhr(f.contentWindow); } catch (e) { /* ignore */ } });
   }
   hookAllConsoles();
 
@@ -1197,7 +1230,9 @@
       const old = all.filter((o) => o.key && done.has(o.key));
       const orders = all.filter((o) => o.valid && o.key && !done.has(o.key));
       // Gesperrte (Tages-Blacklist) nicht annehmen, aber auch nicht als erledigt merken → morgen wieder möglich
-      const hits = orders.filter((o) => matches(o) && !blocked(o));
+      // Priorität: höchster Preis zuerst (ohne Preis ans Ende, sonst Reihenfolge der Tabelle)
+      const hits = orders.filter((o) => matches(o) && !blocked(o))
+        .sort((a, b) => (parseEuro(b.preis) ?? -1) - (parseEuro(a.preis) ?? -1));
       const blockedHits = orders.filter((o) => matches(o) && blocked(o));
       hits.forEach((o) => trackHit(o, 'passend'));        // Trefferquote: jeder passende Auftrag einmal
       blockedHits.forEach((o) => trackHit(o, 'gesperrt'));
@@ -1221,6 +1256,7 @@
         log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, bl ? 'err' : matches(o) ? 'ok' : 'info');
       });
       let n = 0;
+      if (hits.length > 1) log(`Reihenfolge nach Preis: ${hits.map((o) => `${o.nr || o.ref} (${o.preis || 'ohne Preis'})`).join(' → ')}`);
       for (const o of hits) {
         if (n >= cfg.maxPerCycle) { log(`Limit ${cfg.maxPerCycle}/Zyklus erreicht.`); break; }
         const desc = `${o.nr || o.ref} · ${o.plz} ${o.ort} · ${o.dienst}${o.preis ? ' · ' + o.preis : ''}`;
@@ -1330,6 +1366,47 @@
     if (!refreshed) lastAnyRefreshAt = Date.now(); // nicht im Sekundentakt erneut versuchen
     await cycle(refreshed ? reason : 'Intervall');
     return refreshed;
+  }
+
+  // ---- Silent Reload: mitgeschnittene TAM-Anfrage im Hintergrund wiederholen. Enthält die Antwort eine
+  // AuftragsNr, die weder in der Tabelle steht noch in der vorigen Antwort war → Tabelle einmal aktualisieren
+  // (Refresh-Pfeil) und abgleichen. Die Tabelle selbst bleibt sonst unberührt (kein Flackern).
+  let lastSilentAt = 0, silentSeen = new Set(), silentFails = 0, silentState = '';
+  async function silentPoll() {
+    const now = Date.now();
+    if (!cfg.silentSec || !cfg.enabled || !license || busy || silentFetching || !onPublishedTab() || burstUntil > now) return;
+    if (now - lastSilentAt < cfg.silentSec * 1000) return;
+    if (!tamLoadReq) { silentState = 'wartet auf den ersten Refresh (dabei wird TAMs Anfrage übernommen)'; renderSilent(); return; }
+    lastSilentAt = now;
+    silentFetching = true;
+    try {
+      const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+      const res = await W.fetch(tamLoadReq.url, { method: 'POST', credentials: 'include', headers: tamLoadReq.headers, body: tamLoadReq.body });
+      const txt = await res.text();
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!/^\/\/OK/.test(txt)) throw new Error(`TAM meldet ${txt.slice(0, 60)}`); // z. B. //EX = Sitzung abgelaufen
+      silentFails = 0;
+      // nur Zeichenketten der Antwort auswerten, die komplett eine AuftragsNr sind (nicht z. B. Klassennamen
+      // wie "…BasePagingLoadResult/496878394")
+      const tokens = new Set((txt.match(/"(?:[^"\\]|\\.)*"/g) || []).map((s) => s.slice(1, -1).trim().toUpperCase())
+        .filter((s) => /^(MW)?\d{6,}(-\d{1,3})?$/.test(s)));
+      const inGrid = gridNrs(visibleGrid());
+      const fresh = [...tokens].filter((x) => !inGrid.has(x) && !silentSeen.has(x));
+      silentState = `aktiv · letzte Abfrage ${new Date().toLocaleTimeString('de-DE')} (${Date.now() - now} ms)`;
+      if (!fresh.length) { silentSeen = tokens; return; }
+      log(`Silent Reload: neuer Auftrag in TAM (${fresh.slice(0, 3).join(', ')}${fresh.length > 3 ? ' …' : ''}) → Tabelle aktualisieren`, 'ok');
+      silentFetching = false;
+      if (await refreshAndCheck('Silent Reload')) silentSeen = tokens; // sonst beim nächsten Mal erneut versuchen
+    } catch (e) {
+      silentFails++;
+      silentState = `Fehler: ${e.message}`;
+      if (silentFails === 1 || silentFails % 20 === 0) log(`Silent Reload: Abfrage fehlgeschlagen (${e.message}) – nächster Versuch in ${cfg.silentSec} s.`, 'err');
+      if (/TAM meldet/.test(e.message)) tamLoadReq = null; // Anfrage ungültig (z. B. neue Sitzung) → beim nächsten Refresh neu übernehmen
+    } finally { silentFetching = false; renderSilent(); }
+  }
+  function renderSilent() {
+    const el = document.getElementById('tamauto-silent-state');
+    if (el) el.textContent = cfg.silentSec ? silentState || 'aktiv' : 'aus';
   }
 
   // ---- Burst-Refresh: gezielt für kurze Zeit jede Sekunde aktualisieren (Auftragswellen), statt dauerhaft
@@ -1469,6 +1546,14 @@
           <button class="tamauto-tabbtn" data-page="tamauto-page-info">Info</button>
         </div>
         <div id="tamauto-page-adv" style="display:none;margin:6px 0">
+          <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
+            <span class="tamauto-chk">
+              <b>Silent Reload</b> alle <input id="tamauto-silent" type="number" min="0" max="60" step="1" style="width:44px;margin:0"> s
+              <span style="color:#555">(0 = aus)</span>
+              <span class="tamauto-help" title="Fragt TAM im Hintergrund nach neuen Aufträgen – mit derselben Anfrage, die TAM beim Aktualisieren sendet, aber ohne die Tabelle neu zu zeichnen. Nur wenn ein neuer Auftrag dabei ist, wird die Tabelle einmal aktualisiert und abgeglichen. Die Anfrage wird beim ersten Refresh im Reiter „Veröffentlichte Aufträge“ übernommen. Jede Abfrage belastet TAM wie ein Refresh – niedrige Werte mit Bedacht wählen. Standard: 0 (aus).">?</span>
+            </span>
+            <div id="tamauto-silent-state" style="color:#555;font-size:11px;margin-top:2px"></div>
+          </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-hidetips"> <b>Tipps ausblenden</b></label>
@@ -1811,6 +1896,17 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     };
     $('tamauto-hidetips').onchange = (e) => { cfg.hideTips = e.target.checked; GM_setValue('hideTips', cfg.hideTips); applyTips(); };
     applyTips();
+
+    // Silent Reload: Intervall in s, 0 = aus
+    $('tamauto-silent').value = cfg.silentSec;
+    $('tamauto-silent').onchange = (e) => {
+      cfg.silentSec = Math.round(Math.min(60, Math.max(0, +e.target.value || 0)));
+      e.target.value = cfg.silentSec; GM_setValue('silentSec', cfg.silentSec);
+      silentState = ''; lastSilentAt = 0; renderSilent();
+      log(cfg.silentSec ? `Silent Reload an: alle ${cfg.silentSec} s Hintergrund-Abfrage` +
+        (tamLoadReq ? '.' : ' (startet nach dem nächsten Refresh).') : 'Silent Reload aus.');
+    };
+    renderSilent();
 
     // Burst-Refresh: nur die Dauer ist einstellbar (Auslöser: Button "⚡ Burst" oder manueller Refresh auf der Website)
     $('tamauto-burst-sec').value = cfg.burstSec;
@@ -2200,6 +2296,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     buildPanel();
     watchGrid();
     wasOnPublished = onPublishedTab(); // Ausgangszustand für die Tabwechsel-Erkennung
+    setInterval(silentPoll, 250);  // Silent Reload (falls eingestellt)
     setInterval(watchNewRows, 250); // neue Aufträge auch ohne erkannte Tabellenänderung sofort prüfen
     setInterval(dismissAllMessagesNow, 100); // Sofort-Wächter als Rückfallebene (falls ein Einblenden nicht als Änderung auffällt)
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;

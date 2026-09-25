@@ -21,6 +21,8 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Schnell zurück** | Terminvergabe-Fenster wird sofort weggeklickt, danach direkt zurück in „Veröffentlichte Aufträge“ |
 | **Wächter-Modus** | Schließt störende TAM-Meldungen **in Millisekunden** – „bereits vergeben“, „nicht verfügbar“, „falscher Status“, Warenkorb-Hinweise, technische Fehlerfenster – und wertet sie trotzdem richtig aus |
 | **Neue-Zeilen-Wächter** | Erkennt neue Aufträge in „Veröffentlichte Aufträge“ innerhalb von 250 ms – auch wenn TAM sie ohne Refresh einblendet |
+| **Silent Reload** | Optional (Erweiterte Einstellungen, Standard 0 = aus): fragt TAM alle x s im Hintergrund nach neuen Aufträgen – ohne Tabelle neu zu zeichnen; nur bei einem neuen Auftrag wird aktualisiert |
+| **Preis-Priorität** | Mehrere passende Aufträge gleichzeitig → **höchster Preis zuerst** |
 | **Verzögerung** | Standard an: 0,17 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0,001–0,5 s |
 
 ### 🔄 Aktualisierung – gezielt statt dauerhaft
@@ -356,6 +358,13 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.13.0 – 2026-09-25
+- **Silent Reload** (Erweiterte Einstellungen, alle x s, **Standard 0 = aus**): Das Script übernimmt beim ersten
+  Refresh TAMs eigene Tabellen-Anfrage (`loadTeilauftraege`) und wiederholt sie im Hintergrund. Nur wenn die
+  Antwort eine neue AuftragsNr enthält, wird die Tabelle einmal aktualisiert und abgeglichen. Status darunter
+  („aktiv · letzte Abfrage …“ bzw. Fehler). Jede Abfrage belastet TAM wie ein Refresh.
+- **Priorität nach Preis:** mehrere passende Aufträge → höchster Preis zuerst (Log: „Reihenfolge nach Preis …“).
 
 ### 1.12.9 – 2026-09-25
 - **AuftragsNr mit Anhang** (z. B. `9601182381-10`, Sixt) wird erkannt und angenommen – bisher „Keine gültige
