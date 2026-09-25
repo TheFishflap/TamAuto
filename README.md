@@ -150,8 +150,17 @@ wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt 
 
 ### Reiter „Erweiterte Einstellungen“
 
-**Tipps ausblenden**: blendet alle **?**-Erklärungen im Bedienfeld aus (aufgeräumte Ansicht). Das **?** direkt
-hinter dieser Checkbox bleibt immer sichtbar, damit sich die Tipps jederzeit wieder einschalten lassen.
+**Tipps ausblenden**: blendet alle **?**-Erklärungen im Bedienfeld aus (aufgeräumte Ansicht) – auch das **?**
+an dieser Checkbox. Wieder einblenden: Haken entfernen.
+
+### TAM-Fehlerfenster und Android
+
+TAM ist für den Desktop gebaut. Vor allem auf **Android** (z. B. Firefox) zeigt TAM gelegentlich technische
+Fehlerfenster wie **„Fehler! (TypeError): can't access property …, … is undefined“**. Das Script schließt solche
+Fenster automatisch mit „Abbrechen“ und schreibt ins Log, **was es selbst zuletzt getan hat und wie lange das her
+ist** (z. B. „letzte Script-Aktion: Refresh-Pfeil vor 0,3 s“). So lässt sich erkennen, ob der Fehler vom Script oder
+von TAM allein kommt. Fachliche Meldungen (z. B. „Auftrag bereits vergeben!“) sind davon nicht betroffen.
+Auf Android zeigt der Reiter **Info** einen entsprechenden Hinweis.
 
 **Benachrichtigungston** (Standard **an**): Gong bei angenommenem oder fehlgeschlagenem Auftrag ein/aus.
 **Schieberegler** für die Lautstärke (0–100 %, Standard 60 %), Doppelklick = 60 %;
@@ -312,6 +321,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.11.3 – 2026-09-25
+- Technische TAM-Fehlerfenster (z. B. „TypeError … undefined“, v. a. Android) werden automatisch geschlossen und
+  mit der letzten Script-Aktion protokolliert (Diagnose Script oder TAM).
+- Android-Erkennung mit Hinweis im Reiter Info.
+- „Tipps ausblenden“ blendet jetzt auch das eigene ? aus.
 
 ### 1.11.2 – 2026-09-25
 - Burst-Refresh: Checkbox entfernt (immer aktiv); Beschreibung verweist auf Button „⚡ Burst“ und den

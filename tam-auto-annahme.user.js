@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.11.2
+// @version      1.11.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -93,7 +93,10 @@
   const visible = (el) => !!el && el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden';
   const text = (el) => (el ? el.textContent.replace(/\u00a0/g, ' ').trim() : '');
 
+  // Letzte eigene Aktion des Scripts – für die Diagnose, ob ein TAM-Fehler vom Script ausgelöst wurde
+  let lastScriptAction = { at: 0, what: '' };
   function fire(el, types = ['mouseover', 'mousedown', 'mouseup', 'click']) {
+    lastScriptAction = { at: Date.now(), what: (el.textContent || '').trim().slice(0, 30) || String(el.className).split(' ')[0] || el.tagName };
     const r = el.getBoundingClientRect();
     const opts = { bubbles: true, cancelable: true, button: 0,
       clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
@@ -681,6 +684,7 @@
     if (firstRow) firstRow.dataset.tamautoMark = '1';
     let maskSeen = false;
     clickBtn(btn);
+    lastScriptAction.what = 'Refresh-Pfeil';
     const t0 = Date.now();
     // bis zu 10 s: Lade-Maske gesehen und wieder weg, oder Zeilen neu gerendert
     await waitFor(() => {
@@ -833,6 +837,25 @@
       log(`Fenster „${winTitle(w) || 'Terminvergabe'}“ weggeklickt.`, 'debug');
     });
     if (wins.length && !onPublishedTab()) setTimeout(() => switchToPublishedTab(), 200);
+  }
+
+  // Technische TAM-Fehlerfenster ("Fehler!" mit JavaScript-Fehler wie "TypeError … undefined", tritt v. a. auf
+  // Android auf) automatisch mit "Abbrechen" schließen. Im Log steht, was das Script zuletzt getan hat – so ist
+  // erkennbar, ob der Fehler vom Script ausgelöst wurde oder von TAM allein kommt.
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const TAM_JS_ERROR = /TypeError|ReferenceError|RangeError|is undefined|is null|is not a function|can't access|cannot read/i;
+  let tamErrorCount = 0;
+  function dismissTamErrors() {
+    visibleWindows().filter((w) => /fehler/i.test(winTitle(w)) && TAM_JS_ERROR.test(text(w))).forEach((w) => {
+      const msg = text(w).replace(winTitle(w), '').replace(/abbrechen|ok/gi, '').trim().slice(0, 100);
+      const ago = lastScriptAction.at ? ((Date.now() - lastScriptAction.at) / 1000).toFixed(1) : null;
+      tamErrorCount++;
+      log(`TAM-Fehlerfenster geschlossen (#${tamErrorCount}): ${msg} · letzte Script-Aktion: ` +
+        (ago === null ? 'keine' : `„${lastScriptAction.what}“ vor ${ago} s`) + (isAndroid ? ' · Android' : ''), 'err');
+      const btn = findButton(/^(abbrechen|ok|schließen)$/i, w);
+      if (btn) clickBtn(btn); else closeWindow(w);
+      lastScriptAction = { at: 0, what: '' }; // das Schließen selbst nicht als Auslöser werten
+    });
   }
 
   // Alle offenen Meldungen mit OK-Button schließen (nicht Auftragskarte / Bestätigungsdialog)
@@ -1190,7 +1213,8 @@
       if (license && license.exp < today()) { location.reload(); return; } // Lizenz abgelaufen → Aktivierungsfeld
       renderBlacklist(); renderAcceptlist(); // nach Mitternacht Anzeige leeren
       renderStatus();    // abgelaufene Zusatzliste ausblenden
-      if (!busy && cfg.enabled) dismissMessages(); // liegengebliebene TAM-Meldungen (z. B. "bereits vergeben") wegklicken
+      if (!busy && cfg.enabled) dismissMessages();
+      dismissTamErrors(); // technische TAM-Fehlerfenster (z. B. TypeError auf Android) schließen // liegengebliebene TAM-Meldungen (z. B. "bereits vergeben") wegklicken
       hookAllConsoles(); // später geladene TAM-iframes ebenfalls mitlesen
     }
     renderSync(now);
@@ -1268,7 +1292,7 @@
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-hidetips"> <b>Tipps ausblenden</b></label>
-              <span class="tamauto-help tamauto-help-keep" title="Blendet alle ?-Erklärungen im Bedienfeld aus, für eine aufgeräumte Ansicht. Dieses ? bleibt immer sichtbar, damit sich die Tipps jederzeit wieder einschalten lassen.">?</span>
+              <span class="tamauto-help" title="Blendet alle ?-Erklärungen im Bedienfeld aus (auch dieses), für eine aufgeräumte Ansicht. Wieder einblenden: Haken entfernen.">?</span>
             </span>
           </div>
           <div>
@@ -1328,6 +1352,9 @@
             <tr><td style="padding:1px 8px 1px 0;color:#555">Lizenziert für</td><td id="tamauto-info-name"></td></tr>
             <tr><td style="padding:1px 8px 1px 0;color:#555">Gültig bis</td><td id="tamauto-info-exp"></td></tr>
             <tr><td style="padding:1px 8px 1px 0;color:#555">Installations-ID</td><td id="tamauto-info-id" style="font-family:monospace"></td></tr>
+            <tr id="tamauto-info-android" style="display:none"><td style="padding:1px 8px 1px 0;color:#555">Gerät</td>
+              <td>Android – TAM ist für den Desktop gebaut. Technische TAM-Fehlerfenster (z. B. „TypeError“) werden
+                automatisch geschlossen und im Log vermerkt.</td></tr>
             <tr><td style="padding:1px 8px 1px 0;color:#555">Hersteller</td><td>IB Thomée GmbH</td></tr>
           </table>
           <div style="margin-top:6px;padding:3px 6px;background:#fff8e1;border:1px solid #f0c36d;border-radius:3px;font-size:10.5px;line-height:1.35">
@@ -1563,6 +1590,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       `${daysLeft <= warnDays ? ` – noch ${daysLeft} Tage, neue Lizenz anfordern` : ''}`;
     if (daysLeft <= warnDays) $('tamauto-info-exp').style.color = '#c62828';
     $('tamauto-info-id').textContent = installId();
+    if (isAndroid) $('tamauto-info-android').style.display = '';
     if (daysLeft <= warnDays) {
       const w = document.createElement('div');
       Object.assign(w.style, { color: '#c62828', fontWeight: 'bold', margin: '4px 0' });
@@ -1579,7 +1607,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     // Tipps ausblenden: alle "?"-Erklärungen weg – außer dem "?" direkt an dieser Checkbox
     const applyTips = () => {
       $('tamauto-hidetips').checked = cfg.hideTips;
-      p.querySelectorAll('.tamauto-help:not(.tamauto-help-keep)').forEach((h) => { h.style.display = cfg.hideTips ? 'none' : 'inline-flex'; });
+      p.querySelectorAll('.tamauto-help').forEach((h) => { h.style.display = cfg.hideTips ? 'none' : 'inline-flex'; });
       if (cfg.hideTips) $('tamauto-popup-helpbox').style.display = 'none';
     };
     $('tamauto-hidetips').onchange = (e) => { cfg.hideTips = e.target.checked; GM_setValue('hideTips', cfg.hideTips); applyTips(); };
@@ -1772,7 +1800,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       }
       // TAM-Fenster zur Terminvergabe nach einer Annahme sofort wegklicken (ohne Verzögerung)
       if (muts.some((m) => m.type === 'childList' && [...m.addedNodes].some((n) => n.nodeType === 1 &&
-        (n.matches('.x-window') || n.querySelector?.('.x-window'))))) setTimeout(dismissTerminDialog, 50);
+        (n.matches('.x-window') || n.querySelector?.('.x-window'))))) setTimeout(() => { dismissTerminDialog(); dismissTamErrors(); }, 50);
       const panel = document.getElementById(cfg.tabPanelId);
       if (!panel) return;
       const relevant = muts.some((m) => m.type === 'childList' && panel.contains(m.target) && m.target.closest &&
