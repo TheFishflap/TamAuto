@@ -337,6 +337,9 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.12.5 – 2026-09-25
+- Nutzungsvorbehalt für KI-Systeme/Agenten (Text- und Data-Mining, § 44b UrhG) im Code und in der LICENSE.
+
 ### 1.12.4 – 2026-09-25
 - Minimiert: **kompakter Überblick** – Status groß (● AKTIV / ⏸ PAUSIERT / ■ GESTOPPT), nächster Refresh (Countdown),
   letzter Auftrag und Trefferquote heute.
