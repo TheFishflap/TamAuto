@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.15.0
+// @version      1.15.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1626,6 +1626,40 @@
   // bei neuem Auftrag laden. Doppelte Signale (2 Master-Handys) innerhalb von 10 s werden zusammengefasst.
   const PUSH_SERVER = 'https://ntfy.sh';
   let pushES = null, pushState = 'aus', lastPushAt = 0, pushCount = 0;
+  // Mitlese-Liste für den Reiter „Push-Signal“ (letzte 100, bleibt über Neuladen erhalten)
+  let pushLog = GM_getValue('pushLog', []);
+  const savePushLog = () => GM_setValue('pushLog', pushLog.slice(-100));
+  function addPushEntry(e) { pushLog.push(e); if (pushLog.length > 120) pushLog = pushLog.slice(-100); savePushLog(); renderPushPage(); return e; }
+  function setPushResult(e, res) { if (!e) return; e.res = res; savePushLog(); renderPushPage(); }
+  function renderPushPage() {
+    const rows = document.getElementById('tamauto-pl-rows');
+    if (!rows) return;
+    const st = document.getElementById('tamauto-pl-state');
+    if (st) {
+      st.textContent = cfg.pushOn ? `Kanal ${cfg.pushTopic} · ${pushState}` : 'Push-Signal ist aus (Erweiterte Einstellungen)';
+      st.style.color = cfg.pushOn && /verbunden/.test(pushState) ? '#2e7d32' : '#b36b00';
+    }
+    const from = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
+    const today = pushLog.filter((e) => e.at >= from && !e.test);
+    const byDev = {};
+    today.forEach((e) => { byDev[e.src] = (byDev[e.src] || 0) + 1; });
+    const lats = today.map((e) => e.tam).filter((v) => typeof v === 'number').sort((a, b) => a - b);
+    const med = lats.length ? lats[Math.floor(lats.length / 2)] : null;
+    const sum = document.getElementById('tamauto-pl-sum');
+    if (sum) sum.textContent = today.length
+      ? `Heute ${today.length} Signale · ${Object.entries(byDev).map(([k, v]) => `${k}: ${v}`).join(', ')}` +
+        (med !== null ? ` · Laufzeit Median ${med} ms` : '')
+      : 'Heute noch keine Signale.';
+    const color = (r) => /Angenommen|neuer Auftrag/i.test(r || '') ? '#2e7d32' : /Fehler|gestoppt|nicht im Reiter/i.test(r || '') ? '#c62828' : '#555';
+    rows.innerHTML = [...pushLog].reverse().slice(0, 100).map((e) => {
+      const t = new Date(e.at).toLocaleTimeString('de-DE') + (new Date(e.at).toDateString() === new Date().toDateString() ? '' : ` ${new Date(e.at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}`);
+      const lat = typeof e.tam === 'number' ? `${e.tam} ms` : typeof e.lat === 'number' ? `${e.lat} ms*` : '–';
+      return `<tr style="border-bottom:1px solid #eee"><td style="padding:2px 4px;white-space:nowrap">${t}</td>` +
+        `<td style="padding:2px 4px">${escHtml(e.src)}${e.test ? ' <span style="color:#1a4d8f">(Test)</span>' : ''}</td>` +
+        `<td style="padding:2px 4px;white-space:nowrap" title="${typeof e.lat === 'number' ? `Handy → Script ${e.lat} ms` : ''}">${lat}</td>` +
+        `<td style="padding:2px 4px;color:${color(e.res)}">${escHtml(e.res || '…')}</td></tr>`;
+    }).join('') || '<tr><td colspan="4" style="padding:4px;color:#555">Noch keine Signale empfangen.</td></tr>';
+  }
   function startPush() {
     if (pushES) { try { pushES.close(); } catch (e) { /* ignore */ } pushES = null; }
     if (!cfg.pushOn || !cfg.pushTopic) { pushState = 'aus'; renderPush(); return; }
@@ -1649,40 +1683,58 @@
     const lat = sig.ts ? ` · Handy→Script ${now - sig.ts} ms` : '';
     const lat2 = sig.nts ? ` · TAM-Benachrichtigung→Script ${now - sig.nts} ms` : '';
     const from = `${sig.src || '?'}${sig.test ? ' (Test)' : ''}`;
-    if (sig.test) { log(`Push-Signal empfangen: ${from}${lat} – Test, keine Abfrage.`, 'ok'); pushState = `verbunden · Test von ${from} ${new Date().toLocaleTimeString('de-DE')}`; renderPush(); return; }
-    if (now - lastPushAt < 10000) { log(`Push-Signal von ${from}${lat} – doppelt (innerhalb 10 s), zusammengefasst.`, 'debug'); return; }
+    const entry = addPushEntry({ at: now, src: String(sig.src || '?').slice(0, 32), test: !!sig.test,
+      lat: sig.ts ? now - sig.ts : null, tam: sig.nts ? now - sig.nts : null, res: '' });
+    if (sig.test) { log(`Push-Signal empfangen: ${from}${lat} – Test, keine Abfrage.`, 'ok'); pushState = `verbunden · Test von ${from} ${new Date().toLocaleTimeString('de-DE')}`; renderPush(); setPushResult(entry, 'Test – angekommen'); return; }
+    if (now - lastPushAt < 10000) { log(`Push-Signal von ${from}${lat} – doppelt (innerhalb 10 s), zusammengefasst.`, 'debug'); setPushResult(entry, 'doppelt – zusammengefasst'); return; }
     lastPushAt = now; pushCount++;
     pushState = `verbunden · letztes Signal ${new Date().toLocaleTimeString('de-DE')} von ${from} (${pushCount} heute)`;
     renderPush();
     log(`Push-Signal von ${from}${lat}${lat2} → TAM abfragen`, 'ok');
-    if (!cfg.enabled || !license) { log('Push-Signal: Script gestoppt – keine Abfrage.', 'debug'); return; }
-    if (!onPublishedTab()) { log('Push-Signal: nicht im Reiter „Veröffentlichte Aufträge“ – keine Abfrage.', 'err'); return; }
+    if (!cfg.enabled || !license) { log('Push-Signal: Script gestoppt – keine Abfrage.', 'debug'); setPushResult(entry, 'Script gestoppt – keine Abfrage'); return; }
+    if (!onPublishedTab()) { log('Push-Signal: nicht im Reiter „Veröffentlichte Aufträge“ – keine Abfrage.', 'err'); setPushResult(entry, 'nicht im Reiter „Veröffentlichte Aufträge“'); return; }
     const jitter = Math.round(Math.random() * 1500);
-    setTimeout(() => pushQuery(from), jitter);
+    setPushResult(entry, `fragt TAM ab (nach ${jitter} ms) …`);
+    setTimeout(() => pushQuery(from, entry), jitter);
   }
-  async function pushQuery(from) {
-    if (busy) { log('Push-Signal: Annahme läuft gerade – danach wird ohnehin neu geprüft.', 'debug'); recheck = true; return; }
-    if (!tamLoadReq || silentFetching) { await refreshAndCheck(`Push-Signal (${from})`); return; } // ohne übernommene Anfrage: einmal Refresh
+  // Ergebnis eines Push-Signals: welche Aufträge danach neu in der Tabelle standen und ob angenommen
+  function pushOutcome(entry, pfBefore) {
+    const fresh = [...pushFound].slice(pfBefore);                      // nach dem Signal neu in der Tabelle
+    const acc = GM_getValue('orderbook', []).filter((b) => new Date(b.ts).getTime() >= entry.at && !b.zu).map((b) => b.nr); // seitdem angenommen
+    if (acc.length) return `Angenommen: ${acc.join(', ')}`;
+    return fresh.length ? `neuer Auftrag ${fresh.slice(0, 3).join(', ')} – nicht angenommen (Ortsliste/vergeben, siehe Log)`
+      : 'Tabelle aktualisiert – kein neuer Auftrag';
+  }
+  async function pushQuery(from, entry) {
+    if (busy) { log('Push-Signal: Annahme läuft gerade – danach wird ohnehin neu geprüft.', 'debug'); recheck = true; setPushResult(entry, 'Annahme lief gerade – danach neu geprüft'); return; }
+    const beforeNrs = pushFound.size;
+    if (!tamLoadReq || silentFetching) { // ohne übernommene Anfrage: einmal Refresh
+      await refreshAndCheck(`Push-Signal (${from})`); setPushResult(entry, pushOutcome(entry, beforeNrs)); return;
+    }
     silentFetching = true;
     try {
       const q = await silentQuery();
       const cells = gridTexts(visibleGrid());
       const fresh = [...q.tokens].filter((x) => !cells.has(x) && !silentIgnore.has(x));
-      if (!fresh.length) { log(`Push-Signal: TAM meldet nichts Neues (Abfrage ${q.ms} ms) – Tabelle ist aktuell.`, 'debug'); return; }
+      if (!fresh.length) { log(`Push-Signal: TAM meldet nichts Neues (Abfrage ${q.ms} ms) – Tabelle ist aktuell.`, 'debug'); setPushResult(entry, `nichts Neues bei TAM (${q.ms} ms)`); return; }
       log(`Push-Signal: neue Daten in TAM (${silentLabel(fresh)})${silentPlzInfo(q.tokens)} → Tabelle aktualisieren`, 'ok');
+      setPushResult(entry, 'neue Daten – Tabelle wird geladen …');
       silentFetching = false;
       const before = silentFoundCount;
       if (await refreshAndCheck(`Push-Signal (${from})`)) {
         silentSeen = q.tokens;
         if (silentFoundCount === before) fresh.forEach((x) => silentIgnore.add(x));
       }
+      setPushResult(entry, pushOutcome(entry, beforeNrs));
     } catch (e) {
       log(`Push-Signal: Abfrage fehlgeschlagen (${e.message}) – einmal normal aktualisieren.`, 'err');
       silentFetching = false;
       await refreshAndCheck(`Push-Signal (${from})`);
+      setPushResult(entry, `Fehler bei der Abfrage (${e.message}) – normal aktualisiert`);
     } finally { silentFetching = false; }
   }
   function renderPush() {
+    renderPushPage();
     const el = document.getElementById('tamauto-push-state');
     if (el) {
       el.textContent = cfg.pushOn ? pushState : 'aus';
@@ -1826,6 +1878,7 @@
           <button class="tamauto-tabbtn" data-page="tamauto-page-main">Bedienung</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-adv">Erweiterte Einstellungen</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-book">Auftragsbuch</button>
+          <button class="tamauto-tabbtn" data-page="tamauto-page-push">Push-Signal</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-info">Info</button>
         </div>
         <div id="tamauto-page-adv" style="display:none;margin:6px 0">
@@ -1966,6 +2019,22 @@ Standard: an, Kanal der IB Thomée (Plug & Play). Test: in der App „Test-Signa
             <a href="https://github.com/TheFishflap/TamAuto/blob/main/LICENSE" target="_blank" style="color:#1a4d8f">Lizenzbedingungen</a>
           </div>
           <div style="margin-top:10px;text-align:center;color:#555">Made with <span style="color:#c62828">♥</span> and Claude</div>
+        </div>
+        <div id="tamauto-page-push" style="display:none;margin:6px 0">
+          <div class="tamauto-chk" style="justify-content:space-between;width:100%">
+            <span><b>Push-Signal</b> <span class="tamauto-help" title="Liest live mit, welche Signale die App „TAM-Signal“ (Master-Handys) über den ntfy-Kanal schickt: wann, von welchem Handy, wie schnell (TAM-Benachrichtigung → Handy → Script) und was das Script daraus gemacht hat. Einstellungen (an/aus, Kanal): Reiter „Erweiterte Einstellungen“.">?</span></span>
+            <button id="tamauto-pl-clear" title="Liste leeren">Leeren</button>
+          </div>
+          <div id="tamauto-pl-state" style="font-size:11px;margin:2px 0"></div>
+          <div id="tamauto-pl-sum" style="color:#555;font-size:11px;margin-bottom:4px"></div>
+          <div style="max-height:260px;overflow:auto">
+            <table style="border-collapse:collapse;width:100%;font-size:11px">
+              <thead><tr style="text-align:left;color:#555;border-bottom:1px solid #ddd">
+                <th style="padding:2px 4px">Zeit</th><th style="padding:2px 4px">Handy</th>
+                <th style="padding:2px 4px" title="TAM-Benachrichtigung → Signal beim Script">Laufzeit</th><th style="padding:2px 4px">Ergebnis</th></tr></thead>
+              <tbody id="tamauto-pl-rows"></tbody>
+            </table>
+          </div>
         </div>
         <div id="tamauto-page-book" style="display:none;margin:6px 0">
           <div class="tamauto-chk" style="justify-content:space-between;width:100%">
@@ -2114,6 +2183,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       if (id === 'tamauto-page-main') $('tamauto-ta').style.display = 'none';
       if (id === 'tamauto-page-main') renderBlacklist();
       if (id === 'tamauto-page-book') renderOrderbook();
+      if (id === 'tamauto-page-push') renderPushPage();
       if (id === 'tamauto-page-info' && !changelogLoaded) loadChangelog(); // erst beim Öffnen laden
     };
     $('tamauto-cl-reload').onclick = () => loadChangelog();
@@ -2232,6 +2302,8 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       if (cfg.silentSec && cfg.silentSec < 5) log(`Achtung: ${Math.round(3600 / cfg.silentSec)} Anfragen/Stunde an TAM – hohe Serverlast, nur kurzzeitig nutzen.`, 'err');
     };
     $('tamauto-silent-test').onclick = () => silentTest();
+
+    $('tamauto-pl-clear').onclick = () => { pushLog = []; savePushLog(); renderPushPage(); };
 
     // Push-Signal (App „TAM-Signal“ über ntfy)
     $('tamauto-push').checked = cfg.pushOn;

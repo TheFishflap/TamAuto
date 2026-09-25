@@ -360,6 +360,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.15.1 – 2026-09-25
+- Neuer Reiter **„Push-Signal“**: liest live mit, welche Signale die App TAM-Signal schickt – Zeit, **Handy-Kennung**,
+  Laufzeit (TAM-Benachrichtigung → Script) und **Ergebnis** (z. B. „Angenommen: MW…“, „nichts Neues bei TAM“,
+  „doppelt – zusammengefasst“, „Test – angekommen“). Tagesübersicht je Handy mit Median-Laufzeit; letzte 100 Signale
+  bleiben über ein Neuladen erhalten; „Leeren“.
+
 ### 1.15.0 – 2026-09-25
 - **Push-Signal-Empfänger:** Das Script lauscht dauerhaft auf dem ntfy-Kanal der App **TAM-Signal** (Master-Handys lesen
   die Push-Benachrichtigungen der TAM-App). Bei einem Signal: eine Silent-Abfrage mit Zufallsversatz 0–1,5 s, Tabelle nur
