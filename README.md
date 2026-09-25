@@ -359,6 +359,13 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.14.1 – 2026-09-25
+- **Langsame Auftragskarte:** Das Script wartet jetzt bis 20 s (vorher 8 s) auf die Karte, mit Log-Hinweis „lädt noch“
+  nach 5 s und der Öffnungszeit im Log – eine späte Karte wird trotzdem angenommen. Kommt sie erst nach dem
+  Aufgeben, schließt ein Nachlauf-Wächter sie sofort (vorher blieb sie offen und verdeckte die Tabelle).
+- **Priorität sichtbar:** im ausgeklappten Bedienfeld unter der Statuszeile und im minimierten Überblick.
+- Minimierter Überblick: „Nächster Refresh“ zeigt bei aktivem Auto-Refresh nur dessen Countdown (wie die Statuszeile).
+
 ### 1.14.0 – 2026-09-25
 - **Silent Reload versetzt zum Refresh:** Nach jedem Refresh (Auto-Refresh, TAM, Burst, manuell) wartet die
   Hintergrund-Abfrage mindestens das halbe Intervall – sie liegt so mittig zwischen zwei Refreshes statt zufällig

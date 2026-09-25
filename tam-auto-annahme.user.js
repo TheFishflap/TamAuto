@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.14.0
+// @version      1.14.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1037,7 +1037,20 @@
 
   // Wächter: alle Fehlermeldungen ohne Verzögerung schließen (unabhängig von der Klick-Verzögerung der Annahme)
   function dismissAllMessagesNow() {
-    dismissUnavailable(); dismissTamErrors(); dismissTerminDialog();
+    dismissUnavailable(); dismissTamErrors(); dismissTerminDialog(); closeLateCard();
+  }
+  // Auftragskarte, die erst nach dem Aufgeben geöffnet wurde (TAM sehr langsam): innerhalb von 30 s sofort
+  // schließen, damit sie nicht die Tabelle verdeckt und die nächste Annahme stört
+  let lateCard = null;
+  function closeLateCard() {
+    if (!lateCard) return;
+    if (Date.now() > lateCard.until) { lateCard = null; return; }
+    const nr = lateCard.nr;
+    const late = visibleWindows().filter((w) => cfg.orderWindowTitle.test(winTitle(w)) && winTitle(w).toUpperCase().includes(nrBase(nr)));
+    if (!late.length) return;
+    lateCard = null;
+    late.forEach((w) => closeWindow(w));
+    log(`${nr}: Auftragskarte kam verspätet – sofort geschlossen.`, 'err');
   }
 
   // Alle offenen Meldungen mit OK-Button schließen (nicht Auftragskarte / Bestätigungsdialog)
@@ -1104,9 +1117,17 @@
     // Warten auf die Auftragskarte – oder auf eine TAM-Meldung statt der Karte
     // (z. B. "Auftrag bereits vergeben!": ein anderer Anbieter war schneller). Die Meldung wird ggf. schon vom
     // Sofort-Wächter geschlossen → dann über lastUnavailable erkennen.
-    const opened = await waitFor(() => visibleWindows().find((w) => !before.has(w) &&
+    const cardOrMsg = () => visibleWindows().find((w) => !before.has(w) &&
       (cfg.orderWindowTitle.test(winTitle(w)) || MSG_TITLE.test(winTitle(w)))) ||
-      (lastUnavailable.at >= clickedAt ? 'unavailable' : null), 8000);
+      (lastUnavailable.at >= clickedAt ? 'unavailable' : null);
+    // TAM ist teils sehr langsam (Karte erst nach > 8 s) → bis 20 s warten, nach 5 s einen Hinweis ins Log
+    let opened = await waitFor(cardOrMsg, 5000);
+    if (!opened) {
+      log(`${nr}: Auftragskarte lädt noch (TAM langsam) – warte weiter …`, 'debug');
+      opened = await waitFor(cardOrMsg, 15000);
+    }
+    const openMs = Date.now() - clickedAt;
+    if (opened && opened !== 'unavailable' && openMs > 3000) log(`${nr}: Fenster nach ${(openMs / 1000).toFixed(1)} s geöffnet.`, 'debug');
     if (opened === 'unavailable') {
       log(`${nr}: TAM meldet – ${lastUnavailable.text}`, 'err');
       order.failReason = 'vergeben';
@@ -1120,7 +1141,12 @@
       return false;
     }
     const card = opened;
-    if (!card) { log(`Auftragskarte für ${nr} öffnete sich nicht.`, 'err'); dismissMessages(); return false; }
+    if (!card) {
+      log(`Auftragskarte für ${nr} öffnete sich nicht (nach ${(openMs / 1000).toFixed(1)} s aufgegeben).`, 'err');
+      dismissMessages();
+      lateCard = { nr, until: Date.now() + 30000 }; // kommt sie doch noch → sofort schließen (Wächter)
+      return false;
+    }
 
     // Sicherheitscheck: richtige Auftragskarte?
     if (!winTitle(card).toUpperCase().includes(nrBase(nr))) {
@@ -1398,9 +1424,10 @@
     let next = !t.enabled ? 'TAM-Aktualisierung aus' : 'nach der nächsten TAM-Aktualisierung';
     if (burstUntil > now) next = `⚡ Burst läuft – noch ${fmtDur(burstUntil - now)}`;
     else {
+      // mit Auto-Refresh nur dessen Countdown (jeder Refresh setzt TAMs Timer zurück), sonst TAM
       const cands = [];
-      if (t.enabled && t.at) cands.push(['TAM', t.at - now]);
-      if (arActive()) cands.push(['Auto-Refresh', lastAnyRefreshAt + cfg.intervalSec * 1000 - now]);
+      if (arActive()) cands.push(['Auto-Refresh', Math.max(0, lastAnyRefreshAt + cfg.intervalSec * 1000 - now)]);
+      else if (t.enabled && t.at) cands.push(['TAM', t.at - now]);
       if (cands.length) { const [w, ms] = cands.sort((a, b) => a[1] - b[1])[0]; next = `in ${fmtDur(ms)} (${w})`; }
     }
     document.getElementById('tamauto-mini-next').textContent = next;
@@ -1413,10 +1440,13 @@
     const rows = Object.values(hitStats()).filter((e) => new Date(e.ts) >= from && e.s !== 'gesperrt');
     const ang = rows.filter((e) => e.s === 'angenommen').length;
     document.getElementById('tamauto-mini-rate').textContent = rows.length ? `${ang} von ${rows.length} passenden (${pct(ang, rows.length)})` : 'heute noch keine passenden';
+    document.getElementById('tamauto-mini-prio').textContent = PRIO_MODES[cfg.prioMode] || PRIO_MODES.ort;
   }
 
   function renderSync(now) {
     renderMini(now);
+    const pi = document.getElementById('tamauto-prio-info');
+    if (pi) pi.textContent = `Priorität: ${PRIO_MODES[cfg.prioMode] || PRIO_MODES.ort}`;
     const el = document.getElementById('tamauto-sync');
     if (!el) return;
     const t = tamNext();
@@ -1690,6 +1720,7 @@
           <tr><td style="color:#555;padding-right:8px">Nächster Refresh</td><td id="tamauto-mini-next" style="font-weight:bold"></td></tr>
           <tr><td style="color:#555;padding-right:8px">Letzter Auftrag</td><td id="tamauto-mini-last"></td></tr>
           <tr><td style="color:#555;padding-right:8px">Trefferquote heute</td><td id="tamauto-mini-rate"></td></tr>
+          <tr><td style="color:#555;padding-right:8px">Priorität</td><td id="tamauto-mini-prio"></td></tr>
         </table>
       </div>
       <div id="tamauto-body">
@@ -1700,6 +1731,7 @@
         <div id="tamauto-status" style="color:#555">bereit</div>
         <div id="tamauto-refresh" style="color:#555"></div>
         <div id="tamauto-sync" style="color:#555"></div>
+        <div id="tamauto-prio-info" style="color:#555" title="Ändern unter „Erweiterte Einstellungen“ → Priorität"></div>
         <div id="tamauto-tabbar" style="display:flex;flex-wrap:wrap;gap:0 2px;margin-top:6px">
           <button class="tamauto-tabbtn" data-page="tamauto-page-main">Bedienung</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-adv">Erweiterte Einstellungen</button>
