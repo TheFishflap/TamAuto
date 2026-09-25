@@ -359,6 +359,12 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Auto-Refresh aus), **Start
 
 ## Changelog
 
+### 1.13.8 – 2026-09-25
+- Changelog-Ersatzquelle **OneDrive** hinterlegt (README-Kopie im Ordner „Script“), falls GitHub nicht erreichbar ist.
+- **„Jetzt testen“ holt neue Aufträge sofort:** Findet der Test neue Daten bei TAM, wird die Tabelle direkt aktualisiert
+  und abgeglichen (bisher nur Meldung – bis zur nächsten Abfrage konnte der Auftrag weg sein).
+- Silent Reload / Test zeigen die **PLZ aus TAMs Antwort mit Bewertung**, z. B. „35394 (gesperrt)“, „44135 (PASST)“.
+
 ### 1.13.7 – 2026-09-25
 - **Priorität als Dropdown** (Erweiterte Einstellungen): „Anzahl am Ort → Summe → Preis“ (Standard), „Summe am Ort →
   Preis“, „Höchster Einzelpreis“, „Reihenfolge wie in TAM“ – mit **?**-Erklärung; steht auch im Kopf von „Log kopieren“.

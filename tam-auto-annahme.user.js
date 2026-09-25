@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.13.7
+// @version      1.13.8
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -563,7 +563,7 @@
   // Changelog (Reiter Info): aus dem README auf GitHub – ist GitHub nicht erreichbar, aus der README-Kopie im
   // OneDrive (Freigabelink "Jeder mit dem Link", download.aspx wie bei der Ortsliste). Leer = kein Ersatz.
   const CHANGELOG_URL = 'https://raw.githubusercontent.com/TheFishflap/TamAuto/main/README.md';
-  const CHANGELOG_BACKUP_URL = '';
+  const CHANGELOG_BACKUP_URL = 'https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQCK2PwHwnNhRr4Lx9-HoaRoAaAZTCa8rScTKR9mI84uDzU';
 
   const escHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   // "## Changelog" aus dem README in HTML umwandeln (### Version – Datum, "- " Punkte, **fett**, `Code`)
@@ -1472,6 +1472,15 @@
   }
   // Fürs Log (Entwicklung): neue Einträge ungekürzt und roh, getrennt durch " | " – so fallen auch
   // ungewöhnliche Zeichen/Formate auf (vgl. AuftragsNr "SA040647", "9601182381-10")
+  // PLZ in TAMs Antwort mit Bewertung – zeigt im Log sofort, ob der Auftrag überhaupt passen würde
+  const silentPlzInfo = (tokens) => {
+    const plz = [...tokens].filter((s) => /^\d{5}$/.test(s));
+    if (!plz.length) return '';
+    return ' · PLZ in der Antwort: ' + plz.slice(0, 6).map((p) => {
+      const o = { plz: p, ort: '' };
+      return `${p} (${!matches(o) ? 'nicht in Ortsliste' : blocked(o) ? 'gesperrt' : 'PASST'})`;
+    }).join(', ');
+  };
   let lastSilentRaw = new Map();
   const silentLabel = (arr) => `${arr.length} neue Einträge: ${arr.slice(0, 8).map((x) => lastSilentRaw.get(x) || x).join(' | ')}` +
     (arr.length > 8 ? ' | …' : '');
@@ -1490,8 +1499,15 @@
       const fresh = [...q.tokens].filter((x) => !cells.has(x) && !silentIgnore.has(x));
       log(`Silent-Test OK: Antwort in ${q.ms} ms (${q.bytes} Zeichen) · ${q.tokens.size ? `TAM meldet Daten (${q.tokens.size} Einträge)` : 'TAM meldet keine Aufträge'}` +
         ` · in der Tabelle: ${inGrid.size} Auftr.` +
-        ` · nur bei TAM (noch nicht in der Tabelle): ${fresh.length ? silentLabel(fresh) : 'nichts – Tabelle ist aktuell'}`, 'ok');
+        ` · nur bei TAM (noch nicht in der Tabelle): ${fresh.length ? silentLabel(fresh) : 'nichts – Tabelle ist aktuell'}` +
+        silentPlzInfo(q.tokens), 'ok');
       silentState = silentStateText(q);
+      // neue Daten gefunden → wie beim Silent Reload sofort die Tabelle holen und abgleichen
+      if (fresh.length && cfg.enabled && onPublishedTab()) {
+        silentFetching = false;
+        log('Silent-Test: neue Daten → Tabelle jetzt aktualisieren und abgleichen.', 'ok');
+        await refreshAndCheck('Silent-Test');
+      }
     } catch (e) {
       log(`Silent-Test fehlgeschlagen: ${e.message}`, 'err'); silentState = `Fehler: ${e.message}`;
     } finally { silentFetching = false; renderSilent(); }
@@ -1513,7 +1529,7 @@
       const fresh = [...tokens].filter((x) => !cells.has(x) && !silentSeen.has(x) && !silentIgnore.has(x));
       silentState = silentStateText(q);
       if (!fresh.length) { silentSeen = tokens; return; }
-      log(`Silent Reload: neue Daten in TAM (${silentLabel(fresh)}) → Tabelle aktualisieren`, 'ok');
+      log(`Silent Reload: neue Daten in TAM (${silentLabel(fresh)})${silentPlzInfo(tokens)} → Tabelle aktualisieren`, 'ok');
       silentFetching = false;
       const before = silentFoundCount;
       if (await refreshAndCheck('Silent Reload')) {
