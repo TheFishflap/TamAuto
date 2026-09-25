@@ -48,8 +48,9 @@ Ohne Lizenz zeigt das Bedienfeld nur **„Lizenz erforderlich“** und eine **In
 1. Installations-ID mit **„Kopieren“** kopieren und an die IB Thomée GmbH schicken.
 2. Den erhaltenen Lizenzschlüssel (beginnt mit `TAM1.`) einfügen und **„Aktivieren“** klicken.
 
-Die Lizenz gilt nur für diese eine Installation und **bis zum 31.12. des laufenden Jahres**.
-Ab 30 Tagen vor Ablauf erscheint ein roter Hinweis; danach ist eine neue Lizenz nötig.
+Die Lizenz gilt nur für diese eine Installation und ist befristet: **1 Monat, 3 Monate, 6 Monate oder bis
+zum 31.12. des laufenden Jahres** (Ablaufdatum und Dauer stehen im Reiter **Info**). Vor Ablauf erscheint ein
+roter Hinweis (30 Tage vorher, bei kurzen Lizenzen im letzten Viertel der Laufzeit); danach ist eine neue Lizenz nötig.
 Bei **Updates und Neuinstallation des Scripts** bleibt die Aktivierung erhalten (ID und Schlüssel sind
 zusätzlich im Browser gesichert). Nur wenn die Browserdaten der TAM-Seite gelöscht werden oder ein anderer
 Browser genutzt wird, ist eine neue Aktivierung nötig.
@@ -247,6 +248,13 @@ manueller Refresh), **Reiterwechsel**, **Intervall** (Adaptive Refresh aus), **S
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.10.0 – 2026-09-25
+- **Lizenzdauer** wählbar: 1 Monat, 3 Monate, 6 Monate oder bis Jahresende; Anzeige im Reiter Info,
+  Ablaufhinweis passend zur Laufzeit.
+- Bugfix Auftragsbuch/Trefferquote: Alle im **Warenkorb angehakten** Aufträge, die mit „Annehmen“ gemeinsam
+  angenommen werden (0 km und schon vorher im Warenkorb liegende), werden jetzt erfasst – im Auftragsbuch mit
+  „↳“ markiert (Tooltip: zusammen mit … angenommen), in der Trefferquote als angenommen, und nicht erneut versucht.
 
 ### 1.9.3 – 2026-09-24
 - „Liste einfügen“ als **Bulk**-Option gekennzeichnet (Hilfe und Eingabefeld) mit Hinweis, dass einzelne PLZ

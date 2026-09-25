@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.9.3
+// @version      1.10.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -339,14 +339,42 @@
   };
   const fmtEuro = (v) => v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 
+  // Tabellenzeilen des letzten Abgleichs nach AuftragsNr – um mit angenommene Warenkorb-Aufträge (PLZ, Ort,
+  // Preis) nachschlagen zu können, auch wenn sie nach der Annahme aus der Tabelle verschwunden sind
+  let rowsByNr = new Map();
+  const rememberRows = (rows) => { rowsByNr = new Map(rows.filter((r) => r.nr).map((r) => [r.nr.toUpperCase(), r])); };
+
+  // Mit dem Hauptauftrag gemeinsam angenommen: alle angehakten Warenkorb-Einträge (Fallback: 0-km-Liste)
+  const bulkOf = (o) => o.bulk || o.extra || [];
+  const bulkLabel = (o) => bulkOf(o).map((x) => `${x} (${(o.extra || []).includes(x) ? '0 km' : 'Warenkorb'})`).join(', ');
+
   function recordOrder(o) {
     const book = GM_getValue('orderbook', []);
     const ts = new Date().toISOString();
     book.push({ ts, nr: o.nr, plz: o.plz, ort: o.ort, dienst: o.dienst, preis: parseEuro(o.preis) });
-    // 0-km-Aufträge: gleicher Ort, Preis steht in der Tabelle nicht zur Verfügung
-    (o.extra || []).forEach((x) => book.push({ ts, nr: x, plz: o.plz, ort: o.ort, dienst: `0 km zu ${o.nr}`, preis: null }));
+    bulkOf(o).forEach((x) => {
+      const row = rowsByNr.get(x);
+      const art = (o.extra || []).includes(x) ? '0 km' : 'Warenkorb';
+      book.push({ ts, nr: x, plz: row ? row.plz : o.plz, ort: row ? row.ort : o.ort, zu: o.nr,
+        dienst: `${art} – zusammen mit ${o.nr} angenommen${row && row.dienst ? ` · ${row.dienst}` : ''}`,
+        preis: row ? parseEuro(row.preis) : null });
+    });
     GM_setValue('orderbook', book.slice(-5000));
     renderOrderbook();
+  }
+
+  // Erfolgreiche Annahme verbuchen: Hauptauftrag + alle mit angenommenen Warenkorb-Einträge
+  // (als erledigt merken, ins Auftragsbuch, in der Trefferquote als "angenommen")
+  function bookAccepted(o) {
+    done.add(o.key || o.nr);
+    bulkOf(o).forEach((x) => done.add(x));
+    GM_setValue('doneRefs', [...done].slice(-2000));
+    recordOrder(o);
+    const stats = hitStats();
+    bulkOf(o).forEach((x) => {
+      const row = rowsByNr.get(x);
+      if (stats[x] || (row && matches(row))) trackResult(row || { nr: x, plz: o.plz }, 'angenommen');
+    });
   }
 
   // ---- Trefferquote: jeder veröffentlichte Auftrag mit passender PLZ wird einmal erfasst und bekommt ein Ergebnis
@@ -400,7 +428,7 @@
       const tr = document.createElement('tr');
       const d = new Date(e.ts);
       [`${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`,
-        e.nr, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis)].forEach((v, i) => {
+        e.zu ? `↳ ${e.nr}` : e.nr, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis)].forEach((v, i) => {
         const td = document.createElement('td');
         td.textContent = v;
         Object.assign(td.style, { padding: '1px 4px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap', textAlign: i === 4 ? 'right' : 'left' });
@@ -882,6 +910,10 @@
     const unchecked = items.filter((w) => !w.cb.checked).map((w) => w.nr);
     if (!items.some((w) => w.nr === nr.toUpperCase())) { log(`${nr} nicht im Warenkorb.`, 'err'); closeWindow(card); return false; }
     if (unchecked.length) { log(`Nicht angehakt trotz "alle auswählen": ${unchecked.join(', ')}`, 'err'); closeWindow(card); return false; }
+    // Alles, was jetzt im Warenkorb angehakt ist, wird mit "Annehmen" GEMEINSAM angenommen (Bulk) – nicht nur
+    // die selbst angeklickten 0-km-Aufträge, sondern auch Einträge, die schon vorher im Warenkorb lagen.
+    const nrOf = (s) => ((String(s).match(/(MW)?\d{6,}/i) || [s])[0]).toUpperCase();
+    order.bulk = [...new Set(items.filter((w) => w.cb.checked).map((w) => nrOf(w.nr)))].filter((x) => x !== nr.toUpperCase());
 
     // 3) "Annehmen" unten in der Auftragskarte
     const acceptBtn = findButton(cfg.acceptButton, card);
@@ -967,6 +999,7 @@
       const grid = visibleGrid();
       if (!grid) { log('Keine Auftragstabelle im Tab "Veröffentlichte Aufträge" gefunden.', 'err'); return; }
       const all = readOrders(grid).map((o) => Object.assign(o, { key: o.nr || o.ref }));
+      rememberRows(all);
       if (!lastColsOk) {
         if (lastSummary !== 'NOCOLS') log(`Abbruch: PLZ/Ort-Spalte nicht gefunden. ${lastColInfo}`, 'err');
         lastSummary = 'NOCOLS'; setStatus('Fehler: PLZ/Ort-Spalte nicht gefunden'); return;
@@ -1005,6 +1038,8 @@
       for (const o of hits) {
         if (n >= cfg.maxPerCycle) { log(`Limit ${cfg.maxPerCycle}/Zyklus erreicht.`); break; }
         const desc = `${o.nr || o.ref} · ${o.plz} ${o.ort} · ${o.dienst}${o.preis ? ' · ' + o.preis : ''}`;
+        // Schon mit einem anderen Auftrag im Warenkorb (Bulk) angenommen → nicht erneut versuchen
+        if (done.has(o.key) || done.has((o.nr || '').toUpperCase())) { log(`${o.key}: bereits zusammen mit einem anderen Auftrag angenommen.`, 'ok'); continue; }
         // Vor jeder Annahme erneut prüfen: richtiger Tab, Zeile noch in dieser Tabelle
         if (!onPublishedTab() || visibleGrid() !== grid || !grid.contains(o.row)) {
           log('Abbruch: Tab gewechselt oder Tabelle neu geladen – keine Annahme.', 'err'); recheck = true; break;
@@ -1013,10 +1048,9 @@
         const ok = await acceptOrder(o);
         trackResult(o, ok ? 'angenommen' : o.failReason === 'vergeben' ? 'vergeben' : 'fehler');
         if (ok) {
-          const plus = (o.extra || []).length ? ` + ${o.extra.join(', ')} (0 km)` : '';
+          const plus = bulkOf(o).length ? ` + ${bulkLabel(o)}` : '';
           log(`Angenommen: ${desc}${plus}`, 'ok'); notify('TAM: Auftrag angenommen', desc + plus);
-          done.add(o.key); (o.extra || []).forEach((x) => done.add(x)); n++;
-          recordOrder(o);
+          bookAccepted(o); n++;
         } else {
           log(`Annahme fehlgeschlagen: ${desc}`, 'err');
           notify('TAM: Annahme fehlgeschlagen', desc); done.add(o.key); // nicht endlos erneut versuchen
@@ -1212,7 +1246,7 @@
           <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd">
             <b>© 2026 IB Thomée GmbH. Alle Rechte vorbehalten.</b><br>
             Die Nutzung ist nur mit einem gültigen Lizenzschlüssel der IB Thomée GmbH gestattet. Der Schlüssel gilt
-            ausschließlich für diese Installation und bis zum Ende des Kalenderjahres.<br>
+            ausschließlich für diese Installation und ist zeitlich befristet (1, 3 oder 6 Monate bzw. bis Jahresende – siehe „Gültig bis“).<br>
             <b>Nicht gestattet:</b> Veränderung oder Bearbeitung des Codes, Weitergabe der Software oder des
             Lizenzschlüssels, Vervielfältigung sowie das Umgehen der Lizenzprüfung.
             <a href="https://github.com/TheFishflap/TamAuto/blob/main/LICENSE" target="_blank" style="color:#1a4d8f">Lizenzbedingungen</a>
@@ -1349,16 +1383,18 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       if (busy) { log('Script ist gerade beschäftigt – kurz warten.', 'err'); return; }
       if (!onPublishedTab()) { log('Bitte Tab "Veröffentlichte Aufträge" öffnen.', 'err'); return; }
       const grid = visibleGrid();
-      const o = grid && readOrders(grid).find((x) => x.valid && x.nr);
+      const rows = grid ? readOrders(grid) : [];
+      rememberRows(rows);
+      const o = rows.find((x) => x.valid && x.nr);
       if (!o) { log('Kein Auftrag in der Tabelle.', 'err'); return; }
       if (!confirm(`Auftrag ${o.nr} (${o.plz} ${o.ort}) jetzt VERBINDLICH annehmen – unabhängig von der Ortsliste?`)) return;
       busy = true;
       try {
         log(`Annahme 1. Zeile gestartet: ${o.nr} · ${o.plz} ${o.ort}`);
         const ok = await acceptOrder(o);
-        const plus = (o.extra || []).length ? ` + ${o.extra.join(', ')} (0 km)` : '';
+        const plus = bulkOf(o).length ? ` + ${bulkLabel(o)}` : '';
         log(ok ? `Annahme 1. Zeile erfolgreich: ${o.nr}${plus}` : `Annahme 1. Zeile fehlgeschlagen: ${o.nr}`, ok ? 'ok' : 'err');
-        if (ok) { done.add(o.nr); (o.extra || []).forEach((x) => done.add(x)); GM_setValue('doneRefs', [...done].slice(-2000)); recordOrder(o); }
+        if (ok) bookAccepted(o);
       } finally { releaseBusy(); }
     };
     $('tamauto-upd').onclick = () => checkUpdate(true);
@@ -1422,14 +1458,19 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     };
     renderDelay();
 
-    // Lizenzinfo; ab 30 Tagen vor Ablauf deutlicher Hinweis
+    // Lizenzinfo. Laufzeit: 1 / 3 / 6 Monate oder bis Jahresende. Hinweis vor Ablauf: 30 Tage, bei kurzen
+    // Lizenzen früher nur das letzte Viertel der Laufzeit (1 Monat → ca. 8 Tage vorher)
     const daysLeft = Math.ceil((new Date(`${license.exp}T23:59:59`) - Date.now()) / 864e5);
+    const totalDays = license.iat ? Math.ceil((new Date(license.exp) - new Date(license.iat)) / 864e5) : 365;
+    const warnDays = Math.min(30, Math.max(3, Math.ceil(totalDays / 4)));
+    const durLabel = { '1M': '1 Monat', '3M': '3 Monate', '6M': '6 Monate', Jahr: 'bis Jahresende' }[license.dur] || '';
     // Reiter "Info" (textContent: Name aus dem Schlüssel nie als HTML einsetzen)
     $('tamauto-info-name').textContent = license.name;
-    $('tamauto-info-exp').textContent = `${fmtDate(license.exp)}${daysLeft <= 30 ? ` (noch ${daysLeft} Tage – neue Lizenz anfordern)` : ''}`;
-    if (daysLeft <= 30) $('tamauto-info-exp').style.color = '#c62828';
+    $('tamauto-info-exp').textContent = `${fmtDate(license.exp)}${durLabel ? ` (Lizenzdauer: ${durLabel})` : ''}` +
+      `${daysLeft <= warnDays ? ` – noch ${daysLeft} Tage, neue Lizenz anfordern` : ''}`;
+    if (daysLeft <= warnDays) $('tamauto-info-exp').style.color = '#c62828';
     $('tamauto-info-id').textContent = installId();
-    if (daysLeft <= 30) {
+    if (daysLeft <= warnDays) {
       const w = document.createElement('div');
       Object.assign(w.style, { color: '#c62828', fontWeight: 'bold', margin: '4px 0' });
       w.textContent = `Lizenz läuft am ${fmtDate(license.exp)} ab (noch ${daysLeft} Tage) – neue Lizenz bei IB Thomée anfordern.`;
