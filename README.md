@@ -390,6 +390,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.17.1 – 2026-09-26
+- Interne Sicherheitsprüfung ergänzt.
+
 ### 1.17.0 – 2026-09-25
 - **Arbeitszeit** (Erweiterte Einstellungen, **Standard an, 07:30–18:15**): Außerhalb pausieren **Auto-Refresh und Silent
   Reload**; ab Beginn der Arbeitszeit laufen beide automatisch wieder mit den zuletzt eingestellten Werten (die Einstellungen

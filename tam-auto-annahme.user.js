@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.17.0
+// @version      1.17.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -2839,11 +2839,37 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     return '';
   }
 
+  // ---- Kontoprüfung: Das Script arbeitet nur, wenn im TAM-Kopf oben rechts das Konto der IB Thomée angemeldet ist.
+  // Anderes Konto → inaktiv (neutraler Lizenzhinweis). Ist oben rechts gar kein Text zu finden (TAM-Layout geändert),
+  // wird NICHT gesperrt, damit ein Layout-Wechsel nicht alle Nutzer stilllegt – dann nur ein Log-Hinweis.
+  const ACCOUNT_OK = /ib\s*thom[eé]e\s*gmbh/i;
+  let tamAcct = '';
+  // Texte der Kopfzeile (oberste 150 px, ganze Breite, ohne Bedienfeld des Scripts)
+  function tamAccount() {
+    return [...document.querySelectorAll('body *')].filter((el) => {
+      if (el.closest('#tamauto') || !visible(el)) return false;
+      const own = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.nodeValue).join('').trim();
+      if (own.length < 3 || own.length > 80) return false;
+      const r = el.getBoundingClientRect();
+      return r.top >= 0 && r.top < 150;
+    }).map((el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.nodeValue).join('').trim()).join(' | ');
+  }
+  async function accountCheck() {
+    // Seite ohne Größe (z. B. im Hintergrund nicht gerendert) → nicht prüfbar, nicht sperren
+    if (!innerWidth || !innerHeight) { log('Kontoprüfung: Seite nicht dargestellt – übersprungen.', 'debug'); return { ok: true, acct: '' }; }
+    let seen = '';
+    const ok = await waitFor(() => { seen = tamAccount(); return ACCOUNT_OK.test(seen) ? seen : null; }, 15000, 500);
+    if (ok) { tamAcct = (ok.match(ACCOUNT_OK) || [''])[0]; return { ok: true, acct: tamAcct }; }
+    tamAcct = seen.slice(0, 80);
+    if (!seen) { log('Kontoprüfung: Kontoname oben rechts nicht gefunden – übersprungen.', 'debug'); return { ok: true, acct: '' }; }
+    return { ok: false, acct: tamAcct };
+  }
+
   // Lebenszeichen für die Nutzerübersicht in der Lizenz-GUI
   function sendLicStatus() {
     if (!license) return;
     licPost(LIC_TOPIC_STATUS, { v: 1, t: 'status', id: installId(), name: license.name, ver: VERSION, exp: license.exp,
-      on: !!cfg.enabled, at: Date.now() }).catch(() => {});
+      on: !!cfg.enabled, acct: tamAcct, at: Date.now() }).catch(() => {});
   }
   // Auf neue Schlüssel für diese Installation hören (Freischaltung / Verlängerung) – aktiviert automatisch
   let licES = null;
@@ -2875,8 +2901,9 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     } catch (e) { /* ohne Live-Verbindung: nur Nachholen */ }
   }
   function requestLicense(name, note) {
+    const acct = tamAcct || ((tamAccount().match(ACCOUNT_OK) || [])[0]) || tamAccount().slice(0, 80);
     return licPost(LIC_TOPIC_REQ, { v: 1, t: 'anfrage', id: installId(), name: String(name || '').trim().slice(0, 60),
-      ver: VERSION, exp: license ? license.exp : '', note: note || '', at: Date.now() });
+      ver: VERSION, exp: license ? license.exp : '', note: note || '', acct, at: Date.now() });
   }
   function renderLicInfo() {
     const n = document.getElementById('tamauto-info-name'), e = document.getElementById('tamauto-info-exp');
@@ -2951,6 +2978,14 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     const lc = await checkLicense(storedKey);
     if (lc.ok) setLicenseKey(storedKey); // Sicherung/Tampermonkey-Speicher gegenseitig auffüllen
     if (lc.ok) { await loadRevocations(); const rb = revokeBlock(); if (rb) { lc.ok = false; lc.reason = rb; } }
+    if (lc.ok) { // Kontoprüfung (still): nur mit dem TAM-Konto der IB Thomée
+      const ac = await accountCheck();
+      if (!ac.ok) {
+        lc.ok = false; lc.reason = 'Diese Installation ist für das angemeldete TAM-Konto nicht freigegeben.';
+        licPost(LIC_TOPIC_STATUS, { v: 1, t: 'fremdkonto', id: installId(), name: lc.lic.name, ver: VERSION, exp: lc.lic.exp,
+          acct: ac.acct, at: Date.now() }).catch(() => {});
+      }
+    }
     if (!lc.ok) {
       buildLicensePanel(lc.reason);
       checkUpdate(); // Updates auch ohne Lizenz
