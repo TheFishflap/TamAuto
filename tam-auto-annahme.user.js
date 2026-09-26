@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.17.2
+// @version      1.17.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -613,12 +613,23 @@
   }
 
   // Ergebnis der manuellen Prüfung direkt am Button "Softwareupdate" zeigen (Log ist meist ausgeblendet)
+  let pendingUpdate = ''; // gefundene neuere Version → Button "Softwareupdate" wird zum Installationslink
   function updateButtonFeedback(text, color) {
     const b = document.getElementById('tamauto-upd');
     if (!b) return;
     clearTimeout(b._reset);
     b.textContent = text; b.style.color = color || '';
-    b._reset = setTimeout(() => { b.textContent = 'Softwareupdate'; b.style.color = ''; }, 10000);
+    if (!pendingUpdate) b._reset = setTimeout(() => { b.textContent = 'Softwareupdate'; b.style.color = ''; }, 10000);
+  }
+  // Update verfügbar: Button dauerhaft als Link zur Installation (öffnet die Script-Datei → Tampermonkey fragt nach)
+  function markUpdateButton(ver) {
+    pendingUpdate = ver;
+    const b = document.getElementById('tamauto-upd');
+    if (!b) return;
+    clearTimeout(b._reset);
+    b.textContent = `⬆ Update ${ver} installieren`;
+    b.title = `Neue Version ${ver} verfügbar (installiert: ${VERSION}) – klicken öffnet die Installation in Tampermonkey`;
+    Object.assign(b.style, { color: '#fff', background: '#2e7d32', borderColor: '#2e7d32', fontWeight: 'bold' });
   }
 
   function checkUpdate(manual = false) {
@@ -638,7 +649,7 @@
         if (newerVersion(m[1], VERSION)) {
           log(`Update ${m[1]} verfügbar (installiert: ${VERSION}).`, 'ok');
           if (upd) { upd.textContent = `⬆ Update ${m[1]} verfügbar – installieren`; upd.style.display = 'block'; }
-          if (manual) updateButtonFeedback(`⬆ Update ${m[1]} verfügbar`, '#1a4d8f');
+          markUpdateButton(m[1]);
         } else if (manual) {
           log(`Kein Update – ${VERSION} ist aktuell.`, 'ok');
           updateButtonFeedback(`✓ Alles auf dem neuesten Stand (v${VERSION})`, '#2e7d32');
@@ -2261,7 +2272,12 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
         loadPlacesFromText(ta.value); ta.style.display = 'none'; $('tamauto-paste').textContent = 'Liste einfügen';
       }
     };
-    $('tamauto-upd').onclick = () => checkUpdate(true);
+    // Ohne gefundenes Update: nach Updates suchen. Mit Update: als Link die Installation öffnen.
+    $('tamauto-upd').onclick = () => {
+      if (pendingUpdate) { window.open(UPDATE_URL, '_blank'); log(`Update ${pendingUpdate}: Installation geöffnet.`); return; }
+      checkUpdate(true);
+    };
+    if (pendingUpdate) markUpdateButton(pendingUpdate); // Update wurde schon vor dem Aufbau des Bedienfelds gefunden
 
     // Reiter im Bedienfeld
     const showPage = (id) => {

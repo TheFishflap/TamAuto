@@ -390,6 +390,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.17.3 – 2026-09-26
+- Reiter Info: Ist ein Update verfügbar, wird der Button „Softwareupdate“ zum grünen **„⬆ Update x installieren“** –
+  ein Klick öffnet die Installation in Tampermonkey. Der Hinweis oben im Bedienfeld bleibt zusätzlich bestehen.
+
 ### 1.17.2 – 2026-09-26
 - Bedienfeld startet **standardmäßig eingeklappt** (gilt nach dem Update einmal für alle; danach wie zuletzt).
 - **Start/Stop-Button in der Titelzeile** – eingeklappt wie ausgeklappt erreichbar; „–“ / „+“ größer.
