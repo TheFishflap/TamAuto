@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.17.1
+// @version      1.17.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -537,7 +537,19 @@
       if (!entries.length) xl.textContent = 'Keine Einträge.';
       entries.forEach(([label, tip]) => { const c = chipEl(label, '#6d4c41', '#efebe9'); c.title = tip; xl.appendChild(c); });
     }
-    // Anzahl der Sperren steht im Kopf („Sperrliste: n“) – der Reiter heißt nur „Bedienung“
+    // Ortsliste (Blatt „annehmen“) genauso auflisten, grün
+    const ol = document.getElementById('tamauto-ol-excel');
+    if (ol) {
+      ol.innerHTML = '';
+      const entries = [...places.plz.map((x) => [x.padEnd(5, '*'), x.length < 5 ? `nimmt alle PLZ an, die mit ${x} beginnen (${x.padEnd(5, '0')}–${x.padEnd(5, '9')})` : `PLZ ${x}`]),
+        ...places.orte.map((o) => [o, `Ort ${o}`])];
+      if (!entries.length) ol.textContent = 'Keine Einträge – „Neu laden“ klicken.';
+      entries.forEach(([label, tip]) => { const c = chipEl(label, '#2e7d32', '#e8f5e9'); c.title = tip; ol.appendChild(c); });
+    }
+    // Anzahl in Klammern hinter den Überschriften
+    const cnt = (plz, orte) => `(${plz}${orte ? ` + ${orte} Orte` : ''})`;
+    const oc = document.getElementById('tamauto-ol-count'); if (oc) oc.textContent = cnt(places.plz.length, places.orte.length);
+    const bc = document.getElementById('tamauto-bl-count'); if (bc) bc.textContent = cnt(xb.plz.length, xb.orte.length);
   }
 
   // ------------------------------------------------------------------ Updates (GitHub)
@@ -1897,7 +1909,7 @@
     p.id = 'tamauto';
     p.innerHTML = `
       <div id="tamauto-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:move;white-space:nowrap">
-        <b>TAM Auto-Annahme v${VERSION}</b><span id="tamauto-head-state" style="display:none;font-weight:bold"></span><span id="tamauto-min" style="cursor:pointer;padding:0 6px;font-weight:bold">–</span></div>
+        <b style="margin-right:auto">TAM Auto-Annahme v${VERSION}</b><span id="tamauto-head-state" style="display:none;font-weight:bold"></span><button id="tamauto-toggle" title="Automatische Annahme starten / stoppen"></button><span id="tamauto-min" style="cursor:pointer;padding:0 4px;font-weight:bold;font-size:22px;line-height:18px;min-width:18px;text-align:center;color:#1a4d8f">–</span></div>
       <div id="tamauto-mini" style="display:none;margin-top:4px;line-height:1.5">
         <div id="tamauto-mini-state" style="font-size:18px;font-weight:bold"></div>
         <table style="border-collapse:collapse">
@@ -2144,7 +2156,6 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
             title="Passend = veröffentlichte Aufträge, deren PLZ in der Ortsliste steht. Tatsächlich verfügbar = davon versucht und beim Öffnen nicht schon an einen anderen Anbieter vergeben."></div>
         </div>
         <div id="tamauto-page-main" style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          <button id="tamauto-toggle"></button>
           <button id="tamauto-load" title="Lädt Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) neu">Ortslisten laden</button>
           <span class="tamauto-chk">
             <button id="tamauto-paste">Liste einfügen</button>
@@ -2164,11 +2175,15 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
             <span id="tamauto-burst-state" style="color:#555"></span>
           </span>
           <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">
-            <div><b>Sperrliste aus Excel</b>
-              <span class="tamauto-help" title="PLZ aus dem Excel-Blatt „nicht annehmen“. Diese PLZ werden NIE angenommen – dauerhaft, solange sie im Excel stehen. Ändern nur im Excel, danach „Neu laden“.">?</span>
-              <span style="color:#555">– Blatt „nicht annehmen“</span>
-              <button id="tamauto-bl-reload" style="margin-left:4px">Neu laden</button>
+            <div><b>Ortsliste aus Excel <span id="tamauto-ol-count"></span></b>
+              <span class="tamauto-help" title="PLZ/Orte aus dem Excel-Blatt „annehmen“. Aufträge mit diesen PLZ (bzw. Orten) werden angenommen – „44***“ = alle PLZ, die mit 44 beginnen. Ändern nur im Excel, danach „Neu laden“.">?</span>
+              <span style="color:#555">– Blatt „annehmen“</span>
+              <button id="tamauto-bl-reload" style="margin-left:4px" title="Lädt Ortsliste und Sperrliste neu">Neu laden</button>
               <div id="tamauto-bl-updated" style="color:#555;font-size:11px;margin-top:2px"></div></div>
+            <div id="tamauto-ol-excel" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
+            <div style="margin-top:8px"><b>Sperrliste aus Excel <span id="tamauto-bl-count"></span></b>
+              <span class="tamauto-help" title="PLZ aus dem Excel-Blatt „nicht annehmen“. Diese PLZ werden NIE angenommen – dauerhaft, solange sie im Excel stehen. Ändern nur im Excel, danach „Neu laden“.">?</span>
+              <span style="color:#555">– Blatt „nicht annehmen“</span></div>
             <div id="tamauto-bl-excel" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
           </div>
           <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">
@@ -2558,7 +2573,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       $('tamauto-mini').style.display = min ? '' : 'none'; // kompakter Überblick statt Kurzstatus
       if (min) renderMini(Date.now());
       const g = $('tamauto-grip'); if (g) g.style.display = min || !(matchMedia('(pointer: coarse)').matches || isAndroid) ? 'none' : '';
-      GM_setValue('minimized', min);
+      GM_setValue('minimizedV2', min); // V2: Standard eingeklappt (gilt nach dem Update einmal für alle)
       // Titelzeile im Fenster halten, wenn das Bedienfeld oben/links verankert ist
       if (p.style.left) { const r = p.getBoundingClientRect(); p.style.left = `${Math.max(0, Math.min(r.left, innerWidth - r.width))}px`; }
     };
@@ -2626,7 +2641,8 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
 
     // verschiebbar über die Titelzeile … (touch-action: none, damit der Finger nicht die Seite scrollt)
     $('tamauto-head').style.touchAction = 'none';
-    $('tamauto-head').addEventListener('pointerdown', (e) => { if (e.target.id !== 'tamauto-min') { e.stopPropagation(); startDrag(e); } });
+    // Titelzeile zieht das Bedienfeld – außer auf „–“ und dem Start/Stop-Button
+    $('tamauto-head').addEventListener('pointerdown', (e) => { if (e.target.id !== 'tamauto-min' && !e.target.closest('button')) { e.stopPropagation(); startDrag(e); } });
     // … oder über den äußeren Rand; Mauszeiger zeigt das an
     p.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') p.style.cursor = edgeHit(e) ? 'move' : ''; });
     p.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse' && edgeHit(e)) startDrag(e); });
@@ -2668,7 +2684,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
         saveRect();
       }, { once: true });
     });
-    if (GM_getValue('minimized', false)) setMinimized(true); // zuletzt minimiert → wieder minimiert starten
+    if (GM_getValue('minimizedV2', true)) setMinimized(true); // Standard eingeklappt; sonst wie zuletzt
     renderStatus();
   }
 

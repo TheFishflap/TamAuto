@@ -390,6 +390,12 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.17.2 – 2026-09-26
+- Bedienfeld startet **standardmäßig eingeklappt** (gilt nach dem Update einmal für alle; danach wie zuletzt).
+- **Start/Stop-Button in der Titelzeile** – eingeklappt wie ausgeklappt erreichbar; „–“ / „+“ größer.
+- Reiter Bedienung: **Ortsliste aus Excel** (Blatt „annehmen“) wird wie die Sperrliste als Liste gezeigt (grün);
+  hinter beiden Überschriften die **Anzahl in Klammern**, z. B. „Ortsliste aus Excel (29)“, „Sperrliste aus Excel (27)“.
+
 ### 1.17.1 – 2026-09-26
 - Interne Sicherheitsprüfung ergänzt.
 
