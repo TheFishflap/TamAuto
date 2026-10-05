@@ -553,6 +553,30 @@ describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
     assert.ok(await until(() => tam.posts('tamret-').length, 8000));
   });
 
+  it('Lizenz mit Kanal-Schlüssel per Fernfreischaltung → sofort geheimer Kanal (ohne Neuladen)', async () => {
+    const { pk, gm } = await install();
+    tam = startTam({ gm: { ...gm, places: KOELN } }); // läuft noch mit Lizenz ohne Kanal-Schlüssel
+    await tam.ready();
+    const ck = K.newChannelKey(), ret = await K.channelTopic(ck, 'ret');
+    const key = licenseKey({ exp: '2099-12-31', cke: await K.sealChannelKey(pk, ck) });
+    tam.ntfyRaw('tamlic-hnzqxgvxtcc49z6z-key-', key);
+    assert.ok(await until(() => tam.store.get('licenseKey') === key, 2000), 'Schlüssel nicht übernommen');
+    await until(() => tam.live(ret).length, 2000);
+    tam.addOrder(ORDER);
+    assert.ok(await until(() => tam.posts(ret).length, 8000), 'nicht auf dem geheimen Kanal');
+    assert.equal(tam.posts('tamret-').length, 0);
+  });
+
+  it('alte Lizenz (wie von der PowerShell-GUI, ohne Kanal-Schlüssel) → läuft, Rückgaben öffentlich wie bisher', async () => {
+    tam = startTam({ gm: { places: KOELN, licenseKey: licenseKey({ name: 'Alt', exp: '2026-12-31', iat: '2026-09-24', dur: 'Jahr' }) } });
+    await tam.ready();
+    assert.ok(tam.mainPanel());
+    tam.addOrder(ORDER);
+    assert.ok(await until(() => tam.accepted.includes(ORDER.nr), 15000), tam.logs().join('\n'));
+    assert.ok(await until(() => tam.posts('tamret-').length, 8000));
+    assert.equal(tam.posts('tamk-').length, 0);
+  });
+
   it('neues Gerät (Backup) → neuer Geräteschlüssel', async () => {
     const a = await install();
     const t = startTam({ gm: a.gm, device: { platform: 'Linux armv8l', hardwareConcurrency: 2, maxTouchPoints: 10, width: 700, height: 1100, dpr: 3 } });

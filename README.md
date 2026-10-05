@@ -398,6 +398,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.19.1 – 2026-10-06
+- Neue Lizenz per Fernfreischaltung mit Kanal-Schlüssel: geschützter Kanal sofort aktiv, nicht erst nach dem Neuladen der Seite.
+  Lizenzen ohne Kanal-Schlüssel (alle bisherigen) arbeiten unverändert weiter.
+
 ### 1.19.0 – 2026-10-05
 - **Geschützte Kanäle zwischen den Geräten:** Jede Installation hat einen eigenen Geräteschlüssel. Neue Lizenzen enthalten
   einen Kanal-Schlüssel, den nur dieses Gerät lesen kann. Damit laufen die Rückgabe-Meldungen über einen nicht erratbaren

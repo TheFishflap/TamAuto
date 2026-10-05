@@ -211,6 +211,8 @@ function startTam(opts = {}) {
   });
   tam.live = (topicPart) => sources.filter((x) => x.url.includes(topicPart) && x.readyState !== 2);
   tam.opened = (topicPart) => sources.filter((x) => x.url.includes(topicPart)).length;
+  tam.ntfyRaw = (topicPart, text) => sources.filter((x) => x.url.includes(topicPart) && x.readyState !== 2 && x.onmessage)
+    .forEach((x) => x.onmessage({ data: JSON.stringify({ event: 'message', message: text }) }));
   tam.posts = (topicPart) => fetches.filter((f) => f.url.includes(topicPart) && f.o && f.o.method === 'POST').map((f) => JSON.parse(f.o.body));
   tam.removeOrder = (nr) => [...d.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')]
     .filter((r) => r.textContent.includes(nr)).forEach((r) => r.remove());

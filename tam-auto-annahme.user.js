@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.19.0
+// @version      1.19.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -643,13 +643,20 @@
     return ntfyStream(`${LIC_NTFY}/${topic}/sse`, { onMessage: (ev) => handle(ev.data), onReconnect: catchUp });
   }
   const ntfyBody = (raw) => { try { const m = JSON.parse(raw); return m.event === 'message' ? JSON.parse(m.message) : null; } catch (e) { return null; } };
+  // Öffentlicher Kanal: ohne Kanal-Schlüssel wie bisher; mit Kanal-Schlüssel nur noch mitlesen (Übergang:
+  // Geräte mit älterer Lizenz melden dort), gesendet wird nur noch geheim und verschlüsselt.
+  // Erneut aufgerufen, wenn per Fernfreischaltung eine Lizenz mit Kanal-Schlüssel ankommt (ohne Neuladen).
+  let retLegacy = null, retSecretTopic = '';
   function startReturns() {
+    chanKeyP = null; // Kanal-Schlüssel der aktuellen Lizenz neu lesen
     retChanP = secretChannel('ret').catch(() => null);
     retChanP.then((ch) => {
-      // Öffentlicher Kanal: ohne Kanal-Schlüssel wie bisher; mit Kanal-Schlüssel nur noch mitlesen (Übergang:
-      // Geräte mit älterer Lizenz melden dort), gesendet wird nur noch geheim und verschlüsselt
-      listenRet(RET_TOPIC, (raw) => onRetMessage(ntfyBody(raw)));
-      if (ch) listenRet(ch.topic, async (raw) => onRetMessage(await openMsg(ch, ntfyBody(raw))));
+      if (!retLegacy) retLegacy = listenRet(RET_TOPIC, (raw) => onRetMessage(ntfyBody(raw)));
+      if (ch && ch.topic !== retSecretTopic) {
+        retSecretTopic = ch.topic;
+        listenRet(ch.topic, async (raw) => onRetMessage(await openMsg(ch, ntfyBody(raw))));
+        log('Rückgaben laufen über den geschützten Kanal.', 'debug');
+      }
     });
   }
   // Im Abgleich: heute angenommene Aufträge, die nach Verschwinden wieder in der Tabelle stehen = zurückgegeben
@@ -3310,6 +3317,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     license = res.lic;
     log(`Lizenz per Fernfreischaltung aktualisiert: gültig bis ${fmtDate(res.lic.exp)}.`, 'ok');
     renderLicInfo();
+    if (res.lic.cke) startReturns(); // Kanal-Schlüssel sofort nutzen
     return true;
   }
   function listenForKey(fromPanel, onKey) {
