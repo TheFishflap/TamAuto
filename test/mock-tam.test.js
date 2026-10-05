@@ -588,3 +588,38 @@ describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
     assert.ok(pk2 && pk2 !== a.pk, 'Geräteschlüssel nicht erneuert');
   });
 });
+
+// Terminvereinbarung nach der Annahme weggeklickt (z. B. Sixt) → im Auftragsbuch rote 1
+describe('Auftragsbuch: Terminvereinbarung weggeklickt', { skip }, () => {
+  const terminWin = (t) => {
+    const m = t.document.createElement('div'); m.className = 'x-window x-component';
+    m.innerHTML = '<div class="x-window-header"><span class="x-window-header-text">Terminvereinbarung</span></div>' +
+      '<div class="x-window-body">Termin mit dem Kunden vereinbaren <input type="checkbox"></div>' +
+      '<table class="x-btn"><tbody><tr><td><button>Speichern</button></td></tr></tbody></table>' +
+      '<table class="x-btn"><tbody><tr><td><button>Abbrechen</button></td></tr></tbody></table>';
+    m.querySelectorAll('button')[1].addEventListener('click', () => { t.closed.push('Terminvereinbarung'); m.remove(); });
+    t.document.body.appendChild(m);
+  };
+  const book = () => tam.store.get('orderbook') || [];
+  const rowText = (nr) => [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].map((r) => r.textContent).find((x) => x.includes(nr)) || '';
+
+  it('Fenster kommt direkt nach „Bestätigen“ → Auftrag und Warenkorb-Auftrag mit roter 1', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder({ ...ORDER, nearby: [{ nr: 'MW3000001', km: 0 }], afterAccept: (t) => setTimeout(() => terminWin(t), 200) });
+    assert.ok(await until(() => tam.closed.includes('Terminvereinbarung'), 5000), 'nicht weggeklickt');
+    assert.ok(await until(() => book().filter((e) => e.termin === 1).length === 2, 5000), JSON.stringify(book()));
+    const cell = [...tam.document.querySelectorAll('#tamauto-ob-rows td span.tamauto-termin')];
+    assert.equal(cell.length, 2);
+    assert.equal(cell[0].textContent, '1');
+  });
+
+  it('ohne Terminvereinbarung → keine Markierung', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder(ORDER);
+    assert.ok(await until(() => book().length, 8000));
+    await sleep(1500);
+    assert.ok(!book().some((e) => e.termin));
+  });
+});

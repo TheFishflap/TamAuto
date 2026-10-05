@@ -486,16 +486,29 @@
   const bulkOf = (o) => o.bulk || o.extra || [];
   const bulkLabel = (o) => bulkOf(o).map((x) => `${x} (${(o.extra || []).includes(x) ? '0 km' : 'Warenkorb'})`).join(', ');
 
+  // Terminvereinbarung nach einer Annahme weggeklickt (z. B. Sixt) → im Auftragsbuch rote 1 bei diesen Aufträgen.
+  // Das Fenster kann schon vor dem Eintrag ins Auftragsbuch kommen → vormerken und beim Eintragen setzen.
+  const terminPending = new Set();
+  function markTermin(nrs) {
+    const up = new Set(nrs.filter(Boolean).map((x) => String(x).toUpperCase()));
+    const since = new Date(Date.now() - 120000).toISOString();
+    const book = GM_getValue('orderbook', []);
+    let hit = 0;
+    book.forEach((e) => { if (e.ts >= since && up.has(String(e.nr).toUpperCase()) && !e.termin) { e.termin = 1; hit++; up.delete(String(e.nr).toUpperCase()); } });
+    up.forEach((x) => terminPending.add(x));
+    if (hit) { GM_setValue('orderbook', book); renderOrderbook(); }
+  }
   function recordOrder(o) {
     const book = GM_getValue('orderbook', []);
     const ts = new Date().toISOString();
-    book.push({ ts, nr: o.nr, plz: o.plz, ort: o.ort, dienst: o.dienst, preis: parseEuro(o.preis) });
+    const termin = (x) => (terminPending.delete(String(x).toUpperCase()) ? { termin: 1 } : {});
+    book.push(Object.assign({ ts, nr: o.nr, plz: o.plz, ort: o.ort, dienst: o.dienst, preis: parseEuro(o.preis) }, termin(o.nr)));
     bulkOf(o).forEach((x) => {
       const row = rowsByNr.get(x);
       const art = (o.extra || []).includes(x) ? '0 km' : 'Warenkorb';
-      book.push({ ts, nr: x, plz: row ? row.plz : o.plz, ort: row ? row.ort : o.ort, zu: o.nr,
+      book.push(Object.assign({ ts, nr: x, plz: row ? row.plz : o.plz, ort: row ? row.ort : o.ort, zu: o.nr,
         dienst: `${art} – zusammen mit ${o.nr} angenommen${row && row.dienst ? ` · ${row.dienst}` : ''}`,
-        preis: row ? parseEuro(row.preis) : null });
+        preis: row ? parseEuro(row.preis) : null }, termin(x)));
     });
     GM_setValue('orderbook', book.slice(-5000));
     renderOrderbook();
@@ -569,6 +582,12 @@
         e.zu ? `↳ ${e.nr}` : e.nr, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis)].forEach((v, i) => {
         const td = document.createElement('td');
         td.textContent = v;
+        if (i === 1 && e.termin) { // rote 1: Terminvereinbarung weggeklickt
+          const t = document.createElement('span');
+          t.className = 'tamauto-termin'; t.textContent = '1'; t.title = 'Terminvereinbarung weggeklickt – Termin noch vereinbaren';
+          Object.assign(t.style, { color: '#c62828', fontWeight: 'bold', marginLeft: '4px' });
+          td.appendChild(t);
+        }
         Object.assign(td.style, { padding: '1px 4px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap', textAlign: i === 4 ? 'right' : 'left' });
         tr.appendChild(td);
       });
@@ -1249,7 +1268,8 @@
   // Fenster zur Terminvergabe, das TAM nach einer Annahme öffnet: sofort (ohne Verzögerung) wegklicken und
   // zurück in "Veröffentlichte Aufträge". Nur in den ersten 30 s nach einer Annahme durch das Script –
   // öffnet man die Terminvergabe selbst, bleibt sie unangetastet.
-  let lastAcceptAt = 0;
+  let lastAcceptAt = 0, lastAcceptOrder = null;
+  const terminSeen = new WeakSet();
   function dismissTerminDialog() {
     if (Date.now() - lastAcceptAt > 30000) return;
     const wins = visibleWindows().filter((w) => {
@@ -1262,7 +1282,12 @@
       const x = w.querySelector('.x-tool-close');
       const btn = findButton(/^(abbrechen|schließen|später|nein)$/i, w) || findButton(/^(ok|weiter)$/i, w);
       if (x && visible(x)) fire(x); else if (btn) clickBtn(btn);
-      log(`Fenster „${winTitle(w) || 'Terminvergabe'}“ weggeklickt.`, 'debug');
+      if (!terminSeen.has(w)) {
+        terminSeen.add(w);
+        const o = lastAcceptOrder, nrs = o ? [o.nr, ...bulkOf(o)] : [];
+        log(`Fenster „${winTitle(w) || 'Terminvergabe'}“ weggeklickt${nrs.length ? ` – ${nrs.join(', ')} im Auftragsbuch markiert (Termin offen)` : ''}.`, 'ok');
+        markTermin(nrs);
+      }
     });
     if (wins.length && !onPublishedTab()) setTimeout(() => switchToPublishedTab(), 200);
   }
@@ -1510,6 +1535,7 @@
     await humanDelay('Bestätigen');
     clickBtn(okBtn);
     lastAcceptAt = Date.now(); // ab jetzt darf ein Terminvergabe-Fenster sofort weggeklickt werden
+    lastAcceptOrder = order;
     order.auftragsNr = nr;
     // Nicht auf TAMs Reaktion warten: sofort zurück zur Tabelle. Ob TAM die Annahme doch ablehnt (z. B. „bereits
     // vergeben“), prüft verifyAccept im Hintergrund und korrigiert dann die Buchung.
