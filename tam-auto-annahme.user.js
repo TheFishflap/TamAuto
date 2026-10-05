@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.20.0
+// @version      1.20.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
 // @homepageURL  https://github.com/TheFishflap/TamAuto
-// @updateURL    https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQALfRz3JKDFTajqSq2MROJNAcTdmeeQDOYup07olXdgzlg
-// @downloadURL  https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQALfRz3JKDFTajqSq2MROJNAcTdmeeQDOYup07olXdgzlg
+// @updateURL    https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js
+// @downloadURL  https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -863,8 +863,8 @@
 
   // ------------------------------------------------------------------ Updates (GitHub)
   const UPDATE_URL = 'https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js';
-  // Zweiter Update-Kanal (immer erreichbar, auch wenn das Repo offline ist): Freigabelink „Jeder mit dem Link“ der Datei
-  // Script\\tam-auto-annahme.user.js im OneDrive. Tampermonkey prüft über diesen Link (@updateURL/@downloadURL).
+  // Ersatz-Update-Kanal, falls GitHub nicht erreichbar ist: Freigabelink „Jeder mit dem Link“ der Datei
+  // Script\\tam-auto-annahme.user.js im OneDrive. Tampermonkey selbst aktualisiert über GitHub (@updateURL/@downloadURL).
   const UPDATE_BACKUP_URL = 'https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQALfRz3JKDFTajqSq2MROJNAcTdmeeQDOYup07olXdgzlg';
   let updateLink = UPDATE_URL; // Installationslink der Quelle mit der neuesten Version
   // Update-Meldung über ntfy: nach einem Release sendet IB Thomée {v:1,t:'update',ver} → sofort prüfen statt erst nach
@@ -968,7 +968,8 @@
       onerror: () => resolve({ err: 'keine Verbindung' }), ontimeout: () => resolve({ err: 'Zeitüberschreitung' }),
     }));
   }
-  // GitHub und OneDrive parallel prüfen; die neuere Version gewinnt (fällt eine Quelle aus, zählt die andere)
+  // GitHub und OneDrive parallel prüfen. GitHub zuerst: hat GitHub ein Update, wird es von dort installiert (Tampermonkey
+  // erkennt den Link sicher). OneDrive nur als Ersatz – GitHub nicht erreichbar oder ohne Update.
   async function checkUpdate(manual = false) {
     GM_setValue('lastUpdateCheck', Date.now());
     if (manual) updateButtonFeedback('Prüfe …');
@@ -980,7 +981,8 @@
       if (manual) updateButtonFeedback(`✗ GitHub und OneDrive nicht erreichbar – aktueller Stand: v${VERSION}`, '#c62828');
       return;
     }
-    const best = ok.reduce((a, b) => (newerVersion(b.v, a.v) ? b : a));
+    const gh = ok.find((r) => r.name === 'GitHub' && newerVersion(r.v, VERSION));
+    const best = gh || ok.reduce((a, b) => (newerVersion(b.v, a.v) ? b : a));
     if (newerVersion(best.v, VERSION)) {
       // Tampermonkey erkennt einen Installationslink nur an der Endung .user.js – SharePoint ignoriert den Zusatz
       updateLink = best.url === UPDATE_BACKUP_URL ? `${best.url}&tm=tam-auto-annahme.user.js` : best.url;

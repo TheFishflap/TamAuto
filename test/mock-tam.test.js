@@ -434,17 +434,23 @@ describe('Update über GitHub oder OneDrive', { skip }, () => {
     assert.ok(link().href.includes(ONEDRIVE), link().href);
   });
 
-  it('beide erreichbar → neuere Version gewinnt', async () => {
-    tam = startTam({ gm: { places: KOELN }, xhr: xhr('9.9.10', '9.9.9') });
+  it('GitHub zuerst: GitHub hat ein Update → GitHub-Link, auch wenn OneDrive eine noch neuere Version hat', async () => {
+    tam = startTam({ gm: { places: KOELN }, xhr: xhr('9.9.9', '9.9.10') });
     await tam.ready();
-    assert.match(await updLog() || '', /9\.9\.10.*GitHub/);
-    assert.ok(link().href.includes('raw.githubusercontent.com'));
+    assert.match(await updLog() || '', /9\.9\.9.*GitHub/);
+    assert.match(link().href, /^https:\/\/raw\.githubusercontent\.com\/.*\.user\.js$/);
   });
 
-  it('Tampermonkey prüft Updates über OneDrive (Kopf @updateURL/@downloadURL)', () => {
+  it('GitHub ohne Update, OneDrive mit Update → OneDrive (Ersatz)', async () => {
+    tam = startTam({ gm: { places: KOELN }, xhr: xhr('1.0.0', '9.9.9') });
+    await tam.ready();
+    assert.match(await updLog() || '', /9\.9\.9.*OneDrive/);
+  });
+
+  it('Tampermonkey prüft Updates über GitHub (Kopf @updateURL/@downloadURL)', () => {
     const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'tam-auto-annahme.user.js'), 'utf8');
-    assert.match(src, new RegExp(`@updateURL\\s+\\S+${ONEDRIVE}`));
-    assert.match(src, new RegExp(`@downloadURL\\s+\\S+${ONEDRIVE}`));
+    assert.match(src, /@updateURL\s+https:\/\/raw\.githubusercontent\.com\/TheFishflap\/TamAuto\/main\/tam-auto-annahme\.user\.js/);
+    assert.match(src, /@downloadURL\s+https:\/\/raw\.githubusercontent\.com\/TheFishflap\/TamAuto\/main\/tam-auto-annahme\.user\.js/);
   });
 });
 

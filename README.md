@@ -401,6 +401,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.20.1 – 2026-10-06
+- Updates wieder **zuerst über GitHub** (Tampermonkey und Update-Button installieren direkt); OneDrive nur noch als Ersatz,
+  wenn GitHub nicht erreichbar ist.
+
 ### 1.20.0 – 2026-10-06
 Zusammenfassung aller Änderungen seit 1.17.3 (1.18.0–1.19.1 waren Zwischenstände dieser Version).
 
@@ -427,8 +431,7 @@ Zusammenfassung aller Änderungen seit 1.17.3 (1.18.0–1.19.1 waren Zwischenst�
 - **Push-Signal Standard an** (gilt einmal für alle); Push und Geräte-Kanäle verbinden sich nach Schlaf/Netzwechsel (Android)
   selbst neu.
 - **Silent Reload** mit Checkbox wie Auto-Refresh, läuft nur in der Arbeitszeit. **Arbeitszeit Standard 08:00–18:00.**
-- **Updates auch ohne GitHub:** zweite Update-Quelle (OneDrive); neue Versionen werden sofort gemeldet; der Update-Button
-  installiert wieder direkt über Tampermonkey.
+- **Updates auch ohne GitHub:** zweite Update-Quelle (OneDrive) als Ersatz; neue Versionen werden sofort gemeldet.
 - Log: Millisekunden nur ganzzahlig.
 
 **Lizenz**
