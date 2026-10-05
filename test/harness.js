@@ -75,10 +75,11 @@ function startTam(opts = {}) {
   };
   Object.entries(opts.local || {}).forEach(([k, v]) => w.localStorage.setItem(`tamauto.${k}`, v));
   const sigValid = opts.sigValid !== false;
-  Object.defineProperty(w, 'crypto', { configurable: true, value: {
-    getRandomValues: (a) => webcrypto.getRandomValues(a),
-    subtle: { importKey: async () => ({}), verify: async () => sigValid },
-  } });
+  // echte Web-Crypto (ECDH, AES, HMAC …); nur die ECDSA-Signaturprüfung der Lizenz/Sperrliste wird vorgetäuscht
+  const subtle = {};
+  for (const k of ['importKey', 'exportKey', 'generateKey', 'deriveBits', 'deriveKey', 'encrypt', 'decrypt', 'sign', 'digest']) subtle[k] = webcrypto.subtle[k].bind(webcrypto.subtle);
+  subtle.verify = async (alg, ...r) => (alg && alg.name === 'ECDSA' ? sigValid : webcrypto.subtle.verify(alg, ...r));
+  Object.defineProperty(w, 'crypto', { configurable: true, value: { getRandomValues: (a) => webcrypto.getRandomValues(a), subtle } });
   w.TextEncoder = util.TextEncoder; w.TextDecoder = util.TextDecoder;
   w.CSS = { escape: (s) => String(s).replace(/[^\w-]/g, (c) => `\\${c}`) };
   // Gerät (für den Geräte-Fingerabdruck): Prozessorkerne, Plattform, Touch-Punkte, Bildschirm, Pixeldichte
