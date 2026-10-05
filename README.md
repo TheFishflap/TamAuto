@@ -21,9 +21,9 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Schnell zurück** | Terminvergabe-Fenster wird sofort weggeklickt, danach direkt zurück in „Veröffentlichte Aufträge“ |
 | **Wächter-Modus** | Schließt störende TAM-Meldungen **in Millisekunden** – „bereits vergeben“, „nicht verfügbar“, „falscher Status“, Warenkorb-Hinweise, technische Fehlerfenster – und wertet sie trotzdem richtig aus |
 | **Neue-Zeilen-Wächter** | Erkennt neue Aufträge in „Veröffentlichte Aufträge“ innerhalb von 250 ms – auch wenn TAM sie ohne Refresh einblendet |
-| **Silent Reload** | Optional (Erweiterte Einstellungen, Standard 0 = aus): fragt TAM alle x s im Hintergrund nach neuen Aufträgen – ohne Tabelle neu zu zeichnen; nur bei einem neuen Auftrag wird aktualisiert |
-| **Arbeitszeit** | Standard **07:30–18:15** (einstellbar, an/aus): außerhalb pausieren Auto-Refresh und Silent Reload, danach laufen sie automatisch mit den zuletzt eingestellten Werten weiter |
-| **Push-Signal** | Die App **TAM-Signal** auf 1–2 Master-Handys leitet die Push-Benachrichtigungen der TAM-App als Startsignal über ntfy.sh weiter – das Script fragt TAM **innerhalb von ca. 1 s** ab (Standard aus, gemeinsamer Kanal voreingestellt; eigener Reiter „Push-Signal“) |
+| **Silent Reload** | Optional (Erweiterte Einstellungen, Checkbox wie beim Auto-Refresh, Standard aus, nur in der Arbeitszeit): fragt TAM alle x s im Hintergrund nach neuen Aufträgen – ohne Tabelle neu zu zeichnen; nur bei einem neuen Auftrag wird aktualisiert |
+| **Arbeitszeit** | Standard **08:00–18:00** (einstellbar, an/aus): außerhalb pausieren Auto-Refresh und Silent Reload, danach laufen sie automatisch mit den zuletzt eingestellten Werten weiter |
+| **Push-Signal** | Die App **TAM-Signal** auf 1–2 Master-Handys leitet die Push-Benachrichtigungen der TAM-App als Startsignal über ntfy.sh weiter – das Script fragt TAM **innerhalb von ca. 1 s** ab (Standard an, gemeinsamer Kanal voreingestellt; verbindet sich nach Schlaf/Netzwechsel selbst neu; eigener Reiter „Push-Signal“) |
 | **Priorität** | Mehrere passende Aufträge gleichzeitig → Reihenfolge nach **Stufe 1, 2, 3** frei wählbar (Anzahl am Ort, Summe am Ort, Einzelpreis) mit automatischer Zuordnung; Standard: Anzahl → Summe → Preis |
 | **Fern-Lizenzierung** | „Lizenz anfragen“ direkt im Script → Freischaltung in der Lizenzverwaltung von IB Thomée → das Script **aktiviert sich selbst**; Verlängerung per Klick (Reiter Info); signierte **Sperrliste** zum Entziehen (7 Tage offline erlaubt) |
 | **Verzögerung** | Standard an: 0,12 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0–0,5 s |
@@ -40,7 +40,8 @@ anhand der Ortsliste der IB Thomée GmbH.
 | | |
 |---|---|
 | **Ortsliste** | Excel in SharePoint (Blatt „annehmen“), ohne Anmeldung, alle 30 min neu geladen |
-| **Sperrliste** | Excel-Blatt „nicht annehmen“ – diese PLZ werden nie angenommen |
+| **Sperrliste** | Excel-Blatt „nicht annehmen“ – diese PLZ werden nie angenommen (in der TAM-Tabelle **rot**); Blatt „nicht annehmen Adresse“ sperrt einzelne Adressen (PLZ + Straße) |
+| **Rückgaben** | Heute angenommene und wieder zurückgegebene Aufträge werden auf **allen Geräten** bis Mitternacht nicht angenommen (in der TAM-Tabelle **orange**) |
 | **Tages-Annahmeliste** | Einzelne 5-stellige PLZ heute zusätzlich annehmen |
 | **Liste einfügen** | Bulk: viele PLZ auf einmal für 24 h zusätzlich annehmen |
 
@@ -125,9 +126,20 @@ anderer Browser genutzt, ist dort eine eigene Aktivierung nötig („Lizenz anfr
 
 ### Sperren (Reiter „Bedienung“)
 
-Gesperrt wird nur noch über das Excel-Blatt **„nicht annehmen“** (Sperrliste aus Excel, Anzeige im Reiter „Bedienung“,
-Anzahl im Kopf des Bedienfelds „Sperrliste: x“). Die frühere Tages-Blacklist ist seit 1.16.2 entfallen.
-Gesperrte Treffer stehen im Protokoll („Treffer, aber gesperrt: … → nicht angenommen“).
+Gesperrt wird über das Excel-Blatt **„nicht annehmen“** (Sperrliste aus Excel, Anzeige im Reiter „Bedienung“,
+Anzahl im Kopf des Bedienfelds „Sperrliste: x“) und über **„Heute zurückgegeben“** (siehe unten).
+Gesperrte Treffer stehen im Protokoll („Treffer, aber gesperrt: … → nicht angenommen“) und sind in der TAM-Tabelle
+markiert: **rot** = Excel-Sperrliste, **orange** = heute zurückgegeben (Grund im Tooltip der Zeile).
+
+**Autohaus-Regeln – Blatt „nicht annehmen Adresse“** (Spalten **PLZ | Straße**): sperrt nur diese eine Adresse, nicht die
+ganze PLZ – z. B. `50825 | Maarweg 241` (nur Hausnummer 241) oder `50825 | Venloer Str.` (ganze Straße). Schreibweisen wie
+„Str.“/„Straße“ und Hausnummern-Bereiche („241-251“) werden erkannt. Eigenes Blatt, damit ältere Versionen nicht die ganze
+PLZ sperren.
+
+**Heute zurückgegeben:** Jedes Gerät meldet seine Annahmen (nur Auftragsnummern) an die anderen Geräte. Taucht ein heute
+angenommener Auftrag wieder in „Veröffentlichte Aufträge“ auf (mind. 60 s verschwunden), gilt er als zurückgegeben und wird
+auf allen Geräten bis Mitternacht nicht angenommen. Anzeige im Reiter „Bedienung“; Klick auf einen Eintrag gibt ihn auf
+diesem Gerät wieder frei.
 
 **Tages-Annahmeliste** (Reiter „Bedienung“): PLZ, die **heute zusätzlich** angenommen werden – **nur vollständige
 5-stellige PLZ** (z. B. `47877`), damit nicht versehentlich ganze Gebiete angenommen werden. Leert sich um Mitternacht;
@@ -385,6 +397,24 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.18.0 – 2026-10-05
+- **Lizenz an das Gerät gebunden:** Wird ein Tampermonkey-Backup auf einem anderen Gerät eingespielt, ist dort eine eigene
+  Freigabe nötig („Neues Gerät erkannt“). Auf demselben Gerät bleibt die Lizenz auch nach Löschen der Website-Daten oder
+  Browser-Updates erhalten. Hinweis zu Cookies im Reiter Info entfällt.
+- **Passende Aufträge wurden teils als „bereits bearbeitet“ übersprungen** (z. B. Sixt): Eine fehlgeschlagene Annahme sperrte
+  den Auftrag bisher dauerhaft – jetzt nur 15 min. Übersprungene passende Aufträge stehen mit Grund im Log.
+- **Schneller:** Nach „Bestätigen“ sofort zurück zur Tabelle (bisher bis ~4 s Warten); Fenster und Haken werden ohne feste
+  Pausen erkannt (Karte → Bestätigen im Test ~1,9 s → ~0,2 s). Meldet TAM danach doch „bereits vergeben“, wird die
+  Buchung korrigiert. Pausen kommen nur noch von der Verzögerung (Humanizer).
+- **Verzögerung (Humanizer) Standard 0,12 s**, einstellbar ab 0 s (gilt nach dem Update einmal für alle).
+- **Wächter** schließt im Reiter „Angenommene Aufträge“ keine Fenster mehr, die man selbst öffnet.
+- **Rückgaben über alle Geräte** („Heute zurückgegeben“) und **Blatt „nicht annehmen Adresse“** für einzelne Autohäuser.
+  Gesperrte Aufträge in der TAM-Tabelle markiert: rot (Excel-Sperrliste), orange (zurückgegeben).
+- **Push-Signal Standard an** (gilt einmal für alle) und verbindet sich nach Schlaf/Netzwechsel (Android) selbst neu.
+- **Silent Reload** mit Checkbox wie Auto-Refresh, läuft nur in der Arbeitszeit. **Arbeitszeit Standard 08:00–18:00.**
+- **Updates auch ohne GitHub:** zweite Update-Quelle (OneDrive); neue Versionen werden sofort gemeldet.
+- Log: Millisekunden nur ganzzahlig.
 
 ### 1.17.3 – 2026-09-26
 - Reiter Info: Ist ein Update verfügbar, wird der Button „Softwareupdate“ zum grünen **„⬆ Update x installieren“** –
