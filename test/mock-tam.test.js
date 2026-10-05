@@ -222,3 +222,84 @@ describe('Nach der Annahme sofort zurück (P2 Tabwechsel)', { skip }, () => {
     assert.equal(tam.store.get('hitstats')[ORDER.nr].s, 'vergeben');
   });
 });
+
+// Rückgaben geräteübergreifend: Annahmen per ntfy teilen, Wiederauftauchen = zurückgegeben → Tages-Blacklist
+describe('Rückgaben (Tages-Blacklist über ntfy)', { skip }, () => {
+  const RET = 'tamret-';
+  const OTHER = { nr: 'MW3999999', plz: '99999', ort: 'Nirgendwo' }; // passt nicht, löst nur einen Abgleich aus
+  const retChips = () => tam.document.getElementById('tamauto-ret').textContent;
+
+  it('eigene Annahme wird an alle Geräte gemeldet', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder(ORDER);
+    assert.ok(await until(() => tam.posts(RET).some((m) => m.t === 'acc' && m.nrs.includes(ORDER.nr)), 8000), JSON.stringify(tam.posts(RET)));
+  });
+
+  it('eigene Annahme, Zeile steht noch in der Tabelle → keine Rückgabe', async () => {
+    tam = startTam({ gm: { places: KOELN, retMinGoneSec: 1 } });
+    await tam.ready();
+    tam.addOrder(ORDER);
+    await until(() => tam.posts(RET).length, 8000);
+    tam.addOrder(OTHER); // neuer Abgleich, Zeile von ORDER ist noch da
+    await sleep(2000);
+    assert.ok(!tam.logs().some((l) => /zurückgegeben/.test(l)), tam.logs().join('\n'));
+  });
+
+  it('von anderem Gerät angenommen, verschwunden, wieder da → zurückgegeben, nicht angenommen, gemeldet', async () => {
+    const NR = 'MW3170001';
+    tam = startTam({ gm: { places: KOELN, retMinGoneSec: 1 } });
+    await tam.ready();
+    tam.ntfy(RET, { v: 1, t: 'acc', nrs: [NR], by: 'Handy_T1', at: Date.now() });
+    tam.addOrder(OTHER); // Abgleich: NR ist nicht in der Tabelle
+    await sleep(1500);
+    tam.addOrder({ nr: NR, plz: '50825', ort: 'Köln' });
+    assert.ok(await until(() => tam.logs().some((l) => l.includes(NR) && /zurückgegeben/.test(l)), 5000), tam.logs().join('\n'));
+    await sleep(1000);
+    assert.deepEqual(tam.dblclicks, []);
+    assert.ok(tam.posts(RET).some((m) => m.t === 'ret' && m.nrs.includes(NR)));
+    assert.match(retChips(), new RegExp(NR));
+  });
+
+  it('Rückgabe-Meldung eines anderen Geräts → gesperrt und angezeigt', async () => {
+    const NR = 'MW3170002';
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.ntfy(RET, { v: 1, t: 'ret', nrs: [NR], by: 'Handy_T1', at: Date.now() });
+    assert.match(retChips(), new RegExp(NR));
+    tam.addOrder({ nr: NR, plz: '50825', ort: 'Köln' });
+    await sleep(1500);
+    assert.deepEqual(tam.dblclicks, []);
+  });
+});
+
+describe('Gesperrte Aufträge in der Tabelle', { skip }, () => {
+  const rowOf = (nr) => [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')].find((r) => r.textContent.includes(nr));
+
+  it('Excel-Sperrliste und Rückgaben → Zeile orange mit Grund, andere Zeilen nicht', async () => {
+    const places = { ...KOELN, plz: ['50825', '51'], block: { plz: ['51'], orte: [] } };
+    tam = startTam({ gm: { places, retMinGoneSec: 1 } });
+    await tam.ready();
+    tam.ntfy('tamret-', { v: 1, t: 'ret', nrs: ['MW3170003'], at: Date.now() });
+    tam.addOrder({ nr: 'MW3170003', plz: '50825', ort: 'Köln', onOpen: () => {} });
+    tam.addOrder({ nr: 'MW3170004', plz: '51105', ort: 'Köln', onOpen: () => {} });
+    tam.addOrder({ nr: 'MW3170005', plz: '99999', ort: 'Nirgendwo' });
+    assert.ok(await until(() => rowOf('MW3170003').classList.contains('tamauto-blocked'), 3000));
+    assert.ok(rowOf('MW3170004').classList.contains('tamauto-blocked'));
+    assert.ok(!rowOf('MW3170005').classList.contains('tamauto-blocked'));
+    assert.match(rowOf('MW3170003').title, /zurückgegeben/);
+    assert.doesNotMatch(rowOf('MW3170003').title, /erkannt von/);
+  });
+
+  it('Rückgabe-Meldung enthält nur Auftragsnummern', async () => {
+    const NR = 'MW3170006';
+    tam = startTam({ gm: { places: KOELN, retMinGoneSec: 1 } });
+    await tam.ready();
+    tam.ntfy('tamret-', { v: 1, t: 'acc', nrs: [NR], at: Date.now() });
+    tam.addOrder({ nr: 'MW3999998', plz: '99999', ort: 'Nirgendwo' });
+    await sleep(1500);
+    tam.addOrder({ nr: NR, plz: '50825', ort: 'Köln' });
+    assert.ok(await until(() => tam.posts('tamret-').some((m) => m.t === 'ret'), 5000));
+    tam.posts('tamret-').forEach((m) => assert.deepEqual(Object.keys(m).sort(), ['at', 'nrs', 't', 'v']));
+  });
+});

@@ -543,7 +543,101 @@
   const today = () => new Date().toLocaleDateString('sv-SE'); // JJJJ-MM-TT, lokale Zeit
   // Gesperrt? Liefert den Grund als Text (für das Protokoll) oder ''.
   // Quelle: Excel-Blatt "nicht annehmen" (solange dort eingetragen). Die frühere Tages-Blacklist ist entfallen.
+  // ---- Rückgaben (geräteübergreifend): Jedes Gerät meldet seine Annahmen (nur Auftragsnummern) an einen eigenen
+  // ntfy-Kanal; alle Geräte merken sich „heute von IB Thomée angenommen“. Verschwindet so ein Auftrag aus
+  // „Veröffentlichte Aufträge“ (mind. 60 s – direkt nach der Annahme steht die Zeile noch, bis TAM neu lädt) und
+  // taucht wieder auf, wurde er zurückgegeben → Tages-Blacklist (bis Mitternacht nicht annehmen) und Meldung an alle.
+  const RET_TOPIC = 'tamret-ptau8ux3h4rq2ncm2jctcbb7a2al';
+  const RET_MIN_GONE_MS = GM_getValue('retMinGoneSec', 60) * 1000;
+  const dayList = (key) => { const v = GM_getValue(key, null); return v && v.date === today() ? v : { date: today(), items: {} }; };
+  const nrKey = (x) => String(x || '').toUpperCase().trim();
+  function addToday(key, nrs, info) {
+    const l = dayList(key); let added = 0;
+    nrs.filter(Boolean).forEach((x) => { const k = nrKey(x); if (!l.items[k]) { l.items[k] = Object.assign({ at: Date.now() }, info); added++; } });
+    if (added) GM_setValue(key, l);
+    return added;
+  }
+  const goneSince = new Map(); // Nr → seit wann nicht in der Tabelle (diese Sitzung)
+  function retPost(t, nrs) {
+    if (!nrs.length) return;
+    licFetch(`${LIC_NTFY}/${RET_TOPIC}`, { method: 'POST',
+      body: JSON.stringify({ v: 1, t, nrs, at: Date.now() }) }).catch(() => {}); // nur Nummern, keine Namen/Adressen
+  }
+  function onRetMessage(d) {
+    if (!d || d.v !== 1 || !Array.isArray(d.nrs) || new Date(d.at || 0).toLocaleDateString('sv-SE') !== today()) return;
+    const info = { at: d.at };
+    if (d.t === 'acc') addToday('accToday', d.nrs, info);
+    if (d.t === 'ret' && addToday('returnsToday', d.nrs, info)) {
+      log(`Rückgabe gemeldet: ${d.nrs.join(', ')} – heute nicht annehmen.`, 'ok');
+      renderReturns();
+      if (cfg.enabled) scheduleCheck('Rückgabe gemeldet'); // Tabelle sofort einfärben
+    }
+  }
+  let retES = null;
+  function startReturns() {
+    const handle = (raw) => { try { const m = JSON.parse(raw); if (m.event === 'message') onRetMessage(JSON.parse(m.message)); } catch (e) { /* ignore */ } };
+    const since = Math.floor(new Date(new Date().toDateString()).getTime() / 1000); // seit Mitternacht nachholen
+    licFetch(`${LIC_NTFY}/${RET_TOPIC}/json?poll=1&since=${since}`).then((r) => r.text())
+      .then((t) => t.split('\n').filter(Boolean).forEach(handle)).catch(() => {});
+    try {
+      const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+      retES = new W.EventSource(`${LIC_NTFY}/${RET_TOPIC}/sse`);
+      retES.onmessage = (ev) => handle(ev.data);
+    } catch (e) { /* ohne Live-Verbindung: nur Nachholen */ }
+  }
+  // Im Abgleich: heute angenommene Aufträge, die nach Verschwinden wieder in der Tabelle stehen = zurückgegeben
+  function noteReturns(all) {
+    const acc = dayList('accToday').items, now = Date.now();
+    const panel = document.getElementById(cfg.tabPanelId);
+    // leere Tabelle zählt nur mit „Keine Daten vorhanden“ (sonst evtl. gerade am Laden)
+    if (!all.length && !/Keine Daten vorhanden/.test(text(panel))) return;
+    const inGrid = new Map(all.filter((o) => o.nr).map((o) => [nrKey(o.nr), o]));
+    const ret = [];
+    Object.keys(acc).forEach((k) => {
+      if (!inGrid.has(k)) { if (!goneSince.has(k)) goneSince.set(k, now); return; }
+      const g = goneSince.get(k);
+      goneSince.delete(k);
+      if (g && now - g >= RET_MIN_GONE_MS && !dayList('returnsToday').items[k]) ret.push(inGrid.get(k));
+    });
+    if (!ret.length) return;
+    ret.forEach((o) => addToday('returnsToday', [o.nr], { plz: o.plz, ort: o.ort }));
+    log(`Zurückgegeben (heute von IB Thomée angenommen, jetzt wieder veröffentlicht): ${ret.map((o) => `${o.nr} · ${o.plz} ${o.ort}`).join(', ')} – heute nicht annehmen, an alle Geräte gemeldet.`, 'err');
+    retPost('ret', ret.map((o) => o.nr));
+    renderReturns();
+  }
+  // Gesperrte Aufträge (Excel-Sperrliste, heute zurückgegeben) in der TAM-Tabelle orange markieren, Grund als Tooltip
+  function markBlockedRows(all) {
+    if (!document.getElementById('tamauto-blocked-style')) {
+      const st = document.createElement('style'); st.id = 'tamauto-blocked-style';
+      st.textContent = '.x-grid3-row.tamauto-blocked, .x-grid3-row.tamauto-blocked td { background: #ffe0b2 !important; }';
+      document.head.appendChild(st);
+    }
+    all.forEach((o) => {
+      const why = o.valid ? blocked(o) : '';
+      o.row.classList.toggle('tamauto-blocked', !!why);
+      if (why) o.row.title = `TAM Auto-Annahme: gesperrt – ${why}`; else if (/^TAM Auto-Annahme/.test(o.row.title)) o.row.removeAttribute('title');
+    });
+  }
+  function renderReturns() {
+    const el = document.getElementById('tamauto-ret');
+    if (!el) return;
+    const items = Object.entries(dayList('returnsToday').items);
+    el.innerHTML = '';
+    if (!items.length) el.textContent = 'Keine Einträge.';
+    items.forEach(([nr, i]) => {
+      const c = chipEl(nr, '#b26a00', '#fff3e0');
+      c.title = `zurückgegeben · ${new Date(i.at).toLocaleTimeString('de-DE')}` +
+        `${i.plz ? ` · ${i.plz} ${i.ort || ''}` : ''}\nKlicken = auf diesem Gerät wieder freigeben`;
+      c.style.cursor = 'pointer';
+      c.onclick = () => { const l = dayList('returnsToday'); delete l.items[nr]; GM_setValue('returnsToday', l); log(`${nr}: Rückgabe-Sperre auf diesem Gerät aufgehoben.`); renderReturns(); scheduleCheck('Rückgabe freigegeben'); };
+      el.appendChild(c);
+    });
+    const n = document.getElementById('tamauto-ret-count'); if (n) n.textContent = `(${items.length})`;
+  }
+
   function blocked(order) {
+    const r = dayList('returnsToday').items[nrKey(order.nr)];
+    if (r) return `heute zurückgegeben (${new Date(r.at).toLocaleTimeString('de-DE')})`;
     const p = (order.plz || '').trim();
     const xb = places.block || { plz: [], orte: [] };
     const xp = xb.plz.find((x) => p.startsWith(x));
@@ -585,6 +679,7 @@
     const cnt = (plz, orte) => `(${plz}${orte ? ` + ${orte} Orte` : ''})`;
     const oc = document.getElementById('tamauto-ol-count'); if (oc) oc.textContent = cnt(places.plz.length, places.orte.length);
     const bc = document.getElementById('tamauto-bl-count'); if (bc) bc.textContent = cnt(xb.plz.length, xb.orte.length);
+    renderReturns();
   }
 
   // ------------------------------------------------------------------ Updates (GitHub)
@@ -1355,6 +1450,10 @@
       .forEach((w) => { const b = findButton(/^(ok|schließen)$/i, w); if (b) clickBtn(b); });
     if (!sameNr(currentAcceptNr, nr)) closeWindow(card);
     dismissTerminDialog();
+    // an alle Geräte melden (für die Erkennung von Rückgaben) – nur, was wirklich angenommen ist
+    const accepted = order.unbookedMain ? [] : [nr, ...bulkOf(order)];
+    addToday('accToday', accepted, {});
+    retPost('acc', accepted);
   }
 
   // Bereits verbuchte Annahme korrigieren: Hauptauftrag betroffen → nichts angenommen; sonst nur der eine
@@ -1370,6 +1469,7 @@
     GM_setValue('orderbook', book.filter((e) => !(e.ts >= new Date(lastAcceptAt - 60000).toISOString() && up.has(String(e.nr).toUpperCase()))));
     renderOrderbook();
     nrs.forEach((x) => { const row = rowsByNr.get(x) || (sameNr(x, o.nr) ? o : null); if (row || hitStats()[x]) trackResult(row || { nr: x, plz: o.plz }, vergeben ? 'vergeben' : 'fehler'); });
+    if (main) o.unbookedMain = true;
     if (!main) { o.bulk = (o.bulk || []).filter((x) => !sameNr(x, bad)); o.extra = (o.extra || []).filter((x) => !sameNr(x, bad)); }
     log(`${o.nr}: nachträglich – TAM meldet „${reason}“ → ${main ? 'NICHT angenommen' : `${bad} nicht angenommen, ${o.nr} schon`}.`, 'err');
     notify('TAM: Annahme doch fehlgeschlagen', `${main ? o.nr : bad} – ${reason}`);
@@ -1414,6 +1514,8 @@
       if (!grid) { log('Keine Auftragstabelle im Tab "Veröffentlichte Aufträge" gefunden.', 'err'); return; }
       const all = readOrders(grid).map((o) => Object.assign(o, { key: o.nr || o.ref }));
       rememberRows(all);
+      noteReturns(all);
+      markBlockedRows(all);
       if (!lastColsOk) {
         if (lastSummary !== 'NOCOLS') log(`Abbruch: PLZ/Ort-Spalte nicht gefunden. ${lastColInfo}`, 'err');
         lastSummary = 'NOCOLS'; setStatus('Fehler: PLZ/Ort-Spalte nicht gefunden'); return;
@@ -2251,6 +2353,10 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
               <span class="tamauto-help" title="PLZ aus dem Excel-Blatt „nicht annehmen“. Diese PLZ werden NIE angenommen – dauerhaft, solange sie im Excel stehen. Ändern nur im Excel, danach „Neu laden“.">?</span>
               <span style="color:#555">– Blatt „nicht annehmen“</span></div>
             <div id="tamauto-bl-excel" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
+            <div style="margin-top:8px"><b>Heute zurückgegeben <span id="tamauto-ret-count"></span></b>
+              <span class="tamauto-help" title="Aufträge, die heute von einem Gerät der IB Thomée angenommen und danach zurückgegeben wurden (wieder in „Veröffentlichte Aufträge“). Sie werden auf allen Geräten bis Mitternacht nicht angenommen. Klick auf einen Eintrag gibt ihn auf diesem Gerät wieder frei.">?</span>
+              <span style="color:#555">– auf allen Geräten, bis Mitternacht</span></div>
+            <div id="tamauto-ret" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
           </div>
           <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">
             <b>Tages-Annahmeliste</b>
@@ -3128,6 +3234,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     wasOnPublished = onPublishedTab(); // Ausgangszustand für die Tabwechsel-Erkennung
     setInterval(silentPoll, 250);  // Silent Reload (falls eingestellt)
     startPush();                   // Push-Signal (App „TAM-Signal“) empfangen
+    startReturns();                // Rückgaben der anderen Geräte empfangen
     setInterval(watchNewRows, 250); // neue Aufträge auch ohne erkannte Tabellenänderung sofort prüfen
     setInterval(dismissAllMessagesNow, 100); // Sofort-Wächter als Rückfallebene (falls ein Einblenden nicht als Änderung auffällt)
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;

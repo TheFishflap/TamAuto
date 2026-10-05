@@ -193,6 +193,12 @@ function startTam(opts = {}) {
     return m;
   };
   tam.onPublished = () => d.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active');
+  // ntfy-Nachricht an alle Live-Verbindungen eines Kanals zustellen (wie ntfy per SSE)
+  tam.ntfy = (topicPart, obj) => sources.filter((x) => x.url.includes(topicPart) && x.readyState !== 2 && x.onmessage)
+    .forEach((x) => x.onmessage({ data: JSON.stringify({ event: 'message', message: JSON.stringify(obj) }) }));
+  tam.posts = (topicPart) => fetches.filter((f) => f.url.includes(topicPart) && f.o && f.o.method === 'POST').map((f) => JSON.parse(f.o.body));
+  tam.removeOrder = (nr) => [...d.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')]
+    .filter((r) => r.textContent.includes(nr)).forEach((r) => r.remove());
   tam.logs = () => [...d.querySelectorAll('#tamauto-log div')].map((x) => x.textContent).reverse();
   tam.licensePanel = () => !!d.getElementById('tamauto-lic-key');
   tam.mainPanel = () => !!d.getElementById('tamauto-log');
