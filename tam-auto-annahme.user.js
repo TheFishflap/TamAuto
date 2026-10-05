@@ -80,7 +80,9 @@
     // Dropdown (prioMode) einmalig übernommen
     prioOrder: GM_getValue('prioOrder', ({ ort: ['anzahl', 'summe', 'preis'], summe: ['summe', 'preis', 'keine'],
       preis: ['preis', 'keine', 'keine'], tabelle: ['keine', 'keine', 'keine'] })[GM_getValue('prioMode', 'ort')] || ['anzahl', 'summe', 'preis']),
-    silentSec: GM_getValue('silentSec', 0),
+    // Silent Reload: an/aus per Checkbox (wie Auto-Refresh), Intervall 1–60 s. Früher hieß 0 s „aus“ → einmalig übernommen
+    silentOn: GM_getValue('silentOn', GM_getValue('silentSec', 0) > 0),
+    silentSec: GM_getValue('silentSec', 0) || 10,
     // Arbeitszeit: außerhalb pausieren Auto-Refresh und Silent Reload (Einstellungen bleiben erhalten) – Standard an
     schedOn: GM_getValue('schedOn', true),
     schedFrom: GM_getValue('schedFrom', '08:00'),
@@ -865,7 +867,7 @@
             /\|loadTeilauftraege\|/.test(b) && onPublishedTab()) {
             const first = !tamLoadReq;
             tamLoadReq = { url: new URL(this.__tamU, location.href).href, body: b, headers: Object.assign({}, this.__tamH) };
-            if (first && cfg.silentSec) log('Silent Reload: TAM-Anfrage übernommen – Hintergrund-Abfrage aktiv.', 'ok');
+            if (first && cfg.silentOn) log('Silent Reload: TAM-Anfrage übernommen – Hintergrund-Abfrage aktiv.', 'ok');
           }
         } catch (e) { /* ignore */ }
         return send.apply(this, arguments);
@@ -1464,8 +1466,9 @@
   function checkScheduleChange() { // Wechsel ins/aus dem Fenster einmal protokollieren
     const s = inSchedule();
     if (lastSchedState !== null && s !== lastSchedState) {
-      log(s ? `Arbeitszeit beginnt (${cfg.schedFrom}): Auto-Refresh${cfg.silentSec ? ` und Silent Reload (alle ${cfg.silentSec} s)` : ''} wieder aktiv.`
+      log(s ? `Arbeitszeit beginnt (${cfg.schedFrom}): Auto-Refresh${cfg.silentOn ? ` und Silent Reload (alle ${cfg.silentSec} s)` : ''} wieder aktiv.`
         : `Arbeitszeit endet (${cfg.schedTo}): Auto-Refresh und Silent Reload pausiert bis ${cfg.schedFrom}.`, 'ok');
+      silentState = ''; renderSilent();
     }
     lastSchedState = s;
   }
@@ -1535,9 +1538,9 @@
       const per = t.periodMs ? ` (alle ${fmtDur(t.periodMs)})` : '';
       txt = t.at ? `Nächste TAM-Aktualisierung in ${fmtDur(t.at - now)}${per} – ${t.src}` : `TAM-Aktualisierung${per}: wartet auf ersten Refresh`;
     }
-    if (cfg.silentSec) txt += ` · Silent Reload alle ${cfg.silentSec} s`;
+    if (cfg.silentOn) txt += ` · Silent Reload alle ${cfg.silentSec} s`;
     checkScheduleChange();
-    if (!inSchedule() && (cfg.autoRefresh || cfg.silentSec)) {
+    if (!inSchedule() && (cfg.autoRefresh || cfg.silentOn)) {
       txt = `⏾ Außerhalb der Arbeitszeit (${cfg.schedFrom}–${cfg.schedTo}): Auto-Refresh und Silent Reload pausiert · ${txt}`;
     }
     if (cfg.pushOn) txt += /verbunden/.test(pushState) ? ' · Push-Signal ✓' : ' · Push-Signal getrennt';
@@ -1629,7 +1632,7 @@
   }
   async function silentPoll() {
     const now = Date.now();
-    if (!cfg.silentSec || !cfg.enabled || !license || busy || silentFetching || !onPublishedTab() || burstUntil > now) return;
+    if (!cfg.silentOn || !cfg.enabled || !license || busy || silentFetching || !onPublishedTab() || burstUntil > now) return;
     if (!inSchedule()) { if (!/Arbeitszeit/.test(silentState)) { silentState = `pausiert – außerhalb der Arbeitszeit (${cfg.schedFrom}–${cfg.schedTo})`; renderSilent(); } return; }
     if (now - lastSilentAt < cfg.silentSec * 1000) return;
     // Versetzt zum Refresh: direkt nach einem Refresh (Auto-Refresh, TAM, Burst, manuell) ist die Tabelle frisch –
@@ -1667,11 +1670,12 @@
   }
   function renderSilent() {
     const el = document.getElementById('tamauto-silent-state');
-    if (el) el.textContent = cfg.silentSec ? silentState || 'aktiv' : 'aus';
+    if (el) el.textContent = !cfg.silentOn ? 'aus' : !inSchedule() ? `pausiert – außerhalb der Arbeitszeit (${cfg.schedFrom}–${cfg.schedTo})`
+      : silentState || 'aktiv';
     const w = document.getElementById('tamauto-silent-warn');
     if (w) {
       // Farbe nach Last: unter 5 s rot, 5–29 s orange, ab 30 s neutral grau
-      const s = cfg.silentSec, perH = s ? Math.round(3600 / s) : 0;
+      const s = cfg.silentOn ? cfg.silentSec : 0, perH = s ? Math.round(3600 / s) : 0;
       w.style.display = s ? '' : 'none';
       w.style.color = s < 5 ? '#b00020' : s < 30 ? '#b36b00' : '#555';
       w.textContent = !s ? '' : `${s < 30 ? '⚠ ' : ''}${perH.toLocaleString('de-DE')} Server-Anfragen pro Stunde` +
@@ -1958,16 +1962,16 @@
           </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
-              <b>Silent Reload</b> alle <input id="tamauto-silent" type="number" min="0" max="60" step="1" style="width:44px;margin:0"> s
-              <span style="color:#555">(0 = aus)</span>
-              <button id="tamauto-silent-test" title="Eine Hintergrund-Abfrage sofort ausführen und das Ergebnis ins Log schreiben (funktioniert auch bei 0 = aus)">Jetzt testen</button>
+              <label class="tamauto-chk"><input type="checkbox" id="tamauto-silent-on"> <b>Silent Reload</b></label>
+              alle <input id="tamauto-silent" type="number" min="1" max="60" step="1" style="width:44px;margin:0"> s
+              <button id="tamauto-silent-test" title="Eine Hintergrund-Abfrage sofort ausführen und das Ergebnis ins Log schreiben (funktioniert auch, wenn Silent Reload aus ist)">Jetzt testen</button>
               <span class="tamauto-help" title="SILENT RELOAD – was es macht:
 Fragt den TAM-Server alle x Sekunden im Hintergrund nach veröffentlichten Aufträgen – mit genau der Anfrage, die TAM selbst beim Klick auf den Aktualisieren-Pfeil sendet (wird beim ersten Refresh im Reiter „Veröffentlichte Aufträge“ übernommen). Die Tabelle wird dabei NICHT neu gezeichnet. Nur wenn die Antwort einen neuen Auftrag enthält, aktualisiert das Script die Tabelle einmal und nimmt passende Aufträge an. „Jetzt testen“ zeigt im Log, was TAM gerade meldet.
 
 ⚠ WARNUNG – Serverlast:
 Jede Abfrage ist eine echte Anfrage an den TAM-Server – genauso viel Last wie ein Klick auf Aktualisieren. 2 s = 30 Anfragen pro Minute = 1.800 pro Stunde, dauerhaft, solange die Seite offen ist. Das kann bei TÜV SÜD auffallen (Protokolle, Sperre des Zugangs, Verstoß gegen Nutzungsbedingungen) und belastet den Server für alle Nutzer. Empfehlung: 5–10 s, kürzer nur kurzzeitig bei erwarteten Auftragswellen. Nutzung auf eigene Verantwortung.
 
-Standard: 0 (aus).">?</span>
+Läuft nur in der Arbeitszeit. Standard: aus.">?</span>
             </span>
             <div id="tamauto-silent-state" style="color:#555;font-size:11px;margin-top:2px"></div>
             <div id="tamauto-silent-warn" style="display:none;color:#b00020;font-size:11px;margin-top:2px"></div>
@@ -2395,7 +2399,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       $('tamauto-sched-from').value = cfg.schedFrom; $('tamauto-sched-to').value = cfg.schedTo;
       $('tamauto-sched-from').disabled = $('tamauto-sched-to').disabled = !cfg.schedOn;
       $('tamauto-sched-state').textContent = !cfg.schedOn ? 'aus – Auto-Refresh und Silent Reload laufen rund um die Uhr'
-        : inSchedule() ? `jetzt in der Arbeitszeit – Auto-Refresh${cfg.silentSec ? ' und Silent Reload' : ''} aktiv`
+        : inSchedule() ? `jetzt in der Arbeitszeit – Auto-Refresh${cfg.silentOn ? ' und Silent Reload' : ''} aktiv`
           : `jetzt außerhalb – pausiert bis ${cfg.schedFrom}`;
     };
     const saveSched = () => {
@@ -2414,14 +2418,18 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     setInterval(renderSched, 30000);
 
     // Silent Reload: Intervall in s, 0 = aus
+    $('tamauto-silent-on').checked = cfg.silentOn;
     $('tamauto-silent').value = cfg.silentSec;
+    const silentChanged = () => {
+      silentState = ''; lastSilentAt = 0; renderSilent(); updateRefreshStatus();
+      log(cfg.silentOn ? `Silent Reload an: alle ${cfg.silentSec} s Hintergrund-Abfrage` +
+        (!inSchedule() ? ' (startet mit der Arbeitszeit).' : tamLoadReq ? '.' : ' (startet nach dem nächsten Refresh).') : 'Silent Reload aus.');
+      if (cfg.silentOn && cfg.silentSec < 5) log(`Achtung: ${Math.round(3600 / cfg.silentSec)} Anfragen/Stunde an TAM – hohe Serverlast, nur kurzzeitig nutzen.`, 'err');
+    };
+    $('tamauto-silent-on').onchange = (e) => { cfg.silentOn = e.target.checked; GM_setValue('silentOn', cfg.silentOn); silentChanged(); };
     $('tamauto-silent').onchange = (e) => {
-      cfg.silentSec = Math.round(Math.min(60, Math.max(0, +e.target.value || 0)));
-      e.target.value = cfg.silentSec; GM_setValue('silentSec', cfg.silentSec);
-      silentState = ''; lastSilentAt = 0; renderSilent();
-      log(cfg.silentSec ? `Silent Reload an: alle ${cfg.silentSec} s Hintergrund-Abfrage` +
-        (tamLoadReq ? '.' : ' (startet nach dem nächsten Refresh).') : 'Silent Reload aus.');
-      if (cfg.silentSec && cfg.silentSec < 5) log(`Achtung: ${Math.round(3600 / cfg.silentSec)} Anfragen/Stunde an TAM – hohe Serverlast, nur kurzzeitig nutzen.`, 'err');
+      cfg.silentSec = Math.round(Math.min(60, Math.max(1, +e.target.value || 10)));
+      e.target.value = cfg.silentSec; GM_setValue('silentSec', cfg.silentSec); silentChanged();
     };
     $('tamauto-silent-test').onclick = () => silentTest();
 
@@ -2479,7 +2487,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       // nur die letzten 80 Zeilen (älteste zuerst) – reicht für eine Fehlermeldung; mehr lieber gezielt markieren
       const lines = logHistory.slice(-COPY_LINES);
       const settings = `Einstellungen: Auto-Refresh ${cfg.autoRefresh ? `alle ${cfg.intervalSec} s` : 'aus'} · Silent Reload ` +
-        `${cfg.silentSec ? `alle ${cfg.silentSec} s` : 'aus'} · Burst ${cfg.burstSec} s · Verzögerung ` +
+        `${cfg.silentOn ? `alle ${cfg.silentSec} s` : 'aus'} · Burst ${cfg.burstSec} s · Verzögerung ` +
         `${cfg.delayOn ? `${cfg.delaySec} s${cfg.delayRandom ? ` + bis ${cfg.delayRandomMs} ms` : ''}` : 'aus'} · Ortsliste ` +
         `${places.plz.length} PLZ / ${places.orte.length} Orte · Sperrliste ${(places.block || { plz: [] }).plz.length} PLZ` +
         ` · Priorität ${prioText()}`;

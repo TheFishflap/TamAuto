@@ -108,3 +108,32 @@ describe('Gerätebindung der Lizenz (P1)', { skip }, () => {
     assert.ok(tam.store.get('devFp') && tam.store.get('devMark') && tam.local('devMark'));
   });
 });
+
+describe('Silent Reload', { skip }, () => {
+  // Arbeitszeit so legen, dass „jetzt“ sicher außerhalb liegt
+  const now = new Date(), hh = (h) => `${String((now.getHours() + h + 24) % 24).padStart(2, '0')}:00`;
+  const OUTSIDE = { schedOn: true, schedFrom: hh(2), schedTo: hh(3) };
+  const state = () => tam.document.getElementById('tamauto-silent-state').textContent;
+
+  it('Checkbox schaltet an/aus und wird gespeichert', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    const cb = tam.document.getElementById('tamauto-silent-on');
+    assert.equal(cb.checked, false);
+    assert.equal(state(), 'aus');
+    cb.click();
+    assert.equal(tam.store.get('silentOn'), true);
+  });
+
+  it('pausiert außerhalb der Arbeitszeit', async () => {
+    tam = startTam({ gm: { places: KOELN, silentOn: true, silentSec: 5, ...OUTSIDE } });
+    await tam.ready();
+    assert.ok(await until(() => /außerhalb der Arbeitszeit/.test(state()), 2000), state());
+  });
+
+  it('altes „alle 5 s“ (ohne Checkbox) bleibt an', async () => {
+    tam = startTam({ gm: { places: KOELN, silentSec: 5 } });
+    await tam.ready();
+    assert.equal(tam.document.getElementById('tamauto-silent-on').checked, true);
+  });
+});
