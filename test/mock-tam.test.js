@@ -46,17 +46,28 @@ describe('Annahme', { skip }, () => {
   });
 });
 
-describe('Wächter (P2)', { skip, todo: 'P2: Wächter ohne Reiter-Gate – Fix folgt' }, () => {
+describe('Wächter (P2)', { skip }, () => {
   it('schließt im Reiter „Angenommene Aufträge“ keine selbst geöffnete Detailansicht', async () => {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();
     tam.addOrder(ORDER);
-    assert.ok(await until(() => tam.accepted.length, 15000), tam.logs().join('\n'));
-    await sleep(1500); // Annahme abgeschlossen, Script wieder im Leerlauf
+    // Annahme vollständig abgeschlossen (inkl. Warten auf TAMs Reaktion und Aufräumen)
+    assert.ok(await until(() => tam.logs().some((l) => /Angenommen: MW3153893/.test(l)), 15000), tam.logs().join('\n'));
+    await sleep(500);
     tam.selectTab('AgentEigeneAuftraege');
     tam.showWindow(0); // Nutzer öffnet „Auftrag MW3153893“ per Doppelklick
     await sleep(1000);
     assert.deepEqual(tam.closed.filter((t) => /^Auftrag MW/.test(t)), [], tam.logs().slice(-5).join('\n'));
+  });
+
+  it('schließt im Reiter „Veröffentlichte Aufträge“ eine verspätete Karte weiterhin', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder(ORDER);
+    assert.ok(await until(() => tam.accepted.length, 15000), tam.logs().join('\n'));
+    await sleep(1500);
+    tam.showWindow(0); // „Auftrag MW3153893“ taucht verspätet auf
+    assert.ok(await until(() => tam.closed.some((t) => /^Auftrag MW/.test(t)), 2000), tam.logs().slice(-5).join('\n'));
   });
 });
 

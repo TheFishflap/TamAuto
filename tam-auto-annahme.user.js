@@ -1088,8 +1088,13 @@
   }
 
   // Wächter: alle Fehlermeldungen ohne Verzögerung schließen (unabhängig von der Klick-Verzögerung der Annahme)
+  // Nur im Reiter „Veröffentlichte Aufträge“ oder während einer laufenden Annahme – im Reiter „Angenommene
+  // Aufträge“ arbeitet der Nutzer selbst (Detailansichten, Meldungen). Ausnahme: Terminvergabe nach einer eigenen
+  // Annahme (ohnehin auf 30 s danach begrenzt; TAM wechselt dabei teils selbst den Reiter).
   function dismissAllMessagesNow() {
-    dismissUnavailable(); dismissTamErrors(); dismissTerminDialog(); closeStrayWindows();
+    dismissTerminDialog();
+    if (!currentAcceptNr && !onPublishedTab()) return; // currentAcceptNr: nur während acceptOrder gesetzt
+    dismissUnavailable(); dismissTamErrors(); closeStrayWindows();
   }
   // Auftragsfenster: "Auftragskarte zu MW…" (annehmbar) oder – wenn der Auftrag schon woanders angenommen wurde –
   // nur die Detailansicht "Auftrag MW…" (Basisdaten/Auftragsdokumente/Bemerkungen, ohne Annehmen)
