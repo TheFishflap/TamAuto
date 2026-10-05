@@ -486,29 +486,51 @@
   const bulkOf = (o) => o.bulk || o.extra || [];
   const bulkLabel = (o) => bulkOf(o).map((x) => `${x} (${(o.extra || []).includes(x) ? '0 km' : 'Warenkorb'})`).join(', ');
 
-  // Terminvereinbarung nach einer Annahme weggeklickt (z. B. Sixt) → im Auftragsbuch rote 1 bei diesen Aufträgen.
+  // Terminvereinbarung nach einer Annahme weggeklickt (z. B. Sixt) → Auftrag vormerken (terminWeg). Rote 1 im Auftragsbuch,
+  // wenn er laut „Angenommene Aufträge“ (Endtermin (Agent)) innerhalb von 2 h nach der Annahme aus der SLA fällt.
+  // Endtermin wird gelesen, sobald die Tabelle „Angenommene Aufträge“ angezeigt wird; nicht lesbar → keine rote 1.
   // Das Fenster kann schon vor dem Eintrag ins Auftragsbuch kommen → vormerken und beim Eintragen setzen.
+  const SLA_SOON_MS = 2 * 3600 * 1000;
+  const slaMs = (s) => { const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})/.exec(String(s || '')); return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5]).getTime() : null; };
+  const terminRed = (e) => { const t = slaMs(e.sla); return !!e.terminWeg && t !== null && t - new Date(e.ts).getTime() <= SLA_SOON_MS; };
   const terminPending = new Set();
   function markTermin(nrs) {
     const up = new Set(nrs.filter(Boolean).map((x) => String(x).toUpperCase()));
     const since = new Date(Date.now() - 120000).toISOString();
     const book = GM_getValue('orderbook', []);
-    let hit = 0;
-    book.forEach((e) => { if (e.ts >= since && up.has(String(e.nr).toUpperCase()) && !e.termin) { e.termin = 1; hit++; up.delete(String(e.nr).toUpperCase()); } });
+    book.forEach((e) => { const k = String(e.nr).toUpperCase(); if (e.ts >= since && up.has(k)) { e.terminWeg = 1; up.delete(k); } });
     up.forEach((x) => terminPending.add(x));
-    if (hit) { GM_setValue('orderbook', book); renderOrderbook(); }
+    GM_setValue('orderbook', book);
+  }
+  // Endtermin (Agent) aus „Angenommene Aufträge“ für vorgemerkte Aufträge übernehmen (AuftragsNr steht dort in einer
+  // ausgeblendeten Spalte – Zuordnung über die Spalten-ID)
+  function scanAccepted() {
+    const panel = document.getElementById(cfg.acceptedTabId);
+    if (!panel || panel.closest('.x-hide-display')) return;
+    const book = GM_getValue('orderbook', []);
+    const open = book.filter((e) => e.terminWeg && !e.sla);
+    if (!open.length) return;
+    const sla = new Map([...panel.querySelectorAll('.x-grid3-row')].map((r) => [
+      text(r.querySelector('td.x-grid3-td-teilAuftragNr')).toUpperCase(), text(r.querySelector('td.x-grid3-td-slaEndeAgent'))]));
+    let n = 0;
+    open.forEach((e) => { const v = sla.get(String(e.nr).toUpperCase()); if (v && slaMs(v) !== null) { e.sla = v; n++; } });
+    if (!n) return;
+    GM_setValue('orderbook', book);
+    const red = book.filter((e) => e.sla && terminRed(e)).map((e) => e.nr);
+    if (red.length) log(`Termin offen und SLA endet in ≤ 2 h: ${red.join(', ')} – im Auftragsbuch rot markiert.`, 'err');
+    renderOrderbook();
   }
   function recordOrder(o) {
     const book = GM_getValue('orderbook', []);
     const ts = new Date().toISOString();
-    const termin = (x) => (terminPending.delete(String(x).toUpperCase()) ? { termin: 1 } : {});
-    book.push(Object.assign({ ts, nr: o.nr, plz: o.plz, ort: o.ort, dienst: o.dienst, preis: parseEuro(o.preis) }, termin(o.nr)));
+    const termin = (e) => { if (terminPending.delete(String(e.nr).toUpperCase())) e.terminWeg = 1; return e; };
+    book.push(termin({ ts, nr: o.nr, plz: o.plz, ort: o.ort, dienst: o.dienst, preis: parseEuro(o.preis) }));
     bulkOf(o).forEach((x) => {
       const row = rowsByNr.get(x);
       const art = (o.extra || []).includes(x) ? '0 km' : 'Warenkorb';
-      book.push(Object.assign({ ts, nr: x, plz: row ? row.plz : o.plz, ort: row ? row.ort : o.ort, zu: o.nr,
+      book.push(termin({ ts, nr: x, plz: row ? row.plz : o.plz, ort: row ? row.ort : o.ort, zu: o.nr,
         dienst: `${art} – zusammen mit ${o.nr} angenommen${row && row.dienst ? ` · ${row.dienst}` : ''}`,
-        preis: row ? parseEuro(row.preis) : null }, termin(x)));
+        preis: row ? parseEuro(row.preis) : null }));
     });
     GM_setValue('orderbook', book.slice(-5000));
     renderOrderbook();
@@ -582,9 +604,9 @@
         e.zu ? `↳ ${e.nr}` : e.nr, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis)].forEach((v, i) => {
         const td = document.createElement('td');
         td.textContent = v;
-        if (i === 1 && e.termin) { // rote 1: Terminvereinbarung weggeklickt
+        if (i === 1 && terminRed(e)) { // rote 1: Terminvereinbarung weggeklickt, SLA endet in ≤ 2 h
           const t = document.createElement('span');
-          t.className = 'tamauto-termin'; t.textContent = '1'; t.title = 'Terminvereinbarung weggeklickt – Termin noch vereinbaren';
+          t.className = 'tamauto-termin'; t.textContent = '1'; t.title = `Terminvereinbarung weggeklickt, SLA endet ${e.sla} – Termin noch vereinbaren`;
           Object.assign(t.style, { color: '#c62828', fontWeight: 'bold', marginLeft: '4px' });
           td.appendChild(t);
         }
@@ -1285,7 +1307,7 @@
       if (!terminSeen.has(w)) {
         terminSeen.add(w);
         const o = lastAcceptOrder, nrs = o ? [o.nr, ...bulkOf(o)] : [];
-        log(`Fenster „${winTitle(w) || 'Terminvergabe'}“ weggeklickt${nrs.length ? ` – ${nrs.join(', ')} im Auftragsbuch markiert (Termin offen)` : ''}.`, 'ok');
+        log(`Fenster „${winTitle(w) || 'Terminvergabe'}“ weggeklickt${nrs.length ? ` – ${nrs.join(', ')} vorgemerkt (Termin offen, SLA wird in „Angenommene Aufträge“ geprüft)` : ''}.`, 'ok');
         markTermin(nrs);
       }
     });
@@ -3060,6 +3082,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     log(`Neue Zeile erkannt: ${fresh.slice(0, 3).join(', ')}${fresh.length > 3 ? ' …' : ''} → sofort prüfen`, 'debug');
     cycle('Neue Zeile');
   }
+  let accScanTimer = 0;
   function watchGrid() {
     new MutationObserver((muts) => {
       if (muts.some((m) => m.type === 'attributes' && m.target.tagName === 'LI' && (m.target.id || '').includes('__'))) {
@@ -3072,6 +3095,10 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
         (n.matches(MSG_SELECTOR) || n.querySelector?.(MSG_SELECTOR)))) ||
         (m.type === 'attributes' && m.attributeName === 'style' && m.target.matches?.(MSG_SELECTOR)))) {
         dismissAllMessagesNow(); setTimeout(dismissAllMessagesNow, 50); // 2. Durchlauf: GXT füllt den Text teils erst danach
+      }
+      const acc = document.getElementById(cfg.acceptedTabId);
+      if (acc && muts.some((m) => acc.contains(m.target) || (m.type === 'attributes' && m.target.tagName === 'LI'))) {
+        clearTimeout(accScanTimer); accScanTimer = setTimeout(scanAccepted, 300);
       }
       const panel = document.getElementById(cfg.tabPanelId);
       if (!panel) return;

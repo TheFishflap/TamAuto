@@ -127,7 +127,8 @@ function startTam(opts = {}) {
     const body = d.querySelector('#AgentVeroeffentlichteAuftraege .x-grid3-body');
     body.querySelectorAll('.x-grid-empty').forEach((x) => x.remove());
     const val = { teilAuftragNr: o.nr, besichtigungsPlz: o.plz, besichtigungsOrt: o.ort, besichtigungsStrasse: o.strasse || 'Teststr. 1',
-      cst_projekt_dienstleistung_name: o.dienst || 'Testdienst', preis: o.preis || '50,00 €', status: 'Veröffentlicht', referenz: o.ref || '' };
+      cst_projekt_dienstleistung_name: o.dienst || 'Testdienst', preis: o.preis || '50,00 €', status: 'Veröffentlicht', referenz: o.ref || '',
+      slaEndeAgent: o.sla || '' };
     const cell = (c, hidden) => `<td role="gridcell" class="x-grid3-col x-grid3-cell x-grid3-td-${c}"${hidden ? ' style="display:none;"' : ''}>` +
       `<div class="x-grid3-cell-inner x-grid3-col-${c}">${val[c] || ''}</div></td>`;
     const row = d.createElement('div');
@@ -213,6 +214,15 @@ function startTam(opts = {}) {
   tam.opened = (topicPart) => sources.filter((x) => x.url.includes(topicPart)).length;
   tam.ntfyRaw = (topicPart, text) => sources.filter((x) => x.url.includes(topicPart) && x.readyState !== 2 && x.onmessage)
     .forEach((x) => x.onmessage({ data: JSON.stringify({ event: 'message', message: text }) }));
+  // Zeile in „Angenommene Aufträge“ (Kopie einer echten Zeile aus dem Mitschnitt, AuftragsNr/Endtermin gesetzt)
+  tam.addAccepted = (nr, sla) => {
+    const body = d.querySelector('#AgentEigeneAuftraege .x-grid3-body');
+    const row = body.querySelector('.x-grid3-row').cloneNode(true);
+    row.querySelector('td.x-grid3-td-teilAuftragNr').textContent = nr;
+    row.querySelector('td.x-grid3-td-slaEndeAgent').textContent = sla || '';
+    body.appendChild(row);
+    return row;
+  };
   tam.posts = (topicPart) => fetches.filter((f) => f.url.includes(topicPart) && f.o && f.o.method === 'POST').map((f) => JSON.parse(f.o.body));
   tam.removeOrder = (nr) => [...d.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')]
     .filter((r) => r.textContent.includes(nr)).forEach((r) => r.remove());

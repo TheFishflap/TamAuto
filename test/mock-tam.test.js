@@ -589,8 +589,9 @@ describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
   });
 });
 
-// Terminvereinbarung nach der Annahme weggeklickt (z. B. Sixt) → im Auftragsbuch rote 1
-describe('Auftragsbuch: Terminvereinbarung weggeklickt', { skip }, () => {
+// Terminvereinbarung nach der Annahme weggeklickt (z. B. Sixt) → im Auftragsbuch rote 1, wenn der Auftrag laut
+// „Angenommene Aufträge“ (Endtermin (Agent)) innerhalb von 2 h nach der Annahme aus der SLA fällt
+describe('Auftragsbuch: rote 1 (Terminvereinbarung weggeklickt, SLA ≤ 2 h)', { skip }, () => {
   const terminWin = (t) => {
     const m = t.document.createElement('div'); m.className = 'x-window x-component';
     m.innerHTML = '<div class="x-window-header"><span class="x-window-header-text">Terminvereinbarung</span></div>' +
@@ -600,26 +601,51 @@ describe('Auftragsbuch: Terminvereinbarung weggeklickt', { skip }, () => {
     m.querySelectorAll('button')[1].addEventListener('click', () => { t.closed.push('Terminvereinbarung'); m.remove(); });
     t.document.body.appendChild(m);
   };
-  const book = () => tam.store.get('orderbook') || [];
-  const rowText = (nr) => [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].map((r) => r.textContent).find((x) => x.includes(nr)) || '';
-
-  it('Fenster kommt direkt nach „Bestätigen“ → Auftrag und Warenkorb-Auftrag mit roter 1', async () => {
+  const inH = (h) => { const d = new Date(Date.now() + h * 3600000), p = (n) => String(n).padStart(2, '0');
+    return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+  const red = () => [...tam.document.querySelectorAll('#tamauto-ob-rows td span.tamauto-termin')];
+  async function acceptWithTermin(extra = {}) {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();
-    tam.addOrder({ ...ORDER, nearby: [{ nr: 'MW3000001', km: 0 }], afterAccept: (t) => setTimeout(() => terminWin(t), 200) });
+    tam.addOrder({ ...ORDER, ...extra, afterAccept: (t) => setTimeout(() => terminWin(t), 200) });
     assert.ok(await until(() => tam.closed.includes('Terminvereinbarung'), 5000), 'nicht weggeklickt');
-    assert.ok(await until(() => book().filter((e) => e.termin === 1).length === 2, 5000), JSON.stringify(book()));
-    const cell = [...tam.document.querySelectorAll('#tamauto-ob-rows td span.tamauto-termin')];
-    assert.equal(cell.length, 2);
-    assert.equal(cell[0].textContent, '1');
+    assert.ok(await until(() => (tam.store.get('orderbook') || []).length, 5000));
+    await sleep(3000); // Nachkontrolle vorbei
+  }
+
+  it('Endtermin in „Angenommene Aufträge“ in 1 h → rote 1 (auch beim Warenkorb-Auftrag)', async () => {
+    await acceptWithTermin({ nearby: [{ nr: 'MW3000001', km: 0 }] });
+    assert.equal(red().length, 0, 'rote 1 vor dem Lesen des Endtermins');
+    tam.addAccepted(ORDER.nr, inH(1)); tam.addAccepted('MW3000001', inH(1.5));
+    tam.selectTab('AgentEigeneAuftraege');
+    assert.ok(await until(() => red().length === 2, 3000), JSON.stringify(tam.store.get('orderbook')));
+    assert.equal(red()[0].textContent, '1');
   });
 
-  it('ohne Terminvereinbarung → keine Markierung', async () => {
+  it('Endtermin in 5 h → keine rote 1', async () => {
+    await acceptWithTermin();
+    tam.addAccepted(ORDER.nr, inH(5));
+    tam.selectTab('AgentEigeneAuftraege');
+    await sleep(1500);
+    assert.equal(red().length, 0);
+  });
+
+  it('Endtermin nicht lesbar → keine rote 1', async () => {
+    await acceptWithTermin();
+    tam.addAccepted(ORDER.nr, '');
+    tam.selectTab('AgentEigeneAuftraege');
+    await sleep(1500);
+    assert.equal(red().length, 0);
+  });
+
+  it('ohne weggeklickte Terminvereinbarung → keine rote 1, auch bei knapper SLA', async () => {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();
     tam.addOrder(ORDER);
-    assert.ok(await until(() => book().length, 8000));
+    assert.ok(await until(() => (tam.store.get('orderbook') || []).length, 8000));
+    tam.addAccepted(ORDER.nr, inH(1));
+    tam.selectTab('AgentEigeneAuftraege');
     await sleep(1500);
-    assert.ok(!book().some((e) => e.termin));
+    assert.equal(red().length, 0);
   });
 });
