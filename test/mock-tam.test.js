@@ -495,3 +495,72 @@ describe('Update-Meldung über ntfy', { skip }, () => {
     assert.equal(tam.requests.filter((o) => /\.user\.js|IQALfRz3/.test(o.url)).length, tam.requests.slice(0, before).filter((o) => /\.user\.js|IQALfRz3/.test(o.url)).length);
   });
 });
+
+// Kanal-Schlüssel: geheime, verschlüsselte ntfy-Kanäle; Geheimnis wird je Gerät verschlüsselt in der Lizenz zugestellt
+describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
+  const K = require('./kanal');
+  const STATUS = 'tamlic-hnzqxgvxtcc49z6z-status';
+  const pkOf = (t) => (t.posts(STATUS).find((m) => m.pk) || {}).pk;
+  // Installation starten, öffentlichen Geräteschlüssel und Speicher abgreifen
+  async function install() {
+    const t = startTam({ gm: { places: KOELN } });
+    await t.ready();
+    await until(() => pkOf(t), 3000);
+    const pk = pkOf(t), gm = Object.fromEntries(t.store);
+    t.close();
+    return { pk, gm };
+  }
+  async function withChannelKey(opts = {}) {
+    const { pk, gm } = await install();
+    const ck = K.newChannelKey();
+    const cke = opts.badCke ? { e: 'x', i: 'y', c: 'z' } : await K.sealChannelKey(pk, ck);
+    tam = startTam({ gm: { ...gm, licenseKey: licenseKey({ cke }), places: KOELN } });
+    await tam.ready();
+    return { ck, ret: await K.channelTopic(ck, 'ret') };
+  }
+
+  it('Status-Meldung enthält den öffentlichen Geräteschlüssel', async () => {
+    const { pk } = await install();
+    assert.match(pk || '', /^[A-Za-z0-9_-]{87}$/);
+  });
+
+  it('mit Kanal-Schlüssel: Annahme geht verschlüsselt an den geheimen Kanal, nicht an den öffentlichen', async () => {
+    const { ck, ret } = await withChannelKey();
+    tam.addOrder(ORDER);
+    assert.ok(await until(() => tam.posts(ret).length, 8000), 'nichts auf dem geheimen Kanal');
+    const body = tam.posts(ret)[0];
+    assert.ok(!JSON.stringify(body).includes(ORDER.nr), 'Klartext auf dem Kanal');
+    assert.deepEqual((await K.decryptMsg(ck, body)).nrs, [ORDER.nr]);
+    assert.equal(tam.posts('tamret-').length, 0);
+  });
+
+  it('mit Kanal-Schlüssel: verschlüsselte Rückgabe wird übernommen, gefälschte ignoriert', async () => {
+    const { ck, ret } = await withChannelKey();
+    await until(() => tam.live(ret).length, 2000);
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'acc', nrs: ['MW3190001'], at: Date.now() }));
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'ret', nrs: ['MW3190001'], at: Date.now() }));
+    tam.ntfy(ret, await K.encryptMsg(K.newChannelKey(), { v: 1, t: 'ret', nrs: ['MW3190002'], at: Date.now() })); // falscher Schlüssel
+    tam.ntfy(ret, { v: 1, t: 'ret', nrs: ['MW3190003'], at: Date.now() });                                       // unverschlüsselt
+    const chips = () => tam.document.getElementById('tamauto-ret').textContent;
+    assert.ok(await until(() => /MW3190001/.test(chips()), 2000), chips());
+    assert.doesNotMatch(chips(), /MW3190002|MW3190003/);
+  });
+
+  it('kaputter Kanal-Schlüssel in der Lizenz → läuft weiter wie bisher (öffentlicher Kanal)', async () => {
+    await withChannelKey({ badCke: true });
+    assert.ok(tam.mainPanel());
+    tam.addOrder(ORDER);
+    assert.ok(await until(() => tam.posts('tamret-').length, 8000));
+  });
+
+  it('neues Gerät (Backup) → neuer Geräteschlüssel', async () => {
+    const a = await install();
+    const t = startTam({ gm: a.gm, device: { platform: 'Linux armv8l', hardwareConcurrency: 2, maxTouchPoints: 10, width: 700, height: 1100, dpr: 3 } });
+    tam = t;
+    await t.ready();
+    assert.ok(t.licensePanel());
+    await sleep(300);
+    const pk2 = (t.posts('tamlic-hnzqxgvxtcc49z6z-').find((m) => m.pk) || {}).pk || (t.store.get('devKey') || {}).pub;
+    assert.ok(pk2 && pk2 !== a.pk, 'Geräteschlüssel nicht erneuert');
+  });
+});

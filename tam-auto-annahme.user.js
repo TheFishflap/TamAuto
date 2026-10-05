@@ -608,10 +608,14 @@
     return added;
   }
   const goneSince = new Map(); // Nr → seit wann nicht in der Tabelle (diese Sitzung)
+  let retChanP = Promise.resolve(null); // geheimer Rückgabe-Kanal (mit Kanal-Schlüssel) oder null
   function retPost(t, nrs) {
     if (!nrs.length) return;
-    licFetch(`${LIC_NTFY}/${RET_TOPIC}`, { method: 'POST',
-      body: JSON.stringify({ v: 1, t, nrs, at: Date.now() }) }).catch(() => {}); // nur Nummern, keine Namen/Adressen
+    const msg = { v: 1, t, nrs, at: Date.now() }; // nur Nummern, keine Namen/Adressen
+    retChanP.then(async (ch) => {
+      if (ch) await licFetch(`${LIC_NTFY}/${ch.topic}`, { method: 'POST', body: JSON.stringify(await sealMsg(ch, msg)) });
+      else await licFetch(`${LIC_NTFY}/${RET_TOPIC}`, { method: 'POST', body: JSON.stringify(msg) });
+    }).catch(() => {});
   }
   // Der Kanal ist nicht geheim (Name steht im Script): Meldungen streng prüfen. Rückgaben nur für Nummern, deren
   // Annahme heute gemeldet wurde – sonst könnte jeder beliebige Aufträge auf allen Geräten sperren.
@@ -628,16 +632,25 @@
       if (cfg.enabled) scheduleCheck('Rückgabe gemeldet'); // Tabelle sofort einfärben
     }
   }
-  let retES = null;
-  function startReturns() {
-    const handle = (raw) => { try { const m = JSON.parse(raw); if (m.event === 'message') onRetMessage(JSON.parse(m.message)); } catch (e) { /* ignore */ } };
-    const catchUp = () => { // seit Mitternacht nachholen (doppelte Meldungen schaden nicht)
+  // Kanal hören: Verpasstes seit Mitternacht nachholen (doppelte Meldungen schaden nicht), dann live
+  function listenRet(topic, handle) {
+    const catchUp = () => {
       const since = Math.floor(new Date(new Date().toDateString()).getTime() / 1000);
-      licFetch(`${LIC_NTFY}/${RET_TOPIC}/json?poll=1&since=${since}`).then((r) => r.text())
+      licFetch(`${LIC_NTFY}/${topic}/json?poll=1&since=${since}`).then((r) => r.text())
         .then((t) => t.split('\n').filter(Boolean).forEach(handle)).catch(() => {});
     };
     catchUp();
-    retES = ntfyStream(`${LIC_NTFY}/${RET_TOPIC}/sse`, { onMessage: (ev) => handle(ev.data), onReconnect: catchUp });
+    return ntfyStream(`${LIC_NTFY}/${topic}/sse`, { onMessage: (ev) => handle(ev.data), onReconnect: catchUp });
+  }
+  const ntfyBody = (raw) => { try { const m = JSON.parse(raw); return m.event === 'message' ? JSON.parse(m.message) : null; } catch (e) { return null; } };
+  function startReturns() {
+    retChanP = secretChannel('ret').catch(() => null);
+    retChanP.then((ch) => {
+      // Öffentlicher Kanal: ohne Kanal-Schlüssel wie bisher; mit Kanal-Schlüssel nur noch mitlesen (Übergang:
+      // Geräte mit älterer Lizenz melden dort), gesendet wird nur noch geheim und verschlüsselt
+      listenRet(RET_TOPIC, (raw) => onRetMessage(ntfyBody(raw)));
+      if (ch) listenRet(ch.topic, async (raw) => onRetMessage(await openMsg(ch, ntfyBody(raw))));
+    });
   }
   // Im Abgleich: heute angenommene Aufträge, die nach Verschwinden wieder in der Tabelle stehen = zurückgegeben
   function noteReturns(all) {
@@ -3115,6 +3128,69 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
 
   const fromB64Url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
   const fmtDate = (iso) => iso.split('-').reverse().join('.');
+  const toB64Url = (b) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+
+  // ---- Geräteschlüssel (ECDH P-256): nur der öffentliche Teil geht mit Anfrage/Status an IB Thomée. Damit wird der
+  // Kanal-Schlüssel in der Lizenz für genau dieses Gerät verschlüsselt. Gehört zur Installations-ID: neue ID → neues Paar.
+  let devKeyP = null;
+  function deviceKey() {
+    if (!devKeyP) devKeyP = (async () => {
+      const id = installId(), s = GM_getValue('devKey', null);
+      if (s && s.id === id && s.pub && s.jwk) {
+        try { return { pub: s.pub, priv: await crypto.subtle.importKey('jwk', s.jwk, { name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']) }; } catch (e) { /* neu erzeugen */ }
+      }
+      const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+      const pub = toB64Url(await crypto.subtle.exportKey('raw', kp.publicKey));
+      GM_setValue('devKey', { id, pub, jwk: await crypto.subtle.exportKey('jwk', kp.privateKey) });
+      return { pub, priv: kp.privateKey };
+    })();
+    return devKeyP;
+  }
+
+  // ---- Kanal-Schlüssel (Lizenz-Feld cke, Verfahren v1 – Referenz: test/kanal.js): gemeinsames Geheimnis aller
+  // Installationen. Daraus: nicht erratbare ntfy-Kanalnamen und Schlüssel für verschlüsselte, fälschungssichere Meldungen.
+  // Lizenz ohne (lesbaren) Kanal-Schlüssel → öffentliche Kanäle wie bisher.
+  let chanKeyP = null;
+  function channelKey() {
+    if (!chanKeyP) chanKeyP = (async () => {
+      const c = license && license.cke;
+      if (!c) return null;
+      try {
+        const k = await deviceKey();
+        const eph = await crypto.subtle.importKey('raw', fromB64Url(c.e), { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+        const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: eph }, k.priv, 256));
+        const aes = await crypto.subtle.importKey('raw', await crypto.subtle.digest('SHA-256',
+          new Uint8Array([...bits, ...new TextEncoder().encode('tam-ck-v1')])), 'AES-GCM', false, ['decrypt']);
+        const ck = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64Url(c.i) }, aes, fromB64Url(c.c)));
+        return ck.length === 32 ? ck : null;
+      } catch (e) {
+        log('Kanal-Schlüssel der Lizenz nicht lesbar – öffentliche Kanäle bleiben in Gebrauch.', 'err');
+        return null;
+      }
+    })();
+    return chanKeyP;
+  }
+  const hmacOf = async (ck, label) => new Uint8Array(await crypto.subtle.sign('HMAC',
+    await crypto.subtle.importKey('raw', ck, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), new TextEncoder().encode(label)));
+  // Geheimer Kanal { topic, key } für einen Zweck (z. B. 'ret') oder null ohne Kanal-Schlüssel
+  async function secretChannel(name) {
+    const ck = await channelKey();
+    if (!ck) return null;
+    const B32L = 'abcdefghijklmnopqrstuvwxyz234567';
+    const topic = 'tamk-' + [...(await hmacOf(ck, `topic:${name}`)).slice(0, 24)].map((x) => B32L[x % 32]).join('');
+    const key = await crypto.subtle.importKey('raw', await hmacOf(ck, 'enc'), 'AES-GCM', false, ['encrypt', 'decrypt']);
+    return { topic, key };
+  }
+  async function sealMsg(ch, obj) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    return { v: 2, i: toB64Url(iv), c: toB64Url(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, ch.key, new TextEncoder().encode(JSON.stringify(obj)))) };
+  }
+  async function openMsg(ch, m) { // null bei falschem Schlüssel / Manipulation / Klartext
+    try {
+      if (!m || m.v !== 2) return null;
+      return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64Url(m.i) }, ch.key, fromB64Url(m.c))));
+    } catch (e) { return null; }
+  }
 
   async function checkLicense(key) {
     const m = String(key || '').trim().match(/^TAM1\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/);
@@ -3218,8 +3294,8 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
   // Lebenszeichen für die Nutzerübersicht in der Lizenz-GUI
   function sendLicStatus() {
     if (!license) return;
-    licPost(LIC_TOPIC_STATUS, { v: 1, t: 'status', id: installId(), name: license.name, ver: VERSION, exp: license.exp,
-      on: !!cfg.enabled, acct: tamAcct, at: Date.now() }).catch(() => {});
+    deviceKey().then((k) => licPost(LIC_TOPIC_STATUS, { v: 1, t: 'status', id: installId(), name: license.name, ver: VERSION, exp: license.exp,
+      on: !!cfg.enabled, acct: tamAcct, pk: k.pub, ck: !!license.cke, at: Date.now() })).catch(() => {});
   }
   // Auf neue Schlüssel für diese Installation hören (Freischaltung / Verlängerung) – aktiviert automatisch
   let licES = null;
@@ -3252,8 +3328,8 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
   }
   function requestLicense(name, note) {
     const acct = tamAcct || ((tamAccount().match(ACCOUNT_OK) || [])[0]) || tamAccount().slice(0, 80);
-    return licPost(LIC_TOPIC_REQ, { v: 1, t: 'anfrage', id: installId(), name: String(name || '').trim().slice(0, 60),
-      ver: VERSION, exp: license ? license.exp : '', note: note || '', acct, at: Date.now() });
+    return deviceKey().then((k) => licPost(LIC_TOPIC_REQ, { v: 1, t: 'anfrage', id: installId(), name: String(name || '').trim().slice(0, 60),
+      ver: VERSION, exp: license ? license.exp : '', note: note || '', acct, pk: k.pub, at: Date.now() }));
   }
   function renderLicInfo() {
     const n = document.getElementById('tamauto-info-name'), e = document.getElementById('tamauto-info-exp');
@@ -3324,6 +3400,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
 
   // ------------------------------------------------------------------ Start
   waitFor(() => document.querySelector('.x-viewport'), 30000).then(async () => {
+    deviceKey().catch(() => {}); // Geräteschlüssel früh bereitstellen (Anfrage/Status)
     const storedKey = getLicenseKey();
     const lc = await checkLicense(storedKey);
     if (!lc.ok && deviceChanged) lc.reason = 'Neues Gerät erkannt – für dieses Gerät ist eine eigene Lizenz nötig.';
@@ -3333,8 +3410,8 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       const ac = await accountCheck();
       if (!ac.ok) {
         lc.ok = false; lc.reason = 'Diese Installation ist für das angemeldete TAM-Konto nicht freigegeben.';
-        licPost(LIC_TOPIC_STATUS, { v: 1, t: 'fremdkonto', id: installId(), name: lc.lic.name, ver: VERSION, exp: lc.lic.exp,
-          acct: ac.acct, at: Date.now() }).catch(() => {});
+        deviceKey().then((k) => licPost(LIC_TOPIC_STATUS, { v: 1, t: 'fremdkonto', id: installId(), name: lc.lic.name, ver: VERSION, exp: lc.lic.exp,
+          acct: ac.acct, pk: k.pub, at: Date.now() })).catch(() => {});
       }
     }
     if (!lc.ok) {
