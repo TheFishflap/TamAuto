@@ -8,8 +8,8 @@
 // @description  Prüft "Veröffentlichte Aufträge" im TÜV SÜD TAM regelmäßig und nimmt Aufträge an, deren PLZ/Ort in der Ortsliste steht.
 // @match        https://tam.tuvsud.com/*
 // @homepageURL  https://github.com/TheFishflap/TamAuto
-// @updateURL    https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js
-// @downloadURL  https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js
+// @updateURL    https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQALfRz3JKDFTajqSq2MROJNAcTdmeeQDOYup07olXdgzlg
+// @downloadURL  https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQALfRz3JKDFTajqSq2MROJNAcTdmeeQDOYup07olXdgzlg
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -712,6 +712,10 @@
 
   // ------------------------------------------------------------------ Updates (GitHub)
   const UPDATE_URL = 'https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js';
+  // Zweiter Update-Kanal (immer erreichbar, auch wenn das Repo offline ist): Freigabelink „Jeder mit dem Link“ der Datei
+  // Script\\tam-auto-annahme.user.js im OneDrive. Tampermonkey prüft über diesen Link (@updateURL/@downloadURL).
+  const UPDATE_BACKUP_URL = 'https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQALfRz3JKDFTajqSq2MROJNAcTdmeeQDOYup07olXdgzlg';
+  let updateLink = UPDATE_URL; // Installationslink der Quelle mit der neuesten Version
   // Changelog (Reiter Info): aus dem README auf GitHub – ist GitHub nicht erreichbar, aus der README-Kopie im
   // OneDrive (Freigabelink "Jeder mit dem Link", download.aspx wie bei der Ortsliste). Leer = kein Ersatz.
   const CHANGELOG_URL = 'https://raw.githubusercontent.com/TheFishflap/TamAuto/main/README.md';
@@ -790,32 +794,37 @@
     Object.assign(b.style, { color: '#fff', background: '#2e7d32', borderColor: '#2e7d32', fontWeight: 'bold' });
   }
 
-  function checkUpdate(manual = false) {
+  // Version einer Quelle abfragen → { v } oder { err }
+  function fetchVersion(url) {
+    return new Promise((resolve) => GM_xmlhttpRequest({
+      method: 'GET', url: `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`, nocache: true, timeout: 10000,
+      onload: (r) => { const m = r.status === 200 && r.responseText.match(/@version\s+(\S+)/); resolve(m ? { v: m[1] } : { err: r.status === 200 ? 'keine Versionsangabe' : `HTTP ${r.status}` }); },
+      onerror: () => resolve({ err: 'keine Verbindung' }), ontimeout: () => resolve({ err: 'Zeitüberschreitung' }),
+    }));
+  }
+  // GitHub und OneDrive parallel prüfen; die neuere Version gewinnt (fällt eine Quelle aus, zählt die andere)
+  async function checkUpdate(manual = false) {
     GM_setValue('lastUpdateCheck', Date.now());
     if (manual) updateButtonFeedback('Prüfe …');
-    // GitHub/Repo nicht erreichbar (Netzwerk, Timeout, Repo privat/gelöscht, Datei fehlt)
-    const unreachable = (why) => {
-      log(`Update-Prüfung: GitHub nicht erreichbar (${why}) – aktueller Stand: v${VERSION}.`, manual ? 'err' : 'debug');
-      if (manual) updateButtonFeedback(`✗ GitHub nicht erreichbar – aktueller Stand: v${VERSION}`, '#c62828');
-    };
-    GM_xmlhttpRequest({
-      method: 'GET', url: `${UPDATE_URL}?t=${Date.now()}`, nocache: true, timeout: 10000,
-      onload: (res) => {
-        const m = res.status === 200 && res.responseText.match(/@version\s+(\S+)/);
-        if (!m) { unreachable(res.status === 200 ? 'keine Versionsangabe' : `HTTP ${res.status}`); return; }
-        const upd = document.getElementById('tamauto-update');
-        if (newerVersion(m[1], VERSION)) {
-          log(`Update ${m[1]} verfügbar (installiert: ${VERSION}).`, 'ok');
-          if (upd) { upd.textContent = `⬆ Update ${m[1]} verfügbar – installieren`; upd.style.display = 'block'; }
-          markUpdateButton(m[1]);
-        } else if (manual) {
-          log(`Kein Update – ${VERSION} ist aktuell.`, 'ok');
-          updateButtonFeedback(`✓ Alles auf dem neuesten Stand (v${VERSION})`, '#2e7d32');
-        }
-      },
-      onerror: () => unreachable('keine Verbindung'),
-      ontimeout: () => unreachable('Zeitüberschreitung'),
-    });
+    const srcs = [['GitHub', UPDATE_URL], ['OneDrive', UPDATE_BACKUP_URL]].filter(([, u]) => u);
+    const res = await Promise.all(srcs.map(async ([name, url]) => Object.assign({ name, url }, await fetchVersion(url))));
+    const ok = res.filter((r) => r.v);
+    if (!ok.length) {
+      log(`Update-Prüfung: keine Quelle erreichbar (${res.map((r) => `${r.name}: ${r.err}`).join(', ')}) – aktueller Stand: v${VERSION}.`, manual ? 'err' : 'debug');
+      if (manual) updateButtonFeedback(`✗ GitHub und OneDrive nicht erreichbar – aktueller Stand: v${VERSION}`, '#c62828');
+      return;
+    }
+    const best = ok.reduce((a, b) => (newerVersion(b.v, a.v) ? b : a));
+    if (newerVersion(best.v, VERSION)) {
+      updateLink = best.url;
+      log(`Update ${best.v} verfügbar (installiert: ${VERSION}, Quelle: ${best.name}).`, 'ok');
+      const upd = document.getElementById('tamauto-update');
+      if (upd) { upd.href = best.url; upd.textContent = `⬆ Update ${best.v} verfügbar – installieren`; upd.style.display = 'block'; }
+      markUpdateButton(best.v);
+    } else if (manual) {
+      log(`Kein Update – ${VERSION} ist aktuell (geprüft: ${ok.map((r) => r.name).join(', ')}).`, 'ok');
+      updateButtonFeedback(`✓ Alles auf dem neuesten Stand (v${VERSION})`, '#2e7d32');
+    }
   }
 
   // ------------------------------------------------------------------ TAM-Oberfläche (GXT 2)
@@ -2496,7 +2505,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     };
     // Ohne gefundenes Update: nach Updates suchen. Mit Update: als Link die Installation öffnen.
     $('tamauto-upd').onclick = () => {
-      if (pendingUpdate) { window.open(UPDATE_URL, '_blank'); log(`Update ${pendingUpdate}: Installation geöffnet.`); return; }
+      if (pendingUpdate) { window.open(updateLink, '_blank'); log(`Update ${pendingUpdate}: Installation geöffnet.`); return; }
       checkUpdate(true);
     };
     if (pendingUpdate) markUpdateButton(pendingUpdate); // Update wurde schon vor dem Aufbau des Bedienfelds gefunden

@@ -393,3 +393,37 @@ describe('Log', { skip }, () => {
     assert.ok(!tam.logs().some((l) => /\d[.,]\d+ ?ms\b/.test(l)), tam.logs().filter((l) => /ms\b/.test(l)).join('\n'));
   });
 });
+
+// Zweiter Update-Kanal: OneDrive, falls GitHub (Repo) nicht erreichbar ist
+describe('Update über GitHub oder OneDrive', { skip }, () => {
+  const { revocationList } = require('./harness');
+  const ONEDRIVE = 'IQALfRz3JKDFTajqSq2MROJNAcTdmeeQDOYup07olXdgzlg';
+  const xhr = (gh, od) => (o) => {
+    if (o.url.includes('IQBmSNFRkXF5')) return { status: 200, responseText: revocationList() };
+    if (o.url.includes('raw.githubusercontent.com') && /\.user\.js/.test(o.url)) return gh ? { status: 200, responseText: `// @version ${gh}` } : { status: 404, responseText: '' };
+    if (o.url.includes(ONEDRIVE)) return od ? { status: 200, responseText: `// @version ${od}` } : { error: true };
+    return { error: true };
+  };
+  const link = () => tam.document.getElementById('tamauto-update');
+  const updLog = () => until(() => tam.logs().find((l) => /Update .* verfügbar/.test(l)), 3000);
+
+  it('GitHub weg → Update von OneDrive', async () => {
+    tam = startTam({ gm: { places: KOELN }, xhr: xhr(null, '9.9.9') });
+    await tam.ready();
+    assert.match(await updLog() || '', /9\.9\.9.*OneDrive/);
+    assert.ok(link().href.includes(ONEDRIVE), link().href);
+  });
+
+  it('beide erreichbar → neuere Version gewinnt', async () => {
+    tam = startTam({ gm: { places: KOELN }, xhr: xhr('9.9.10', '9.9.9') });
+    await tam.ready();
+    assert.match(await updLog() || '', /9\.9\.10.*GitHub/);
+    assert.ok(link().href.includes('raw.githubusercontent.com'));
+  });
+
+  it('Tampermonkey prüft Updates über OneDrive (Kopf @updateURL/@downloadURL)', () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'tam-auto-annahme.user.js'), 'utf8');
+    assert.match(src, new RegExp(`@updateURL\\s+\\S+${ONEDRIVE}`));
+    assert.match(src, new RegExp(`@downloadURL\\s+\\S+${ONEDRIVE}`));
+  });
+});
