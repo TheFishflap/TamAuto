@@ -1,0 +1,11 @@
+{
+  "name": "tamauto",
+  "private": true,
+  "description": "Tests für das Userscript TAM Auto-Annahme (jsdom)",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.3"
+  }
+}
