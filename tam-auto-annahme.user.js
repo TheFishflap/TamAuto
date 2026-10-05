@@ -2094,11 +2094,6 @@ Standard: 1 Anzahl am Ort · 2 Summe am Ort · 3 Einzelpreis.">?</span>
                 automatisch geschlossen und im Log vermerkt.</td></tr>
             <tr><td style="padding:1px 8px 1px 0;color:#555">Hersteller</td><td>IB Thomée GmbH</td></tr>
           </table>
-          <div style="margin-top:6px;padding:3px 6px;background:#fff8e1;border:1px solid #f0c36d;border-radius:3px;font-size:10.5px;line-height:1.35">
-            ⚠ Die Lizenz ist in diesem Browser gespeichert und bleibt bei Updates erhalten. <b>Beim Löschen von
-            Cookies/Website-Daten oder Deinstallieren von Tampermonkey kann sie verloren gehen</b> – dann neue ID
-            an IB Thomée schicken. Tipp: tam.tuvsud.com beim Löschen ausnehmen.
-          </div>
           <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd">
             <b>Changelog</b> <span id="tamauto-cl-src" style="color:#555;font-size:11px"></span>
             <button id="tamauto-cl-reload" style="margin-left:4px" title="Changelog erneut laden (GitHub, sonst OneDrive)">Neu laden</button>
@@ -2775,21 +2770,56 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
 
   // ID und Schlüssel liegen doppelt: im Tampermonkey-Speicher und als Sicherung im Browser-Speicher der
   // TAM-Seite. So bleibt die Aktivierung auch erhalten, wenn das Script neu installiert wird (z. B. über den
-  // Installationslink statt per Update). Nur ein Löschen der Browserdaten erfordert eine neue Aktivierung.
+  // Installationslink statt per Update).
+  // Gerätebindung: Ein Tampermonkey-Backup bringt ID und Schlüssel auf ein anderes Gerät mit. Deshalb merkt sich
+  // die Installation zwei Gerätemerkmale: eine Zufalls-Markierung nur im Browser-Speicher der TAM-Seite (kommt mit
+  // einem Tampermonkey-Backup nicht mit) und einen Fingerabdruck der Hardware. Passt beim Start KEINES von beiden,
+  // stammt die ID von einem anderen Gerät → neue ID, neue Freigabe nötig. Passt eines, bleibt die Lizenz
+  // (Website-Daten gelöscht bzw. Browser-Update) und das andere wird still nachgetragen.
   const backupGet = (k) => { try { return localStorage.getItem(`tamauto.${k}`) || ''; } catch (e) { return ''; } };
   const backupSet = (k, v) => { try { localStorage.setItem(`tamauto.${k}`, v); } catch (e) { /* ignore */ } };
   const ID_RE = /^[A-Z2-7]{4}(-[A-Z2-7]{4}){3}$/;
+  const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const randomCode = (n) => [...crypto.getRandomValues(new Uint8Array(n))].map((b) => B32[b % 32]).join('');
 
+  // Hardware-Merkmale, die sich bei Updates, Zoom und Drehen nicht ändern (Bildschirm in echten Pixeln, sortiert)
+  function deviceFingerprint() {
+    const n = navigator, dpr = devicePixelRatio || 1;
+    const px = [screen.width, screen.height].map((v) => Math.round(v * dpr)).sort((a, b) => b - a);
+    let gpu = '';
+    try {
+      const gl = document.createElement('canvas').getContext('webgl');
+      const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+      gpu = gl ? String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER)) : '';
+    } catch (e) { /* ohne WebGL */ }
+    const src = [n.platform, n.hardwareConcurrency, n.deviceMemory, n.maxTouchPoints, px.join('x'), gpu].join('|');
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57; // cyrb53
+    for (let i = 0; i < src.length; i++) { const c = src.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  }
+
+  let instId = '';          // einmal je Seitenaufruf ermittelt
+  let deviceChanged = false; // ID stammte von einem anderen Gerät (Backup) → neu erzeugt
   function installId() {
-    let id = GM_getValue('installId', '');
-    if (!ID_RE.test(id)) id = backupGet('installId');
-    if (!ID_RE.test(id)) {
-      const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-      const r = crypto.getRandomValues(new Uint8Array(16));
-      id = [...r].map((b) => abc[b % 32]).join('').replace(/(.{4})(?!$)/g, '$1-');
+    if (instId) return instId;
+    const fp = deviceFingerprint();
+    const gmId = GM_getValue('installId', ''), gmMark = GM_getValue('devMark', ''), gmFp = GM_getValue('devFp', '');
+    const localMark = backupGet('devMark');
+    let id = ID_RE.test(gmId) ? gmId : backupGet('installId');
+    // Nur prüfbar, wenn die ID aus Tampermonkey stammt und dort schon Gerätedaten liegen (Bestand ohne → binden)
+    if (ID_RE.test(gmId) && (gmMark || gmFp) && !(localMark && localMark === gmMark) && gmFp !== fp) {
+      id = ''; deviceChanged = true;
     }
-    if (GM_getValue('installId', '') !== id) GM_setValue('installId', id);
+    if (!ID_RE.test(id)) id = randomCode(16).replace(/(.{4})(?!$)/g, '$1-');
+    const mark = (!deviceChanged && (localMark || gmMark)) || randomCode(16);
+    if (gmId !== id) GM_setValue('installId', id);
+    if (gmMark !== mark) GM_setValue('devMark', mark);
+    if (gmFp !== fp) GM_setValue('devFp', fp);
     if (backupGet('installId') !== id) backupSet('installId', id);
+    if (localMark !== mark) backupSet('devMark', mark);
+    instId = id;
     return id;
   }
   const getLicenseKey = () => GM_getValue('licenseKey', '') || backupGet('licenseKey');
@@ -3008,6 +3038,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
   waitFor(() => document.querySelector('.x-viewport'), 30000).then(async () => {
     const storedKey = getLicenseKey();
     const lc = await checkLicense(storedKey);
+    if (!lc.ok && deviceChanged) lc.reason = 'Neues Gerät erkannt – für dieses Gerät ist eine eigene Lizenz nötig.';
     if (lc.ok) setLicenseKey(storedKey); // Sicherung/Tampermonkey-Speicher gegenseitig auffüllen
     if (lc.ok) { await loadRevocations(); const rb = revokeBlock(); if (rb) { lc.ok = false; lc.reason = rb; } }
     if (lc.ok) { // Kontoprüfung (still): nur mit dem TAM-Konto der IB Thomée

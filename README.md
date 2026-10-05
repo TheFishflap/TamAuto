@@ -98,13 +98,9 @@ Die Lizenz gilt nur für diese eine Installation und ist befristet: **1 Monat, 3
 zum 31.12. des laufenden Jahres** (Ablaufdatum und Dauer stehen im Reiter **Info**). Vor Ablauf erscheint ein
 roter Hinweis (30 Tage vorher, bei kurzen Lizenzen im letzten Viertel der Laufzeit); danach ist eine neue Lizenz nötig.
 Bei **Updates und Neuinstallation des Scripts** bleibt die Aktivierung erhalten (ID und Schlüssel sind
-zusätzlich im Browser gesichert). Nur wenn die Browserdaten der TAM-Seite gelöscht werden oder ein anderer
-Browser genutzt wird, ist eine neue Aktivierung nötig.
-
-> **Achtung:** Werden **Cookies bzw. Website-Daten gelöscht** (z. B. „Browserdaten löschen“ oder automatisches
-> Löschen beim Schließen des Browsers) oder Tampermonkey deinstalliert, kann die Lizenz verloren gehen –
-> dann neue Installations-ID an IB Thomée schicken und neuen Schlüssel aktivieren. Tipp: tam.tuvsud.com beim
-> Löschen ausnehmen. Dieser Hinweis steht auch im Reiter **Info**.
+zusätzlich im Browser gesichert, auch das Löschen von Cookies bzw. Website-Daten schadet nicht).
+Die Lizenz ist an das **Gerät** gebunden: Wird ein Tampermonkey-Backup auf einem anderen Gerät eingespielt oder ein
+anderer Browser genutzt, ist dort eine eigene Aktivierung nötig („Lizenz anfragen“).
 
 > Empfehlung: In Tampermonkey unter *Einstellungen → Userscript-Updates* „Updates prüfen“
 > auf **täglich** stellen. Zusätzlich prüft das Script selbst alle 6 Stunden auf GitHub.

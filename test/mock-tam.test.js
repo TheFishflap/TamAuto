@@ -59,3 +59,52 @@ describe('Wächter (P2)', { skip, todo: 'P2: Wächter ohne Reiter-Gate – Fix f
     assert.deepEqual(tam.closed.filter((t) => /^Auftrag MW/.test(t)), [], tam.logs().slice(-5).join('\n'));
   });
 });
+
+// P1: Lizenz darf nicht per Backup (Tampermonkey-Speicher) auf ein anderes Gerät wandern
+describe('Gerätebindung der Lizenz (P1)', { skip }, () => {
+  const TABLET_A = { platform: 'Linux armv8l', hardwareConcurrency: 8, maxTouchPoints: 5, width: 800, height: 1280, dpr: 2 };
+  const TABLET_B = { platform: 'Linux armv8l', hardwareConcurrency: 6, maxTouchPoints: 10, width: 1200, height: 1920, dpr: 1.5 };
+  // Erstinstallation auf Tablet A → Tampermonkey-Speicher (Inhalt eines Backups) und Website-Speicher
+  async function installOn(device) {
+    const t = startTam({ device });
+    await t.ready();
+    const keys = ['installId', 'licenseKey', 'devMark', 'devFp'];
+    const gm = Object.fromEntries(keys.filter((k) => t.store.has(k)).map((k) => [k, t.store.get(k)]));
+    const local = Object.fromEntries(['installId', 'licenseKey', 'devMark'].filter((k) => t.local(k)).map((k) => [k, t.local(k)]));
+    t.close();
+    return { gm, local };
+  }
+
+  it('Backup auf anderem Gerät → neue ID, Lizenz erforderlich', async () => {
+    const a = await installOn(TABLET_A);
+    assert.ok(a.gm.devMark && a.gm.devFp, 'Gerätedaten nicht gespeichert');
+    tam = startTam({ device: TABLET_B, gm: a.gm }); // Tampermonkey-Backup eingespielt, Website-Speicher leer
+    await tam.ready();
+    assert.ok(tam.licensePanel(), 'Script läuft trotz fremdem Gerät');
+    assert.notEqual(tam.store.get('installId'), a.gm.installId);
+  });
+
+  it('gleiches Gerät, Website-Daten gelöscht → Lizenz bleibt', async () => {
+    const a = await installOn(TABLET_A);
+    tam = startTam({ device: TABLET_A, gm: a.gm });
+    await tam.ready();
+    assert.ok(tam.mainPanel());
+    assert.equal(tam.store.get('installId'), a.gm.installId);
+    assert.equal(tam.local('devMark'), a.gm.devMark, 'Markierung nicht wieder eingetragen');
+  });
+
+  it('gleiches Gerät, Fingerabdruck geändert (z. B. Browser-Update) → Lizenz bleibt', async () => {
+    const a = await installOn(TABLET_A);
+    tam = startTam({ device: { ...TABLET_A, hardwareConcurrency: 4 }, gm: a.gm, local: a.local });
+    await tam.ready();
+    assert.ok(tam.mainPanel());
+    assert.equal(tam.store.get('installId'), a.gm.installId);
+  });
+
+  it('Bestandsinstallation ohne Gerätedaten → läuft weiter und wird gebunden', async () => {
+    tam = startTam({ device: TABLET_A });
+    await tam.ready();
+    assert.ok(tam.mainPanel());
+    assert.ok(tam.store.get('devFp') && tam.store.get('devMark') && tam.local('devMark'));
+  });
+});

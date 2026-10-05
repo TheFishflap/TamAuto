@@ -81,6 +81,13 @@ function startTam(opts = {}) {
   } });
   w.TextEncoder = util.TextEncoder; w.TextDecoder = util.TextDecoder;
   w.CSS = { escape: (s) => String(s).replace(/[^\w-]/g, (c) => `\\${c}`) };
+  // Gerät (für den Geräte-Fingerabdruck): Prozessorkerne, Plattform, Touch-Punkte, Bildschirm, Pixeldichte
+  const dev = { hardwareConcurrency: 8, platform: 'MacIntel', maxTouchPoints: 0, width: 1512, height: 982, dpr: 2, ...(opts.device || {}) };
+  ['hardwareConcurrency', 'platform', 'maxTouchPoints'].forEach((k) => Object.defineProperty(w.navigator, k, { configurable: true, get: () => dev[k] }));
+  Object.defineProperty(w.screen, 'width', { configurable: true, get: () => dev.width });
+  Object.defineProperty(w.screen, 'height', { configurable: true, get: () => dev.height });
+  Object.defineProperty(w, 'devicePixelRatio', { configurable: true, get: () => dev.dpr });
+  w.HTMLCanvasElement.prototype.getContext = () => null; // kein WebGL in jsdom
   w.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   const fetches = [];
   w.fetch = async (url, o) => { fetches.push({ url, o }); return { ok: true, status: 200, text: async () => '', json: async () => ({}) }; };
@@ -175,6 +182,7 @@ function startTam(opts = {}) {
     return win;
   };
 
+  tam.local = (k) => w.localStorage.getItem(`tamauto.${k}`);
   tam.logs = () => [...d.querySelectorAll('#tamauto-log div')].map((x) => x.textContent).reverse();
   tam.licensePanel = () => !!d.getElementById('tamauto-lic-key');
   tam.mainPanel = () => !!d.getElementById('tamauto-log');
