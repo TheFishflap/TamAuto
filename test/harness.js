@@ -121,6 +121,17 @@ function startTam(opts = {}) {
   });
   tam.selectTab(opts.tab === 'accepted' ? 'AgentEigeneAuftraege' : 'AgentVeroeffentlichteAuftraege');
 
+  // Refresh-Pfeil (5. Symbol-Button der Blätterleiste) wie TAM: kurz Lade-Maske im Panel, dann neu geladen
+  tam.refreshes = 0;
+  const pub = d.getElementById('AgentVeroeffentlichteAuftraege');
+  const bar = [...pub.querySelectorAll('.x-toolbar')].find((x) => /Einträge pro Seite/.test(x.textContent));
+  const refreshBtn = bar && bar.querySelectorAll('.x-btn')[4];
+  if (refreshBtn) refreshBtn.addEventListener('click', () => {
+    tam.refreshes++;
+    const m = d.createElement('div'); m.className = 'ext-el-mask x-mask-loading'; pub.appendChild(m);
+    setTimeout(() => m.remove(), 150);
+  });
+
   // Zeile in "Veröffentlichte Aufträge" (Aufbau wie die echten Zeilen: versteckte id-Spalte vorn, dann die Spalten)
   let rowSeq = 0;
   tam.addOrder = (o) => {
@@ -217,10 +228,11 @@ function startTam(opts = {}) {
   // Zeile in „Angenommene Aufträge“ (Kopie einer echten Zeile aus dem Mitschnitt, AuftragsNr/Endtermin gesetzt)
   tam.addAccepted = (nr, sla) => {
     const body = d.querySelector('#AgentEigeneAuftraege .x-grid3-body');
-    const row = body.querySelector('.x-grid3-row').cloneNode(true);
+    const same = [...body.querySelectorAll('.x-grid3-row')].find((r) => r.querySelector('td.x-grid3-td-teilAuftragNr').textContent.trim() === nr);
+    const row = same || body.querySelector('.x-grid3-row').cloneNode(true);
     row.querySelector('td.x-grid3-td-teilAuftragNr').textContent = nr;
     row.querySelector('td.x-grid3-td-slaEndeAgent').textContent = sla || '';
-    body.appendChild(row);
+    if (!same) body.appendChild(row);
     return row;
   };
   tam.posts = (topicPart) => fetches.filter((f) => f.url.includes(topicPart) && f.o && f.o.method === 'POST').map((f) => JSON.parse(f.o.body));

@@ -78,6 +78,7 @@
     delayRandomMs: Math.min(500, GM_getValue('delayRandomMsV3', 80)), // Streuung 0 … x ms (0–500, Standard 80 ms; V3 = neuer Standard für alle)
     burstOn: true, // Burst-Refresh nach manuellem Refresh immer aktiv (ohne Checkbox)
     hideTips: GM_getValue('hideTips', false), // alle ?-Erklärungen ausblenden
+    zeichenOn: GM_getValue('zeichenOn', false), // Doppelklick im Auftragsbuch: „Ihr Zeichen“ um „neu“ ergänzen – Standard aus
     wakeLock: GM_getValue('wakeLock', /android/i.test(navigator.userAgent)), // Bildschirm anlassen – auf Android standardmäßig an
     // Priorität bei mehreren Treffern: Stufe 1–3 mit je einem Kriterium (siehe PRIO_CRIT), aus dem alten
     // Dropdown (prioMode) einmalig übernommen
@@ -492,7 +493,7 @@
   // Das Fenster kann schon vor dem Eintrag ins Auftragsbuch kommen → vormerken und beim Eintragen setzen.
   const SLA_SOON_MS = 2 * 3600 * 1000;
   const slaMs = (s) => { const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})/.exec(String(s || '')); return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5]).getTime() : null; };
-  const terminRed = (e) => { const t = slaMs(e.sla); return !!e.terminWeg && t !== null && t - new Date(e.ts).getTime() <= SLA_SOON_MS; };
+  const terminRed = (e) => { const t = slaMs(e.sla); return !!e.terminWeg && !e.zeichenNeu && t !== null && t - new Date(e.ts).getTime() <= SLA_SOON_MS; };
   const terminPending = new Set();
   function markTermin(nrs) {
     const up = new Set(nrs.filter(Boolean).map((x) => String(x).toUpperCase()));
@@ -502,6 +503,62 @@
     up.forEach((x) => terminPending.add(x));
     GM_setValue('orderbook', book);
   }
+  // „Ihr Zeichen“ eines angenommenen Auftrags um „neu“ ergänzen (Doppelklick im Auftragsbuch, Erweiterte Einstellungen):
+  // Reiter „Angenommene Aufträge“ → Rechtsklick auf die Zeile (AuftragsNr in ausgeblendeter Spalte) → „Ihr Zeichen
+  // bearbeiten“ → Dialog prüfen (richtiger Auftrag) → „neu“ anhängen → Speichern → zurück. Währenddessen keine Annahme.
+  const onAcceptedTab = () => { const li = document.querySelector(`li[id$="__${cfg.acceptedTabId}"]`), p = document.getElementById(cfg.acceptedTabId);
+    return !!li && li.classList.contains('x-tab-strip-active') && !!p && !p.closest('.x-hide-display'); };
+  async function addZeichenNeu(nr) {
+    if (busy) { log(`${nr}: „Ihr Zeichen“ wartet auf den laufenden Abgleich …`, 'debug'); await waitFor(() => !busy, 15000, 50); } // auch Refresh/Burst
+    if (busy) { log('Gerade läuft eine Annahme – Doppelklick bitte gleich noch einmal.', 'err'); return; }
+    busy = true;
+    const back = onPublishedTab();
+    let dlg = null;
+    try {
+      if (!onAcceptedTab()) {
+        const li = document.querySelector(`li[id$="__${cfg.acceptedTabId}"]`);
+        if (!li) throw new Error('Reiter „Angenommene Aufträge“ nicht gefunden');
+        fire(li.querySelector('.x-tab-strip-text') || li);
+      }
+      const row = await waitForDom(() => onAcceptedTab() && [...document.querySelectorAll(`#${cfg.acceptedTabId} .x-grid3-row`)]
+        .find((r) => sameNr(text(r.querySelector('td.x-grid3-td-teilAuftragNr')), nr)), 8000);
+      if (!row) throw new Error('Auftrag in „Angenommene Aufträge“ nicht gefunden');
+      const cell = [...row.querySelectorAll('td.x-grid3-cell')].find(visible) || row;
+      fire(cell, ['mousedown', 'mouseup', 'click']);
+      const r = cell.getBoundingClientRect();
+      cell.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left + 5, clientY: r.top + 5 }));
+      const item = await waitForDom(() => [...document.querySelectorAll('.x-menu .x-menu-item')]
+        .find((i) => visible(i) && /^ihr zeichen bearbeiten$/i.test(text(i)) && !i.classList.contains('x-item-disabled')), 3000);
+      if (!item) throw new Error('Menüpunkt „Ihr Zeichen bearbeiten“ nicht gefunden');
+      fire(item);
+      dlg = await waitForDom(() => visibleWindows().find((w) => /ihr zeichen bearbeiten/i.test(winTitle(w))), 5000);
+      if (!dlg) throw new Error('Dialog „Ihr Zeichen bearbeiten“ öffnete sich nicht');
+      if (!text(dlg).toUpperCase().includes(nrBase(nr))) throw new Error('Dialog gehört zu einem anderen Auftrag');
+      const inp = dlg.querySelector('input.x-form-text, input[type=text]');
+      if (!inp) throw new Error('Eingabefeld nicht gefunden');
+      const old = inp.value.trim(), neu = /(^|\s)neu(\s|$)/i.test(old) ? old : (old ? `${old} neu` : 'neu');
+      inp.focus(); inp.value = neu;
+      ['input', 'keyup', 'change'].forEach((t) => inp.dispatchEvent(new Event(t, { bubbles: true })));
+      inp.blur();
+      const save = findButton(/^speichern$/i, dlg);
+      if (!save) throw new Error('Button „Speichern“ nicht gefunden');
+      clickBtn(save);
+      if (!(await waitForDom(() => !visible(dlg) || !dlg.isConnected, 5000))) throw new Error('Dialog blieb offen – nicht gespeichert');
+      dlg = null;
+      const book = GM_getValue('orderbook', []);
+      book.forEach((e) => { if (sameNr(e.nr, nr)) e.zeichenNeu = 1; });
+      GM_setValue('orderbook', book); renderOrderbook();
+      log(`${nr}: „Ihr Zeichen“ ${old === neu ? `enthält schon „neu“ (${old})` : `„${old || '–'}“ → „${neu}“`} gespeichert.`, 'ok');
+    } catch (e) {
+      log(`${nr}: „Ihr Zeichen“ nicht gesetzt – ${e.message}.`, 'err');
+      if (dlg) { const c = findButton(/^abbrechen$/i, dlg); if (c) clickBtn(c); }
+    } finally {
+      busy = false;
+      if (back && !onPublishedTab()) clickPublishedTab();
+      releaseBusy();
+    }
+  }
+
   // Endtermin (Agent) aus „Angenommene Aufträge“ für vorgemerkte Aufträge übernehmen (AuftragsNr steht dort in einer
   // ausgeblendeten Spalte – Zuordnung über die Spalten-ID)
   function scanAccepted() {
@@ -614,6 +671,7 @@
         tr.appendChild(td);
       });
       tr.title = e.dienst || '';
+      tr.ondblclick = () => { if (cfg.zeichenOn) addZeichenNeu(e.nr); };
       tbody.appendChild(tr);
     });
     if (!rows.length) tbody.innerHTML = '<tr><td colspan="5" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
@@ -924,10 +982,11 @@
     }
     const best = ok.reduce((a, b) => (newerVersion(b.v, a.v) ? b : a));
     if (newerVersion(best.v, VERSION)) {
-      updateLink = best.url;
+      // Tampermonkey erkennt einen Installationslink nur an der Endung .user.js – SharePoint ignoriert den Zusatz
+      updateLink = best.url === UPDATE_BACKUP_URL ? `${best.url}&tm=tam-auto-annahme.user.js` : best.url;
       log(`Update ${best.v} verfügbar (installiert: ${VERSION}, Quelle: ${best.name}).`, 'ok');
       const upd = document.getElementById('tamauto-update');
-      if (upd) { upd.href = best.url; upd.textContent = `⬆ Update ${best.v} verfügbar – installieren`; upd.style.display = 'block'; }
+      if (upd) { upd.href = updateLink; upd.textContent = `⬆ Update ${best.v} verfügbar – installieren`; upd.style.display = 'block'; }
       markUpdateButton(best.v);
     } else if (manual) {
       log(`Kein Update – ${VERSION} ist aktuell (geprüft: ${ok.map((r) => r.name).join(', ')}).`, 'ok');
@@ -1726,6 +1785,8 @@
             : `kein Treffer (PLZ ${o.plz || '?'} und Ort "${o.ort || '?'}" nicht in Ortsliste)`;
         log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, bl ? 'err' : matches(o) ? 'ok' : 'info');
       });
+      // Burst-Refresh läuft und es gibt einen Treffer → Burst beenden, jetzt annehmen (keine weiteren Refreshes)
+      if (hits.length && burstUntil > Date.now()) { burstUntil = 0; log('Burst-Refresh beendet – Treffer gefunden, wird angenommen.', 'ok'); }
       let n = 0;
       if (hits.length > 1) log(`Reihenfolge (${prioText()}): ${hits.map((o) =>
         `${o.nr || o.ref} (${grp(o).n > 1 ? `${grp(o).n} am Ort, zus. ${fmtEuro(grp(o).sum)}, ` : ''}${o.preis || 'ohne Preis'})`).join(' → ')}`);
@@ -2370,6 +2431,12 @@ Standard: 1 Anzahl am Ort · 2 Summe am Ort · 3 Einzelpreis.">?</span>
           </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
+              <label class="tamauto-chk"><input type="checkbox" id="tamauto-zeichen"> <b>„Ihr Zeichen“ per Doppelklick um „neu“ ergänzen</b></label>
+              <span class="tamauto-help" title="Doppelklick auf einen Auftrag (oder die rote 1) im Auftragsbuch: Das Script wechselt in „Angenommene Aufträge“, öffnet per Rechtsklick „Ihr Zeichen bearbeiten“, hängt „neu“ an und speichert – danach zurück zu „Veröffentlichte Aufträge“. Standard: aus.">?</span>
+            </span>
+          </div>
+          <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
+            <span class="tamauto-chk">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-wakelock"> <b>Bildschirm anlassen</b></label>
               <span class="tamauto-help" title="Verhindert, dass der Bildschirm ausgeht, solange TAM im Vordergrund offen ist (Wake Lock). Wichtig auf Android/Handy: Geht der Bildschirm aus oder wird der Browser in den Hintergrund gelegt, friert das System die Seite ein – das Script kann dann nicht mehr prüfen und annehmen. Tipp: Gerät ans Ladegerät, Helligkeit herunterdrehen. Wird automatisch neu angefordert, sobald TAM wieder sichtbar ist.">?</span>
             </span>
@@ -2737,6 +2804,8 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       p.querySelectorAll('.tamauto-help').forEach((h) => { h.style.display = cfg.hideTips ? 'none' : 'inline-flex'; });
       if (cfg.hideTips) $('tamauto-popup-helpbox').style.display = 'none';
     };
+    $('tamauto-zeichen').checked = cfg.zeichenOn;
+    $('tamauto-zeichen').onchange = (e) => { cfg.zeichenOn = e.target.checked; GM_setValue('zeichenOn', cfg.zeichenOn); log(`„Ihr Zeichen“ per Doppelklick: ${cfg.zeichenOn ? 'an' : 'aus'}.`); };
     $('tamauto-hidetips').onchange = (e) => { cfg.hideTips = e.target.checked; GM_setValue('hideTips', cfg.hideTips); applyTips(); };
     applyTips();
 

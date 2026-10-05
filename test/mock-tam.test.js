@@ -649,3 +649,92 @@ describe('Auftragsbuch: rote 1 (Terminvereinbarung weggeklickt, SLA ≤ 2 h)', {
     assert.equal(red().length, 0);
   });
 });
+
+// „Ihr Zeichen“ um „neu“ ergänzen: Doppelklick im Auftragsbuch → Angenommene Aufträge → Rechtsklick → Dialog (echte Mitschnitte)
+describe('Ihr Zeichen „neu“ per Doppelklick im Auftragsbuch', { skip: !hasFixtures('angenommen-kontextmenue', 'angenommen-kurzzeichen') && 'Mitschnitte fehlen' }, () => {
+  const { JSDOM } = require('jsdom');
+  const part = (name, sel) => new JSDOM(fixture(name)).window.document.querySelector(sel).outerHTML;
+  const MENU = part('angenommen-kontextmenue', '.x-menu'), DIALOG = part('angenommen-kurzzeichen', '.x-window');
+  const inH = (h) => { const d = new Date(Date.now() + h * 3600000), p = (n) => String(n).padStart(2, '0');
+    return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+  // TAM-Verhalten: Rechtsklick auf Zeile → Menü; „Ihr Zeichen bearbeiten“ → Dialog; Speichern → Wert merken
+  function wireTam(t) {
+    t.zeichen = {};
+    const d = t.document, holder = (html) => { const x = d.createElement('div'); x.innerHTML = html; return x.firstElementChild; };
+    d.querySelector('#AgentEigeneAuftraege .x-grid3-body').addEventListener('contextmenu', (e) => {
+      const row = e.target.closest('.x-grid3-row'); if (!row) return;
+      const nr = row.querySelector('td.x-grid3-td-teilAuftragNr').textContent.trim(), old = row.querySelector('td.x-grid3-td-zeichenAgent').textContent.trim();
+      const menu = holder(MENU); d.body.appendChild(menu);
+      [...menu.querySelectorAll('.x-menu-item')].find((i) => /ihr zeichen bearbeiten/i.test(i.textContent)).addEventListener('click', () => {
+        menu.remove();
+        const dlg = holder(DIALOG.replace(/MW3196225/g, nr)); d.body.appendChild(dlg);
+        const inp = dlg.querySelector('input'); inp.value = old;
+        const [save, cancel] = [...dlg.querySelectorAll('.x-btn button')];
+        save.addEventListener('click', () => { t.zeichen[nr] = inp.value; row.querySelector('td.x-grid3-td-zeichenAgent').textContent = inp.value; dlg.remove(); });
+        cancel.addEventListener('click', () => dlg.remove());
+      });
+    });
+  }
+  const terminWin = (t) => {
+    const m = t.document.createElement('div'); m.className = 'x-window x-component';
+    m.innerHTML = '<div class="x-window-header"><span class="x-window-header-text">Terminvereinbarung</span></div><div class="x-window-body">Termin <input type="checkbox"></div>' +
+      '<table class="x-btn"><tbody><tr><td><button>Abbrechen</button></td></tr></tbody></table>';
+    m.querySelector('button').addEventListener('click', () => m.remove());
+    t.document.body.appendChild(m);
+  };
+  async function setup(zeichenOn, old) {
+    tam = startTam({ gm: { places: KOELN, zeichenOn } });
+    await tam.ready();
+    wireTam(tam);
+    tam.addOrder({ ...ORDER, afterAccept: (t) => setTimeout(() => terminWin(t), 200) });
+    assert.ok(await until(() => (tam.store.get('orderbook') || []).length, 8000));
+    await sleep(3000);
+    const row = tam.addAccepted(ORDER.nr, inH(1));
+    row.querySelector('td.x-grid3-td-zeichenAgent').textContent = old;
+    tam.selectTab('AgentEigeneAuftraege');
+    await until(() => tam.document.querySelector('#tamauto-ob-rows span.tamauto-termin'), 3000);
+    tam.selectTab('AgentVeroeffentlichteAuftraege');
+    await sleep(500);
+  }
+  const dbl = (el) => el.dispatchEvent(new tam.window.MouseEvent('dblclick', { bubbles: true }));
+
+  it('eingeschaltet: Doppelklick auf die rote 1 → „ neu“ angehängt, rote 1 weg, zurück in „Veröffentlichte Aufträge“', async () => {
+    await setup(true, 'PM Okt 07 10 T');
+    dbl(tam.document.querySelector('#tamauto-ob-rows span.tamauto-termin'));
+    assert.ok(await until(() => tam.zeichen[ORDER.nr], 8000), tam.logs().slice(-6).join('\n'));
+    assert.equal(tam.zeichen[ORDER.nr], 'PM Okt 07 10 T neu');
+    assert.ok(await until(() => tam.onPublished(), 3000), 'nicht zurückgewechselt');
+    assert.ok(await until(() => !tam.document.querySelector('#tamauto-ob-rows span.tamauto-termin'), 2000), 'rote 1 noch da');
+  });
+
+  it('„neu“ steht schon drin → nicht doppelt', async () => {
+    await setup(true, 'PM neu');
+    dbl([...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.textContent.includes(ORDER.nr)));
+    assert.ok(await until(() => tam.zeichen[ORDER.nr], 8000), tam.logs().slice(-6).join('\n'));
+    assert.equal(tam.zeichen[ORDER.nr], 'PM neu');
+  });
+
+  it('ausgeschaltet (Standard): Doppelklick tut nichts', async () => {
+    await setup(false, 'PM');
+    dbl(tam.document.querySelector('#tamauto-ob-rows span.tamauto-termin'));
+    await sleep(1500);
+    assert.deepEqual(tam.zeichen, {});
+    assert.ok(tam.onPublished());
+  });
+});
+
+describe('Burst-Refresh', { skip }, () => {
+  it('Treffer während des Bursts → Burst beendet, Auftrag angenommen, keine weiteren Refreshes', async () => {
+    tam = startTam({ gm: { places: KOELN, burstSecV2: 20 } });
+    await tam.ready();
+    tam.document.getElementById('tamauto-burst-go').click();
+    assert.ok(await until(() => tam.refreshes >= 2, 5000), 'Burst läuft nicht');
+    tam.addOrder(ORDER);
+    assert.ok(await until(() => tam.accepted.includes(ORDER.nr), 15000), tam.logs().join('\n'));
+    assert.ok(tam.logs().some((l) => /Burst-Refresh beendet – Treffer/.test(l)));
+    await sleep(2500);
+    const n = tam.refreshes;
+    await sleep(2500);
+    assert.equal(tam.refreshes, n, 'Burst refresht nach dem Treffer weiter');
+  });
+});
