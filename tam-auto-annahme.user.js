@@ -70,7 +70,7 @@
     popups: GM_getValue('popups', true), // Desktop-Benachrichtigung (Popup) bei Annahme / fehlgeschlagener Annahme
     volume: GM_getValue('volume', 60),   // Lautstärke des Benachrichtigungstons in %
     delayOn: GM_getValue('delayOnV2', true),       // Verzögerung vor jedem Klickschritt der Annahme – Standard an (ab 1.11)
-    delaySec: Math.min(0.5, Math.max(0, GM_getValue('delaySec', 0.17))), // 0–0,500 s in 1-ms-Schritten, Standard 0,17
+    delaySec: Math.min(0.5, Math.max(0, GM_getValue('delaySecV2', 0.12))), // 0–0,500 s in 1-ms-Schritten, Standard 0,12 (V2: gilt einmal für alle)
     delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung
     delayRandomMs: Math.min(500, GM_getValue('delayRandomMsV3', 80)), // Streuung 0 … x ms (0–500, Standard 80 ms; V3 = neuer Standard für alle)
     burstOn: true, // Burst-Refresh nach manuellem Refresh immer aktiv (ohne Checkbox)
@@ -2513,7 +2513,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     $('tamauto-delay').oninput = (e) => {
       cfg.delaySec = Math.round(Math.min(0.5, Math.max(0, +e.target.value || 0)) * 1000) / 1000; renderDelay();
     };
-    $('tamauto-delay').onchange = () => { GM_setValue('delaySec', cfg.delaySec); log(delayInfo()); };
+    $('tamauto-delay').onchange = () => { GM_setValue('delaySecV2', cfg.delaySec); log(delayInfo()); };
     $('tamauto-delay-rnd').onchange = (e) => {
       cfg.delayRandom = e.target.checked; GM_setValue('delayRandom', cfg.delayRandom); renderDelay(); log(delayInfo());
     };

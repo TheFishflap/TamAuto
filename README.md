@@ -26,7 +26,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Push-Signal** | Die App **TAM-Signal** auf 1–2 Master-Handys leitet die Push-Benachrichtigungen der TAM-App als Startsignal über ntfy.sh weiter – das Script fragt TAM **innerhalb von ca. 1 s** ab (Standard aus, gemeinsamer Kanal voreingestellt; eigener Reiter „Push-Signal“) |
 | **Priorität** | Mehrere passende Aufträge gleichzeitig → Reihenfolge nach **Stufe 1, 2, 3** frei wählbar (Anzahl am Ort, Summe am Ort, Einzelpreis) mit automatischer Zuordnung; Standard: Anzahl → Summe → Preis |
 | **Fern-Lizenzierung** | „Lizenz anfragen“ direkt im Script → Freischaltung in der Lizenzverwaltung von IB Thomée → das Script **aktiviert sich selbst**; Verlängerung per Klick (Reiter Info); signierte **Sperrliste** zum Entziehen (7 Tage offline erlaubt) |
-| **Verzögerung** | Standard an: 0,17 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0,001–0,5 s |
+| **Verzögerung** | Standard an: 0,12 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0–0,5 s |
 
 ### 🔄 Aktualisierung – gezielt statt dauerhaft
 | | |
@@ -141,7 +141,7 @@ werden im Reiter angezeigt (braun), ändern nur im Excel. Fehlt das Blatt, ist d
 das Blatt „annehmen“ wird nie als Sperrliste verwendet.
 
 **Verzögerung** (ebenfalls in „Erweiterte Einstellungen“): Checkbox + Slider **0,001–0,500 s** in 1-ms-Schritten
-(Standard **an**, **0,17 s**).
+(Standard **an**, **0,12 s**).
 Vor jedem Klickschritt der Annahme (Doppelklick, 0-km-Aufträge, alle auswählen, Annehmen, Haken, Bestätigen)
 wird die eingestellte Zeit gewartet. Mit **Randomizer** kommt bei jedem Schritt zufällig **0 bis x ms** dazu
 (Standard **80 ms**, einstellbar 0–500 ms), bei jedem Schritt neu gewürfelt.
