@@ -70,7 +70,7 @@
     popups: GM_getValue('popups', true), // Desktop-Benachrichtigung (Popup) bei Annahme / fehlgeschlagener Annahme
     volume: GM_getValue('volume', 60),   // Lautstärke des Benachrichtigungstons in %
     delayOn: GM_getValue('delayOnV2', true),       // Verzögerung vor jedem Klickschritt der Annahme – Standard an (ab 1.11)
-    delaySec: Math.min(0.5, Math.max(0.001, GM_getValue('delaySec', 0.17))), // 0,001–0,500 s in 1-ms-Schritten, Standard 0,17
+    delaySec: Math.min(0.5, Math.max(0, GM_getValue('delaySec', 0.17))), // 0–0,500 s in 1-ms-Schritten, Standard 0,17
     delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung
     delayRandomMs: Math.min(500, GM_getValue('delayRandomMsV3', 80)), // Streuung 0 … x ms (0–500, Standard 80 ms; V3 = neuer Standard für alle)
     burstOn: true, // Burst-Refresh nach manuellem Refresh immer aktiv (ohne Checkbox)
@@ -83,8 +83,8 @@
     silentSec: GM_getValue('silentSec', 0),
     // Arbeitszeit: außerhalb pausieren Auto-Refresh und Silent Reload (Einstellungen bleiben erhalten) – Standard an
     schedOn: GM_getValue('schedOn', true),
-    schedFrom: GM_getValue('schedFrom', '07:30'),
-    schedTo: GM_getValue('schedTo', '18:15'),
+    schedFrom: GM_getValue('schedFrom', '08:00'),
+    schedTo: GM_getValue('schedTo', '18:00'),
     pushOn: GM_getValue('pushOnV2', false),         // Push-Signal (App „TAM-Signal“ über ntfy) – Standard aus (V2: gilt einmal für alle)
     pushTopic: GM_getValue('pushTopic', 'tam-zrd6g634b4wej7aqhsycc9qm'), // gemeinsamer Kanal der IB Thomée // Silent Reload: Hintergrund-Abfrage alle x s (0 = aus, Standard)
     burstSec: GM_getValue('burstSecV2', 3), // Dauer des Burst-Refresh in s (1 Refresh pro Sekunde), Standard 3
@@ -1115,7 +1115,7 @@
   }
 
   // Verzögerung vor jedem Klickschritt der Annahme (Erweiterte Einstellungen):
-  // eingestellte Sekunden (0,001–0,500) + optional Randomizer (zufällig 0 … x ms), bei jedem Schritt neu gewürfelt.
+  // eingestellte Sekunden (0–0,500) + optional Randomizer (zufällig 0 … x ms), bei jedem Schritt neu gewürfelt.
   let delayStats = { ms: 0, n: 0 }; // Summe der Verzögerungen der laufenden Annahme (fürs Log)
   async function humanDelay(step) {
     if (!cfg.delayOn) return;
@@ -1451,7 +1451,7 @@
   // ---- Takt: läuft jede Sekunde, entscheidet aber anhand der TAM-Zeitbasis, ob ein eigener Refresh nötig ist
   let lastHousekeepAt = 0;
   let lastCycleAt = 0;
-  // Arbeitszeit-Fenster (z. B. 07:30–18:15): nur darin laufen Auto-Refresh und Silent Reload
+  // Arbeitszeit-Fenster (z. B. 08:00–18:00): nur darin laufen Auto-Refresh und Silent Reload
   const hm = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '')); return m ? +m[1] * 60 + +m[2] : null; };
   function inSchedule(d = new Date()) {
     if (!cfg.schedOn) return true;
@@ -2033,7 +2033,7 @@ Standard: 1 Anzahl am Ort · 2 Summe am Ort · 3 Einzelpreis.">?</span>
               <input type="checkbox" id="tamauto-delay-on"> <b>Verzögerung</b></label>
             <span style="color:#555"> – vor jedem Klickschritt der Annahme</span>
             <div class="tamauto-chk" style="margin-top:4px">
-              <input type="range" id="tamauto-delay" min="0.001" max="0.5" step="0.001" style="width:140px;margin:0">
+              <input type="range" id="tamauto-delay" min="0" max="0.5" step="0.001" style="width:140px;margin:0">
               <b id="tamauto-delay-val"></b>
             </div>
             <div class="tamauto-chk" style="margin-top:4px">
@@ -2318,7 +2318,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       log(cfg.delayOn ? `An: ${delayInfo()}` : 'Verzögerung aus.');
     };
     $('tamauto-delay').oninput = (e) => {
-      cfg.delaySec = Math.round(Math.min(0.5, Math.max(0.001, +e.target.value || 0.001)) * 1000) / 1000; renderDelay();
+      cfg.delaySec = Math.round(Math.min(0.5, Math.max(0, +e.target.value || 0)) * 1000) / 1000; renderDelay();
     };
     $('tamauto-delay').onchange = () => { GM_setValue('delaySec', cfg.delaySec); log(delayInfo()); };
     $('tamauto-delay-rnd').onchange = (e) => {
