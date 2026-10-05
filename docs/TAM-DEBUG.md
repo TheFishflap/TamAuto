@@ -1,174 +1,73 @@
-# TAM – Debug- & Strukturinfos für die Weiterentwicklung
+# TAM – Aufbau der Seite (für die Weiterentwicklung)
 
-Stand: 24.09.2026 · Script-Version 1.0.0 · ermittelt per DOM-Auszügen aus dem Live-TAM (Firefox + Tampermonkey).
-Kundendaten sind hier bewusst weggelassen.
+Stand: 06.10.2026 · Script 1.20.0 · ermittelt aus Live-Mitschnitten (Firefox + Tampermonkey). Keine Kundendaten.
 
-## 1. Technik der Seite
+## 1. Technik
+- **TAM – TÜV SÜD Auftragsmanagement**, GWT mit **GXT 2** (Ext-GWT), obfuskiert → keine aufrufbaren Seitenfunktionen,
+  Steuerung nur über DOM-Ereignisse (synthetische MouseEvents; Firefox: kein `view: window`).
+- Erkennung: `script[src*="de.tomcom.tam.TAM"]`, Wurzel `#mainview.x-viewport`.
+- Daten per GWT-RPC (`./gwt-rpc/auftrag…`, Anfrage `loadTeilauftraege` → Silent Reload).
+- Kontoname „IB Thomée GmbH“ steht als Text oben rechts in der Kopfzeile.
 
-- **TAM – TÜV SÜD Auftragsmanagement**, GWT-Anwendung mit **GXT 2** (Ext-GWT), Theme `x-theme-blue`.
-- Erkennung im Userscript: `script[src*="de.tomcom.tam.TAM"]` (lädt `de.tomcom.tam.TAM.nocache.js`).
-- Wurzel: `#mainview.x-viewport`.
-- Daten kommen per **GWT-RPC** (`./gwt-rpc/...`). JS ist obfuskiert → **keine** aufrufbaren Seitenfunktionen
-  (z. B. kein `refresh()`); Steuerung nur über DOM-Events.
-- Eigene Autoaktualisierung von TAM: Konsole zeigt `scheduling autorefreshing timer in 59.96 seconds`
-  (Checkbox „Automatisch alle [1] Minuten aktualisieren“ in der Blätterleiste, min. 1 Minute).
-- **Firefox + Tampermonkey:** `new MouseEvent(type, { view: window })` wirft
-  `'view' member of UIEventInit does not implement interface Window` → `view` weglassen.
-- Synthetische Events bewegen **nicht** den echten Mauszeiger (erwartet).
-
-## 2. Tabs
-
-| Tab | Reiter-`li`-ID | Panel-ID |
+## 2. Reiter
+| Reiter | `li`-ID | Panel-ID |
 |---|---|---|
-| Information Cockpit | `x-auto-35__x-auto-36` | `x-auto-36` (dynamisch!) |
-| [Meine Aufträge] Veröffentlichte Aufträge | `x-auto-35__AgentVeroeffentlichteAuftraege` | **`AgentVeroeffentlichteAuftraege`** |
-| [Meine Aufträge] Angenommene Aufträge | `x-auto-35__AgentEigeneAuftraege` | **`AgentEigeneAuftraege`** |
+| Information Cockpit | `x-auto-35__x-auto-36` | `x-auto-36` |
+| Veröffentlichte Aufträge | `…__AgentVeroeffentlichteAuftraege` | `AgentVeroeffentlichteAuftraege` |
+| Angenommene Aufträge | `…__AgentEigeneAuftraege` | `AgentEigeneAuftraege` |
 
-- Aktiver Reiter: Klasse `x-tab-strip-active` am `li`.
-- Inaktives Panel: Klasse `x-hide-display` (am Panel selbst).
-- Präfix `x-auto-35` ist dynamisch → immer mit `li[id$="__AgentVeroeffentlichteAuftraege"]` suchen.
-- **Bewährte Prüfung** (funktioniert live):
-  ```js
-  const li = document.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]');
-  const panel = document.getElementById('AgentVeroeffentlichteAuftraege');
-  li?.classList.contains('x-tab-strip-active') && panel && !panel.closest('.x-hide-display');
-  ```
-- ❌ Nicht funktioniert: erstes `li.x-tab-strip-active` im Dokument nehmen + `offsetParent`-Sichtbarkeit.
+- Präfix (`x-auto-35`) ist dynamisch → immer `li[id$="__<Panel-ID>"]`. Aktiv: `x-tab-strip-active` am `li`; inaktives Panel:
+  `x-hide-display`. Das Panel „Angenommene Aufträge“ existiert erst, nachdem der Reiter einmal geöffnet wurde.
+- Detailfenster haben eigene Reiterleisten (weitere `li.x-tab-strip-active` im Dokument) → nie „erstes aktives `li`“ nehmen.
 
-## 3. Auftragstabelle (GXT Grid)
+## 3. Tabellen (GXT Grid)
+- Kopf `.x-grid3-hd-row td` enthält **nur sichtbare** Spalten; Zeilen `.x-grid3-row` mit `td.x-grid3-cell` enthalten **alle**
+  Spalten, ausgeblendete mit `style="display:none"`. Zuordnung immer über `x-grid3-td-<colId>`, nie per Index.
+- **Veröffentlichte Aufträge** (sichtbar): `slaBeginnAgent` Starttermin (Agent) · `slaEndeAgent` Endtermin (Agent) ·
+  `teilAuftragNr` AuftragsNr · `cst_projekt_dienstleistung_name` Dienstleistung · `referenz` · `status` · `termin` ·
+  `besichtigungsStrasse` · `besichtigungsPlz` · `besichtigungsOrt` · `preis`.
+- **Angenommene Aufträge** (sichtbar): `cst_status` Ampel · `neutral` · `slaEndeAgent` Endtermin (Agent) · Dienstleistung ·
+  `referenz` · `referenz2` · `status` · `termin` · Straße/PLZ/Ort · `zeichenAgent` **Ihr Zeichen** · `reserviertBis`.
+  **AuftragsNr (`teilAuftragNr`) steht als ausgeblendete Spalte in jeder Zeile** (29 Zellen je Zeile, u. a. `id`,
+  `cst_projekt_name`, `vertragsNr`, `cst_verantwortlicher_agent`).
+- Endtermin-Format: `TT.MM.JJJJ HH:MM`. AuftragsNr-Formate: `MW3191767`, `SA040647`, `1002667348`, `9601182381-10`.
+- Blätterleiste: `.x-toolbar` mit „Einträge pro Seite“; Refresh = **5. Symbol-Button**. Beim Laden erscheint
+  `.ext-el-mask` / `.x-mask-loading` im Panel. Leere Tabelle: „Keine Daten vorhanden“.
 
-- Pro Tab ein `.x-grid3` im Panel; zusätzlich ein verstecktes Grid im Information Cockpit (Status/SLA-Summen).
-- Kopf: `.x-grid3-hd-row td` – **nur sichtbare Spalten**.
-- Zeilen: `.x-grid3-row`, Zellen `td.x-grid3-cell` – **enthalten auch alle ausgeblendeten Spalten**
-  (z. B. 11 sichtbare Köpfe, aber 22 Zellen je Zeile; die ersten Zellen sind versteckt).
-  → **Niemals per Index zuordnen.**
-- Zuordnung über Spalten-ID-Klasse `x-grid3-td-<colId>` (Kopf-`td` und Zell-`td` tragen dieselbe).
-- Spalten-IDs „Veröffentlichte Aufträge“ (live ermittelt):
+## 4. Fenster
+- **Auftragskarte** (Doppelklick in „Veröffentlichte Aufträge“): Titel „Auftragskarte zu MW…“; Warenkorb
+  (`.x-view-item` + `input.x-view-item-checkbox`, Kopf-Checkbox „alle auswählen“ im `.x-panel-header`), „Aufträge in der
+  Umgebung“ (`.zusatzteilauftrag` mit `.entfernung`), Buttons Weitere Aufträge finden · Annehmen · Ablehnen · Schließen.
+  *Noch kein Live-Mitschnitt – Aufbau laut Beobachtung; bei der nächsten Gelegenheit mitschneiden (Abschnitt 6).*
+- **Auftragsannahme bestätigen**: Checkbox `input.x-form-checkbox` (Bedingungen), Buttons Bestätigen (erst gesperrt,
+  `x-item-disabled`) · Abbrechen.
+- **Detailansicht** „Auftrag MW…“ (Doppelklick in „Angenommene Aufträge“, oder statt der Karte, wenn der Auftrag schon
+  vergeben ist): Reiter Basisdaten · Auftragsdokumente · Zugewiesene Dokumente · Ergebnisdokumente · Bemerkungen; Button
+  Schließen. Enthält Kundendaten.
+- **Kontextmenü** (Rechtsklick auf Zeile in „Angenommene Aufträge“): `.x-menu` mit `.x-menu-item`: Statusumschaltung ·
+  Ansehen · Bearbeiten (gesperrt) · **Ihr Zeichen bearbeiten**. Statusumschaltung/Ansehen sind im Script gesperrt
+  (`NEVER_CLICK`).
+- **Ihr Zeichen bearbeiten**: Fenster mit Projekt, Dienstleistung, „Auftrag: MW…“, Textfeld `input.x-form-text` (bisheriges
+  Zeichen, z. B. „PM Okt 07 10 T“), Buttons Speichern · Abbrechen.
+- **Terminvereinbarung** nach der Annahme (z. B. Sixt): wird vom Script in den 30 s nach einer eigenen Annahme weggeklickt.
+- Meldungen („bereits vergeben“, „nicht verfügbar“, „falscher Status“) erscheinen als `.x-window`, teils als
+  `.x-info`/`.x-tip`.
 
-  | Überschrift | colId |
-  |---|---|
-  | AuftragsNr | `teilAuftragNr` |
-  | Dienstleistung | `cst_projekt_dienstleistung_name` |
-  | Referenz | `referenz` |
-  | Status | `status` |
-  | Straße | `besichtigungsStrasse` |
-  | PLZ | `besichtigungsPlz` |
-  | Ort | `besichtigungsOrt` |
-  | Preis | `preis` |
-  | weitere sichtbar: Starttermin (Agent), Endtermin (Agent), Termin | – |
+## 5. Listen (Excel in SharePoint, anonyme Freigabelinks)
+- Blatt **„annehmen“** (Ortsliste), **„nicht annehmen“** (Sperrliste PLZ/Ort), **„nicht annehmen Adresse“** (PLZ | Straße).
+  Neu geladen alle 30 min.
 
-- Spaltenreihenfolge kann sich täglich ändern; **PLZ und Ort sind immer vorhanden** (Pflichtcheck).
-- AuftragsNr-Formate: `MW3191767` oder rein numerisch `1002667348` (VTI).
-- Leere Tabelle: Text „Keine Daten vorhanden“ in der Blätterleiste.
-- Angenommene Aufträge: andere Spalten (Ampel, Neutral, Referenz 2, Ihr Zeichen, Reserviert bis), **keine** AuftragsNr-Spalte.
-
-### Blätterleiste (unten im Panel)
-`|<  <  Seite [1] von 1  >  >|  ⟳  ☑ Automatisch alle [1] Minuten aktualisieren  [500] Einträge pro Seite`
-- Refresh-Pfeil = **5. Symbol-Button ohne Text** (`.x-btn`) in der `.x-toolbar`, die „Einträge pro Seite“ enthält.
-- ❌ Früherer Fehler: `findButton(/aktualisier/)` traf die Leiste/Checkbox „…Minuten aktualisieren“.
-- Live noch **nicht bestätigt**, ob der 5. Symbol-Button wirklich der Refresh ist → Script meldet
-  „Refresh funktioniert ✓“ bzw. „ohne Wirkung ✗“.
-
-## 4. Auftragskarte (nach Doppelklick auf eine Zeile)
-
-- Fenster `.x-window`, Titel (`.x-window-header-text`): **„Auftragskarte zu MW…“**
-- Links **Warenkorb** (GXT CheckBoxListView):
-  - Kopf-Checkbox „alle auswählen“: `input.x-view-item-checkbox` im `.x-panel-header` mit Text „Warenkorb“
-    (liegt **nicht** in `.x-view-item`).
-  - Einträge: `div.x-view-item.x-view-item-check` mit `input.x-view-item-checkbox` + AuftragsNr als Text.
-  - Beim Öffnen ist der eigene Auftrag **nicht** angehakt → ohne Haken meldet TAM
-    „**Sie müssen den Auftrag noch auswählen.**“ (Tooltip unten rechts).
-  - Unten „Summe  150,75 €“.
-- Links unten **Aufträge in der Umgebung** (`x-view`):
-  - Eintrag: `div.zusatzteilauftrag` → `div.entfernung` („5 km“) + AuftragsNr + Dienstleistung.
-  - Einfacher Klick auf einen Eintrag legt ihn in den Warenkorb (laut Nutzer, noch nicht live verifiziert).
-  - AuftragsNr hier auch 8-stellig (z. B. `19443184`).
-- Rechts Reiter: Basisdaten · Auftragsdokumente · Bemerkungen.
-- Buttons unten (`.x-btn`, Text im inneren `<button>`):
-  „Weitere Aufträge finden“ · **„Annehmen“** · „Ablehnen“ · „Schließen“.
-  Im Reiter Auftragsdokumente zusätzlich „Öffnen“ (disabled) und „ZIP-File download“.
-- Gesperrte Buttons: Klasse `x-item-disabled`.
-
-**Gewünschte Reihenfolge (Vorgabe Nutzer):** erst alle 0-km-Einträge je 1× anklicken,
-**danach** „Warenkorb – alle auswählen“ anhaken, dann Annehmen.
-
-## 5. Dialog „Auftragsannahme bestätigen“
-
-- Zweites `.x-window`, Titel „Auftragsannahme bestätigen“.
-- Text: „Um den gewählten Auftrag anzunehmen, müssen Sie die hinterlegten Auftragsbedingungen bestätigen …“
-- Checkbox: `div.x-form-check-wrap` → `input.x-form-checkbox`
-  („Ja, hiermit bestätige ich die Bedingungen zur Durchführung dieses Auftrages.“)
-- Buttons „Bestätigen“ (anfangs `x-item-disabled`, nach Haken aktiv) und „Abbrechen“.
-- Erscheint **einmal** für alle angehakten Warenkorb-Aufträge.
-
-## 6. Veralteter Klickpfad (nur Angenommene Aufträge)
-
-Doppelklick in „Angenommene Aufträge“ öffnet „Auftrag MW…“ mit Menü **Statusumschaltung**:
-Bearbeiten · Abschließen · Systemwechsel · Anbieten · Problem mit Auftrag melden. → für die Annahme **nicht** relevant.
-
-## 7. Ortsliste
-
-- Google Sheet `1VTkQpt7AFA_mzrG6Bpw0yrzoVcJhrSzh`, gid `1524429178`, Export per
-  `https://docs.google.com/spreadsheets/d/<id>/export?format=csv&gid=<gid>` (mit Google-Login im Browser).
-- Ergebnis live: **1 PLZ / 115 Orte** → die „1 PLZ“ ist vermutlich ein Ausreißer; Aufbau des Sheets
-  (Spalten/Reiter) noch **nicht geklärt**. Abgleich: PLZ **oder** Ort (normalisiert, ä→ae usw.).
-
-## 8. Offene Punkte / nicht live verifiziert
-
-1. Refresh-Button (5. Symbol) – Anzeige ✓/✗ im Bedienfeld prüfen.
-2. Warenkorb-Checkbox per `input.click()` → reagiert GXT wie beim echten Klick?
-3. 0-km-Eintrag per Einzelklick → erscheint er im Warenkorb?
-4. Buttons per `mouseover/mousedown/mouseup/click` auf inneres `<button>` – Annehmen/Bestätigen live testen
-   (Button „1 Auftrag testen“ im Bedienfeld).
-5. Erfolgs-/Fehlermeldungen nach „Bestätigen“ (Texte unbekannt; Script sucht nach
-   `fehler|error|nicht möglich|bereits|vergeben`).
-6. Ortsliste: Sheet-Aufbau klären (1 PLZ).
-7. Auto-Update braucht **öffentliches** Repo (`raw.githubusercontent.com`).
-
-## 9. Hilfs-Snippets (Browser-Konsole, F12)
-
-Tab-Status:
-```js
-(() => { const id='AgentVeroeffentlichteAuftraege', p=document.getElementById(id), h=p&&p.closest('.x-hide-display');
-copy(JSON.stringify({ reiter:[...document.querySelectorAll(`li[id$="__${id}"]`)].map(l=>l.id+' | '+l.className),
-panelKlasse:p&&p.className, verstecktDurch:h?h.id:null,
-aktiveReiter:[...document.querySelectorAll('li.x-tab-strip-active')].map(l=>l.id) },null,1)); })();
-```
-
-Offene Fenster (Auftragskarte / Dialog):
-```js
-(() => { const t=e=>e.textContent.replace(/\s+/g,' ').trim(), v=e=>e.offsetParent!==null, c=e=>String(e.className).slice(0,80);
-copy(JSON.stringify([...document.querySelectorAll('.x-window')].filter(v).map(w=>({
- titel:t(w.querySelector('.x-window-header-text')||w).slice(0,60),
- buttons:[...w.querySelectorAll('.x-btn')].filter(v).map(b=>({text:t(b),cls:c(b)})),
- checkboxen:[...w.querySelectorAll('input[type=checkbox]')].filter(v).map(i=>({cls:c(i),an:i.checked,zeile:t(i.closest('.x-view-item,.x-panel-header,.x-form-check-wrap')||i.parentElement).slice(0,30)})),
- umgebung:[...w.querySelectorAll('.zusatzteilauftrag')].map(z=>t(z).slice(0,40)) })),null,1)); })();
-```
-
-Tabellen-Spalten und erste Zeile (per Spalten-ID):
-```js
-(() => { const p=document.getElementById('AgentVeroeffentlichteAuftraege'), g=[...p.querySelectorAll('.x-grid3')].find(x=>x.offsetParent);
-const hd=[...g.querySelectorAll('.x-grid3-hd-row td')].map(td=>({n:td.textContent.trim(),id:(td.className.match(/x-grid3-td-(\S+)/)||[])[1]}));
-const r=g.querySelector('.x-grid3-row');
-copy(JSON.stringify(hd.map(h=>({...h,wert:r?(r.querySelector('td.x-grid3-td-'+h.id)||{}).textContent?.trim().slice(0,15):null})),null,1)); })();
-```
-
-Meldung „bereits vergeben“ / „nicht verfügbar“ – Aufbau erfassen (ausführen, **während die Meldung offen ist**;
-Ergebnis liegt danach in der Zwischenablage). Alternativ: Console Log einschalten – das Script schreibt beim
-Schließen solcher Meldungen den Aufbau („Aufbau: …“) selbst ins Log.
-```js
-copy([...document.querySelectorAll('div')].filter(e => /vergeben|verfügbar/i.test(e.textContent) && e.offsetParent && e.children.length < 15).slice(-3).map(e => e.className + ' | ' + e.textContent.trim().slice(0, 80)).join('\n'))
-```
-
-Seitenaufbau als Datei für den Mock speichern (lädt `tam-<Reiter>-<Zeit>.html` herunter; ohne Bedienfeld des Scripts
-und ohne `<script>`, höchstens 5 Zeilen je Tabelle, Eingabewerte und Haken bleiben erhalten). Enthält echte
-Kundendaten → nur lokal in `test/fixtures/` ablegen (per `.gitignore` vom Repo ausgeschlossen):
+## 6. Mitschnitte für die Testumgebung
+Ablage nur lokal in `test/fixtures/` (per `.gitignore` ausgeschlossen – enthält echte Daten). Befehl in der
+Browser-Konsole (F12) auf tam.tuvsud.com; lädt `tam-<Reiter>-<Zeit>.html` herunter (ohne Bedienfeld und `<script>`,
+höchstens 5 Zeilen je Tabelle, Eingabewerte bleiben erhalten). Für Menüs/Dialoge, die beim Wechsel in die Konsole
+zugehen: den Befehl in `setTimeout(() => { … }, 5000)` einpacken und in den 5 s das Menü öffnen.
 ```js
 (()=>{const r=document.body.cloneNode(true);r.querySelectorAll('#tamauto,script,iframe,noscript').forEach(e=>e.remove());r.querySelectorAll('.x-grid3-body').forEach(b=>[...b.querySelectorAll('.x-grid3-row')].slice(5).forEach(x=>x.remove()));r.querySelectorAll('input,textarea').forEach(i=>{if(/checkbox|radio/.test(i.type)){if(i.checked)i.setAttribute('checked','')}else if(i.tagName==='TEXTAREA')i.textContent=i.value;else i.setAttribute('value',i.value)});const t=(document.querySelector('li.x-tab-strip-active[id*="__Agent"]')||{id:'tam'}).id.split('__').pop(),h=`<!-- TAM-Snapshot ${new Date().toISOString()} · ${t} · ${innerWidth}x${innerHeight} -->\n`+r.outerHTML,a=document.createElement('a');a.href=URL.createObjectURL(new Blob([h],{type:'text/html'}));a.download=`tam-${t}-${Date.now()}.html`;a.click()})()
 ```
+Vorhandene Mitschnitte (Dateinamen in `test/fixtures/`): `veroeffentlicht-leer`, `angenommen`, `angenommen-detail`,
+`angenommen-kontextmenue`, `angenommen-kurzzeichen`. Noch gesucht: Auftragskarte, Bestätigungsdialog, Terminvereinbarung.
 
-## 10. Testumgebung
-
-`test/mock-tam.test.js` baut die TAM-Struktur mit jsdom nach (Tab, Grid mit versteckten Spalten,
-Blätterleiste, Auftragskarte mit Warenkorb/Umgebung, Bestätigungsdialog) und prüft den kompletten
-Annahme-Ablauf: `npm i jsdom@24 && node test/mock-tam.test.js`
+## 7. Tests
+`npm test` – startet das echte Script in jsdom auf den Mitschnitten (`test/harness.js` bildet Reiterwechsel, Auftragskarte,
+Refresh, ntfy usw. nach). Ohne Mitschnitte werden die Tests übersprungen.

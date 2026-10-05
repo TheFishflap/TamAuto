@@ -18,15 +18,18 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **PLZ-Abgleich** | Treffer, wenn die PLZ mit einem Eintrag der Ortsliste beginnt (`43` = alle 43xxx, `47877` = genau diese) |
 | **Komplette Annahme** | Auftragskarte öffnen → 0-km-Aufträge dazu → Warenkorb „alle auswählen“ → Annehmen → Bedingungen bestätigen |
 | **Bulk-Erfassung** | Alle im Warenkorb mit angenommenen Aufträge werden verbucht und nicht erneut versucht |
-| **Schnell zurück** | Terminvergabe-Fenster wird sofort weggeklickt, danach direkt zurück in „Veröffentlichte Aufträge“ |
+| **Schnell zurück** | Nach „Bestätigen“ sofort zurück in „Veröffentlichte Aufträge“; TAMs Antwort wird im Hintergrund geprüft (bei „bereits vergeben“ wird die Buchung korrigiert) |
 | **Wächter-Modus** | Schließt störende TAM-Meldungen **in Millisekunden** – „bereits vergeben“, „nicht verfügbar“, „falscher Status“, Warenkorb-Hinweise, technische Fehlerfenster – und wertet sie trotzdem richtig aus |
-| **Neue-Zeilen-Wächter** | Erkennt neue Aufträge in „Veröffentlichte Aufträge“ innerhalb von 250 ms – auch wenn TAM sie ohne Refresh einblendet |
+| **Neue-Zeilen-Wächter** | Erkennt neue Aufträge in „Veröffentlichte Aufträge“ sofort bei der Tabellenänderung – auch wenn TAM sie ohne Refresh einblendet |
 | **Silent Reload** | Optional (Erweiterte Einstellungen, Checkbox wie beim Auto-Refresh, Standard aus, nur in der Arbeitszeit): fragt TAM alle x s im Hintergrund nach neuen Aufträgen – ohne Tabelle neu zu zeichnen; nur bei einem neuen Auftrag wird aktualisiert |
 | **Arbeitszeit** | Standard **08:00–18:00** (einstellbar, an/aus): außerhalb pausieren Auto-Refresh und Silent Reload, danach laufen sie automatisch mit den zuletzt eingestellten Werten weiter |
 | **Push-Signal** | Die App **TAM-Signal** auf 1–2 Master-Handys leitet die Push-Benachrichtigungen der TAM-App als Startsignal über ntfy.sh weiter – das Script fragt TAM **innerhalb von ca. 1 s** ab (Standard an, gemeinsamer Kanal voreingestellt; verbindet sich nach Schlaf/Netzwechsel selbst neu; eigener Reiter „Push-Signal“) |
 | **Priorität** | Mehrere passende Aufträge gleichzeitig → Reihenfolge nach **Stufe 1, 2, 3** frei wählbar (Anzahl am Ort, Summe am Ort, Einzelpreis) mit automatischer Zuordnung; Standard: Anzahl → Summe → Preis |
 | **Fern-Lizenzierung** | „Lizenz anfragen“ direkt im Script → Freischaltung in der Lizenzverwaltung von IB Thomée → das Script **aktiviert sich selbst**; Verlängerung per Klick (Reiter Info); signierte **Sperrliste** zum Entziehen (7 Tage offline erlaubt) |
 | **Verzögerung** | Standard an: 0,12 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0–0,5 s |
+| **Burst-Refresh** | Für x Sekunden jede Sekunde aktualisieren; endet, sobald ein passender Auftrag gefunden ist |
+| **Termin offen** | Terminvereinbarung nach der Annahme weggeklickt und SLA-Ende (laut „Angenommene Aufträge“) in ≤ 2 h → **rote 1** im Auftragsbuch |
+| **„Ihr Zeichen“ neu** | Optional (Erweiterte Einstellungen): Doppelklick auf den Auftrag im Auftragsbuch hängt in TAM bei „Ihr Zeichen“ **neu** an |
 
 ### 🔄 Aktualisierung – gezielt statt dauerhaft
 | | |
@@ -398,33 +401,41 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
-### 1.19.1 – 2026-10-06
-- Neue Lizenz per Fernfreischaltung mit Kanal-Schlüssel: geschützter Kanal sofort aktiv, nicht erst nach dem Neuladen der Seite.
-  Lizenzen ohne Kanal-Schlüssel (alle bisherigen) arbeiten unverändert weiter.
+### 1.20.0 – 2026-10-06
+Zusammenfassung aller Änderungen seit 1.17.3 (1.18.0–1.19.1 waren Zwischenstände dieser Version).
 
-### 1.19.0 – 2026-10-05
-- **Geschützte Kanäle zwischen den Geräten:** Jede Installation hat einen eigenen Geräteschlüssel. Neue Lizenzen enthalten
-  einen Kanal-Schlüssel, den nur dieses Gerät lesen kann. Damit laufen die Rückgabe-Meldungen über einen nicht erratbaren
-  Kanal, verschlüsselt und fälschungssicher. Lizenzen ohne Kanal-Schlüssel arbeiten wie bisher; die Umstellung erfolgt
-  automatisch, sobald IB Thomée die Lizenz neu zustellt.
-
-### 1.18.0 – 2026-10-05
-- **Lizenz an das Gerät gebunden:** Wird ein Tampermonkey-Backup auf einem anderen Gerät eingespielt, ist dort eine eigene
-  Freigabe nötig („Neues Gerät erkannt“). Auf demselben Gerät bleibt die Lizenz auch nach Löschen der Website-Daten oder
-  Browser-Updates erhalten. Hinweis zu Cookies im Reiter Info entfällt.
-- **Passende Aufträge wurden teils als „bereits bearbeitet“ übersprungen** (z. B. Sixt): Eine fehlgeschlagene Annahme sperrte
-  den Auftrag bisher dauerhaft – jetzt nur 15 min. Übersprungene passende Aufträge stehen mit Grund im Log.
-- **Schneller:** Nach „Bestätigen“ sofort zurück zur Tabelle (bisher bis ~4 s Warten); Fenster und Haken werden ohne feste
-  Pausen erkannt (Karte → Bestätigen im Test ~1,9 s → ~0,2 s). Meldet TAM danach doch „bereits vergeben“, wird die
-  Buchung korrigiert. Pausen kommen nur noch von der Verzögerung (Humanizer).
-- **Verzögerung (Humanizer) Standard 0,12 s**, einstellbar ab 0 s (gilt nach dem Update einmal für alle).
+**Annahme**
+- **Schneller:** Fenster und Haken werden ohne feste Pausen erkannt (Karte → Bestätigen im Test ~1,9 s → ~0,2 s); nach
+  „Bestätigen“ sofort zurück zur Tabelle. Meldet TAM danach „bereits vergeben“, wird die Buchung korrigiert. Pausen kommen
+  nur noch von der Verzögerung (Humanizer, **Standard 0,12 s**, einstellbar ab 0 s – gilt nach dem Update einmal für alle).
+- **Passende Aufträge wurden teils als „bereits bearbeitet“ übersprungen** (z. B. Sixt): Eine fehlgeschlagene Annahme sperrt
+  jetzt nur 15 min statt dauerhaft; übersprungene passende Aufträge stehen mit Grund im Log.
+- **Burst-Refresh** endet, sobald ein passender Auftrag gefunden ist.
 - **Wächter** schließt im Reiter „Angenommene Aufträge“ keine Fenster mehr, die man selbst öffnet.
-- **Rückgaben über alle Geräte** („Heute zurückgegeben“) und **Blatt „nicht annehmen Adresse“** für einzelne Autohäuser.
-  Gesperrte Aufträge in der TAM-Tabelle markiert: rot (Excel-Sperrliste), orange (zurückgegeben).
-- **Push-Signal Standard an** (gilt einmal für alle) und verbindet sich nach Schlaf/Netzwechsel (Android) selbst neu.
+
+**Sperren und Rückgaben**
+- **Blatt „nicht annehmen Adresse“** (PLZ | Straße) sperrt einzelne Adressen, z. B. ein Autohaus, nicht die ganze PLZ.
+- **Rückgaben über alle Geräte:** Heute angenommene und wieder zurückgegebene Aufträge werden bis Mitternacht nicht angenommen.
+- In der TAM-Tabelle markiert: **rot** = Excel-Sperrliste, **orange** = heute zurückgegeben (Grund im Tooltip).
+
+**Auftragsbuch**
+- **Rote 1:** Terminvereinbarung nach der Annahme weggeklickt (z. B. Sixt) und SLA-Ende laut „Angenommene Aufträge“ in ≤ 2 h.
+- **„Ihr Zeichen“ neu** (Erweiterte Einstellungen, Standard aus): Doppelklick auf den Auftrag oder die rote 1 hängt in TAM
+  bei „Ihr Zeichen“ **neu** an und speichert.
+
+**Verbindung, Einstellungen, Updates**
+- **Push-Signal Standard an** (gilt einmal für alle); Push und Geräte-Kanäle verbinden sich nach Schlaf/Netzwechsel (Android)
+  selbst neu.
 - **Silent Reload** mit Checkbox wie Auto-Refresh, läuft nur in der Arbeitszeit. **Arbeitszeit Standard 08:00–18:00.**
-- **Updates auch ohne GitHub:** zweite Update-Quelle (OneDrive); neue Versionen werden sofort gemeldet.
+- **Updates auch ohne GitHub:** zweite Update-Quelle (OneDrive); neue Versionen werden sofort gemeldet; der Update-Button
+  installiert wieder direkt über Tampermonkey.
 - Log: Millisekunden nur ganzzahlig.
+
+**Lizenz**
+- **An das Gerät gebunden:** Wird ein Tampermonkey-Backup auf einem anderen Gerät eingespielt, ist dort eine eigene Freigabe
+  nötig. Auf demselben Gerät bleibt die Lizenz auch nach Löschen der Website-Daten oder Browser-Updates erhalten.
+- **Geschützte Kanäle zwischen den Geräten:** Neue Lizenzen können einen Kanal-Schlüssel enthalten, den nur dieses Gerät lesen
+  kann; Rückgabe-Meldungen laufen dann verschlüsselt. Bisherige Lizenzen arbeiten unverändert weiter.
 
 ### 1.17.3 – 2026-09-26
 - Reiter Info: Ist ein Update verfügbar, wird der Button „Softwareupdate“ zum grünen **„⬆ Update x installieren“** –
