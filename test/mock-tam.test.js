@@ -427,3 +427,51 @@ describe('Update über GitHub oder OneDrive', { skip }, () => {
     assert.match(src, new RegExp(`@downloadURL\\s+\\S+${ONEDRIVE}`));
   });
 });
+
+// Autohaus-Regeln: Blatt „nicht annehmen Adresse“ sperrt nur eine Adresse, nicht die ganze PLZ
+describe('Excel „nicht annehmen Adresse“', { skip }, () => {
+  const { makeXlsx, revocationList } = require('./harness');
+  const xlsx = makeXlsx({
+    annehmen: [['PLZ', 'Ort'], ['50825', 'Köln']],
+    'nicht annehmen': [['PLZ', 'Ort']],
+    'nicht annehmen Adresse': [['PLZ', 'Straße'], ['50825', 'Maarweg 241'], ['50825', 'Venloer Str.']],
+  });
+  const xhr = (o) => o.url.includes('IQBmSNFRkXF5') ? { status: 200, responseText: revocationList() }
+    : o.url.includes('IQDymsXIGo99') ? { status: 200, response: xlsx } : { error: true };
+  const rowOf = (nr) => [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')].find((r) => r.textContent.includes(nr));
+
+  it('gesperrte Adresse rot und nicht angenommen, andere Adresse in derselben PLZ angenommen', async () => {
+    tam = startTam({ gm: { places: { plz: [], orte: [] } }, xhr });
+    await tam.ready();
+    assert.ok(await until(() => (tam.store.get('places').blockAddr || []).length === 2, 5000), JSON.stringify(tam.store.get('places')));
+    tam.addOrder({ nr: 'MW3180001', plz: '50825', ort: 'Köln', strasse: 'Maarweg 241-251', onOpen: () => {} });
+    tam.addOrder({ nr: 'MW3180002', plz: '50825', ort: 'Köln', strasse: 'Venloer Straße 12', onOpen: () => {} });
+    tam.addOrder({ nr: 'MW3180003', plz: '50825', ort: 'Köln', strasse: 'Maarweg 24' });
+    assert.ok(await until(() => tam.accepted.includes('MW3180003'), 15000), tam.logs().join('\n'));
+    assert.ok(!tam.dblclicks.includes('MW3180001') && !tam.dblclicks.includes('MW3180002'), tam.dblclicks.join());
+    assert.ok(rowOf('MW3180001').classList.contains('tamauto-blocked'));
+    assert.match(rowOf('MW3180001').title, /Maarweg 241/);
+    assert.ok(!rowOf('MW3180003').classList.contains('tamauto-blocked'));
+  });
+});
+
+// Eigener ntfy-Kanal für Updates: Meldung → sofort Update prüfen (Version wird bei GitHub/OneDrive bestätigt)
+describe('Update-Meldung über ntfy', { skip }, () => {
+  it('Meldung einer neuen Version → Update-Prüfung startet sofort', async () => {
+    tam = startTam({ gm: { places: KOELN, lastUpdateCheck: Date.now() } });
+    await tam.ready();
+    const checks = () => tam.requests.filter((o) => /raw\.githubusercontent\.com.*\.user\.js|IQALfRz3/.test(o.url)).length;
+    const before = checks();
+    tam.ntfy('tamnotify-', { v: 1, t: 'update', ver: '99.0.0' });
+    assert.ok(await until(() => checks() > before, 2000), 'keine Update-Prüfung');
+  });
+
+  it('Meldung einer älteren/gleichen Version → nichts', async () => {
+    tam = startTam({ gm: { places: KOELN, lastUpdateCheck: Date.now() } });
+    await tam.ready();
+    const before = tam.requests.length;
+    tam.ntfy('tamnotify-', { v: 1, t: 'update', ver: '1.0.0' });
+    await sleep(500);
+    assert.equal(tam.requests.filter((o) => /\.user\.js|IQALfRz3/.test(o.url)).length, tam.requests.slice(0, before).filter((o) => /\.user\.js|IQALfRz3/.test(o.url)).length);
+  });
+});

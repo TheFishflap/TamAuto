@@ -225,4 +225,32 @@ function startTam(opts = {}) {
   return tam;
 }
 
-module.exports = { startTam, fixture, hasFixtures, licenseKey, revocationList, until, sleep, INSTALL_ID };
+// Minimale .xlsx (ZIP ohne Kompression, Inline-Strings) – sheets: { 'Blattname': [[Zelle, …], …] }
+function makeXlsx(sheets) {
+  const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const colName = (i) => String.fromCharCode(65 + i);
+  const names = Object.keys(sheets);
+  const files = {
+    'xl/workbook.xml': `<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${
+      names.map((n, i) => `<sheet name="${esc(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`,
+    'xl/_rels/workbook.xml.rels': `<Relationships>${names.map((n, i) => `<Relationship Id="rId${i + 1}" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}</Relationships>`,
+  };
+  names.forEach((n, i) => {
+    files[`xl/worksheets/sheet${i + 1}.xml`] = `<worksheet><sheetData>${sheets[n].map((row, r) => `<row r="${r + 1}">${
+      row.map((v, c) => `<c r="${colName(c)}${r + 1}" t="inlineStr"><is><t>${esc(v)}</t></is></c>`).join('')}</row>`).join('')}</sheetData></worksheet>`;
+  });
+  const parts = [], central = []; let off = 0;
+  Object.entries(files).forEach(([name, body]) => {
+    const nb = Buffer.from(name), data = Buffer.from(body);
+    const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nb.length, 26);
+    const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nb.length, 28); ch.writeUInt32LE(off, 42);
+    parts.push(lh, nb, data); central.push(ch, nb); off += 30 + nb.length + data.length;
+  });
+  const cd = Buffer.concat(central), end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(names.length + 2 + 0, 8); end.writeUInt16LE(Object.keys(files).length, 10);
+  end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(off, 16);
+  const buf = Buffer.concat([...parts, cd, end]);
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
+}
+
+module.exports = { makeXlsx,  startTam, fixture, hasFixtures, licenseKey, revocationList, until, sleep, INSTALL_ID };

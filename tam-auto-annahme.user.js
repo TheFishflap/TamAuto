@@ -45,6 +45,9 @@
     placesUrl: 'https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQDymsXIGo99RJqOxxCvnsbUAfLN02JN2cvzn0qzlg_G4Uk',
     placesSheet: 'annehmen',
     blockSheet: 'nicht annehmen', // Sperrliste im selben Excel
+    // Autohaus-Regeln: einzelne Adressen sperren (PLZ + Straße [+ Hausnr.]), nicht die ganze PLZ. Eigenes Blatt, damit
+    // ältere Versionen (lesen nur „nicht annehmen“ und würden daraus die ganze PLZ sperren) unberührt bleiben.
+    blockAddrSheet: 'nicht annehmen Adresse',
     placesReloadMin: 30,          // Excel alle 30 min neu laden (Sperrliste zeitnah aktuell)
     intervalSec: 60,          // Auto-Refresh-Intervall (Sekunden), Standard 60
     enabled: false,
@@ -287,6 +290,24 @@
     return s.length === 1 ? '0' + s : s;
   }
 
+  // Straße vergleichbar machen: „Venloer Str. 12“ / „Venloer Straße 12-14“ → { name: 'venloerstrasse', nr: '12' }
+  function streetKey(s) {
+    const t = norm(s).replace(/str\.?(?=\s|\d|$)/g, 'strasse');
+    const m = t.match(/^(.*?)(\d+)/);
+    return { name: (m ? m[1] : t).replace(/[^a-z]/g, ''), nr: m ? m[2] : '' };
+  }
+  // Regel ohne Hausnummer sperrt die ganze Straße, mit Hausnummer nur diese (erste Nummer, z. B. 241 bei „241-251“)
+  const streetMatch = (rule, street) => { const k = streetKey(street); return !!k.name && k.name === rule.key.name && (!rule.key.nr || rule.key.nr === k.nr); };
+  function extractAddr(rows) {
+    const hIdx = rows.findIndex((r) => r.some((c) => /^(plz|postleitzahl)$/i.test(String(c).trim())));
+    if (hIdx < 0) return [];
+    const head = rows[hIdx].map((c) => norm(c));
+    const pc = head.findIndex((h) => /^(plz|postleitzahl)$/.test(h)), sc = head.findIndex((h) => /^(strasse|adresse|anschrift)$/.test(h));
+    if (pc < 0 || sc < 0) return [];
+    return rows.slice(hIdx + 1).map((r) => ({ plz: normPlz(r[pc]), str: String(r[sc] || '').trim() }))
+      .filter((x) => x.plz.length === 5 && x.str).map((x) => Object.assign(x, { key: streetKey(x.str) }));
+  }
+
   // Je Zeile: steht eine PLZ drin, gilt die PLZ-Regel; nur Zeilen ohne PLZ werden über den Ortsnamen abgeglichen.
   function extractPlaces(rows, source) {
     const plz = new Set(); const orte = new Set();
@@ -370,10 +391,13 @@
             const bl = await readXlsxSheet(res.response, cfg.blockSheet, true);
             const b = bl ? extractPlaces(bl.rows, '') : { plz: [], orte: [] };
             p.block = { plz: b.plz, orte: b.orte };
-            const changed = JSON.stringify([p.plz, p.orte, p.block]) !== JSON.stringify([places.plz, places.orte, places.block]);
+            const ba = await readXlsxSheet(res.response, cfg.blockAddrSheet, true);
+            p.blockAddr = ba ? extractAddr(ba.rows) : [];
+            const changed = JSON.stringify([p.plz, p.orte, p.block, p.blockAddr]) !== JSON.stringify([places.plz, places.orte, places.block, places.blockAddr]);
             places = p; GM_setValue('places', places);
             const summary = `Ortsliste "${name}": ${places.plz.length} PLZ, ${places.orte.length} Orte · ` +
-              `Sperrliste "${cfg.blockSheet}": ${b.plz.length} PLZ, ${b.orte.length} Orte` + (bl ? '' : ' (Blatt nicht gefunden)');
+              `Sperrliste "${cfg.blockSheet}": ${b.plz.length} PLZ, ${b.orte.length} Orte` + (bl ? '' : ' (Blatt nicht gefunden)') +
+              (ba ? ` · "${cfg.blockAddrSheet}": ${p.blockAddr.length} Adressen` : '');
             if (changed) log(`Ortslisten aktualisiert – ${summary}`, 'ok');
             else log(`Ortslisten unverändert – ${summary}`, manual ? 'ok' : 'debug');
             renderStatus(); renderBlacklist(); resolve(true);
@@ -667,6 +691,8 @@
     const r = dayList('returnsToday').items[nrKey(order.nr)];
     if (r) return `heute zurückgegeben (${new Date(r.at).toLocaleTimeString('de-DE')})`;
     const p = (order.plz || '').trim();
+    const ad = (places.blockAddr || []).find((r) => r.plz === p && streetMatch(r, order.strasse));
+    if (ad) return `Adresse ${ad.plz} ${ad.str} (Excel „${cfg.blockAddrSheet}“)`;
     const xb = places.block || { plz: [], orte: [] };
     const xp = xb.plz.find((x) => p.startsWith(x));
     if (xp) return `PLZ ${xp.padEnd(5, '*')} (Excel „${cfg.blockSheet}“)`;
@@ -690,7 +716,8 @@
       xl.innerHTML = '';
       // PLZ-Anfang (weniger als 5 Ziffern) mit Sternchen auffüllen, z. B. „525**“ – sperrt alle PLZ, die so beginnen
       const entries = [...xb.plz.map((x) => [x.padEnd(5, '*'), x.length < 5 ? `sperrt alle PLZ, die mit ${x} beginnen (${x.padEnd(5, '0')}–${x.padEnd(5, '9')})` : `PLZ ${x}`]),
-        ...xb.orte.map((o) => [o, `Ort ${o}`])];
+        ...xb.orte.map((o) => [o, `Ort ${o}`]),
+        ...(places.blockAddr || []).map((a) => [`${a.plz} ${a.str}`, `nur diese Adresse (Blatt „${cfg.blockAddrSheet}“)`])];
       if (!entries.length) xl.textContent = 'Keine Einträge.';
       entries.forEach(([label, tip]) => { const c = chipEl(label, '#6d4c41', '#efebe9'); c.title = tip; xl.appendChild(c); });
     }
@@ -716,6 +743,21 @@
   // Script\\tam-auto-annahme.user.js im OneDrive. Tampermonkey prüft über diesen Link (@updateURL/@downloadURL).
   const UPDATE_BACKUP_URL = 'https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQALfRz3JKDFTajqSq2MROJNAcTdmeeQDOYup07olXdgzlg';
   let updateLink = UPDATE_URL; // Installationslink der Quelle mit der neuesten Version
+  // Update-Meldung über ntfy: nach einem Release sendet IB Thomée {v:1,t:'update',ver} → sofort prüfen statt erst nach
+  // bis zu 6 h. Die Meldung löst nur die Prüfung aus – maßgeblich ist die Version bei GitHub/OneDrive.
+  const UPDATE_TOPIC = 'tamnotify-j72jpwgezh3r58fwhu35dh0safm6';
+  function startUpdateNotify() {
+    ntfyStream(`https://ntfy.sh/${UPDATE_TOPIC}/sse`, { onMessage: (ev) => {
+      try {
+        const m = JSON.parse(ev.data); if (m.event !== 'message') return;
+        const d = JSON.parse(m.message);
+        if (d && d.v === 1 && d.t === 'update' && newerVersion(String(d.ver || ''), VERSION) && d.ver !== pendingUpdate) {
+          log(`Update-Meldung: Version ${d.ver} veröffentlicht – prüfe …`);
+          checkUpdate();
+        }
+      } catch (e) { /* ignore */ }
+    } });
+  }
   // Changelog (Reiter Info): aus dem README auf GitHub – ist GitHub nicht erreichbar, aus der README-Kopie im
   // OneDrive (Freigabelink "Jeder mit dem Link", download.aspx wie bei der Ortsliste). Leer = kein Ersatz.
   const CHANGELOG_URL = 'https://raw.githubusercontent.com/TheFishflap/TamAuto/main/README.md';
@@ -3306,6 +3348,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     setInterval(silentPoll, 250);  // Silent Reload (falls eingestellt)
     startPush();                   // Push-Signal (App „TAM-Signal“) empfangen
     startReturns();                // Rückgaben der anderen Geräte empfangen
+    startUpdateNotify();           // Update-Meldungen (ntfy) empfangen
     setInterval(watchNewRows, 250); // neue Aufträge auch ohne erkannte Tabellenänderung sofort prüfen
     setInterval(dismissAllMessagesNow, 100); // Sofort-Wächter als Rückfallebene (falls ein Einblenden nicht als Änderung auffällt)
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;
