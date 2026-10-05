@@ -173,6 +173,31 @@
     types.forEach((t) => el.dispatchEvent(new MouseEvent(t, opts)));
   }
 
+  // Warten auf einen DOM-Zustand: prüft sofort, bei jeder DOM-Änderung (MutationObserver) und zusätzlich alle 50 ms
+  function waitForDom(fn, timeout = 5000, root = document.body) {
+    return new Promise((resolve) => {
+      let fin = false, mo = null, iv = 0, to = 0;
+      const finish = (v) => { if (fin) return; fin = true; if (mo) mo.disconnect(); clearInterval(iv); clearTimeout(to); resolve(v); };
+      const check = () => { if (fin) return; let v = null; try { v = fn(); } catch (e) { /* weiter warten */ } if (v) finish(v); };
+      check();
+      if (fin) return;
+      mo = new MutationObserver(check);
+      mo.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+      iv = setInterval(check, 50);
+      to = setTimeout(() => finish(null), timeout);
+    });
+  }
+  // Warten, bis sich root quietMs lang nicht mehr ändert (GXT rendert in Schüben) – höchstens max ms
+  function waitForQuiet(root, quietMs = 150, max = 1000) {
+    return new Promise((resolve) => {
+      const t0 = Date.now(); let last = Date.now();
+      const mo = new MutationObserver(() => { last = Date.now(); });
+      mo.observe(root, { childList: true, subtree: true, attributes: true, characterData: true });
+      const iv = setInterval(() => {
+        if (Date.now() - last >= quietMs || Date.now() - t0 >= max) { clearInterval(iv); mo.disconnect(); resolve(); }
+      }, 20);
+    });
+  }
   async function waitFor(fn, timeout = 5000, step = 150) {
     const t0 = Date.now();
     while (Date.now() - t0 < timeout) {
@@ -605,16 +630,19 @@
     retPost('ret', ret.map((o) => o.nr));
     renderReturns();
   }
-  // Gesperrte Aufträge (Excel-Sperrliste, heute zurückgegeben) in der TAM-Tabelle orange markieren, Grund als Tooltip
+  // Gesperrte Aufträge in der TAM-Tabelle markieren: Excel „nicht annehmen“ rot, heute zurückgegeben orange; Grund als Tooltip
   function markBlockedRows(all) {
     if (!document.getElementById('tamauto-blocked-style')) {
       const st = document.createElement('style'); st.id = 'tamauto-blocked-style';
-      st.textContent = '.x-grid3-row.tamauto-blocked, .x-grid3-row.tamauto-blocked td { background: #ffe0b2 !important; }';
+      st.textContent = '.x-grid3-row.tamauto-blocked, .x-grid3-row.tamauto-blocked td { background: #ffcdd2 !important; }' +
+        '.x-grid3-row.tamauto-returned, .x-grid3-row.tamauto-returned td { background: #ffe0b2 !important; }';
       document.head.appendChild(st);
     }
     all.forEach((o) => {
       const why = o.valid ? blocked(o) : '';
-      o.row.classList.toggle('tamauto-blocked', !!why);
+      const ret = !!dayList('returnsToday').items[nrKey(o.nr)];
+      o.row.classList.toggle('tamauto-returned', !!why && ret);  // heute zurückgegeben → orange
+      o.row.classList.toggle('tamauto-blocked', !!why && !ret);  // Excel „nicht annehmen“ → rot
       if (why) o.row.title = `TAM Auto-Annahme: gesperrt – ${why}`; else if (/^TAM Auto-Annahme/.test(o.row.title)) o.row.removeAttribute('title');
     });
   }
@@ -1229,6 +1257,9 @@
   // Warenkorb: .x-view-item mit <input class="x-view-item-checkbox"> + AuftragsNr als Text
   //            Kopf-Checkbox im Panel-Header "Warenkorb" = alle auswählen
   // Umgebung:  .zusatzteilauftrag mit .entfernung ("5 km") + AuftragsNr + Dienstleistung
+  // Kopf-Checkbox „Warenkorb – alle auswählen“ (liegt nicht in einem .x-view-item)
+  const selectAllOf = (card) => [...card.querySelectorAll('input.x-view-item-checkbox')]
+    .find((cb) => !cb.closest('.x-view-item') && /warenkorb/i.test(text(cb.closest('.x-panel-header') || cb.parentElement)));
   function warenkorbItems(card) {
     return [...card.querySelectorAll('.x-view-item')]
       .filter((it) => visible(it) && it.querySelector('input.x-view-item-checkbox') && !it.closest('.zusatzteilauftrag'))
@@ -1245,8 +1276,7 @@
   async function setChecked(cb, want) {
     if (cb.checked === want) return true;
     cb.click();
-    await sleep(400);
-    return cb.checked === want;
+    return !!(await waitFor(() => cb.checked === want, 400, 20));
   }
 
   // Verzögerung vor jedem Klickschritt der Annahme (Erweiterte Einstellungen):
@@ -1282,8 +1312,7 @@
     const cell = [...order.row.querySelectorAll('td.x-grid3-cell')].find(visible) || order.row;
     await humanDelay('Doppelklick auf Auftrag');
     if (!order.row.isConnected) { log(`Abbruch: Zeile ${nr} während der Verzögerung verschwunden.`, 'err'); return false; }
-    fire(cell, ['mousedown', 'mouseup', 'click']);
-    await sleep(200);
+    fire(cell, ['mousedown', 'mouseup', 'click']); // Zeile auswählen, direkt danach Doppelklick (Pausen: Humanizer)
     const clickedAt = Date.now();
     triedNrs.set(nrBase(nr), clickedAt); // Wächter: Fenster dieses Auftrags später ggf. schließen
     fire(cell, ['mousedown', 'mouseup', 'click', 'dblclick']);
@@ -1301,10 +1330,10 @@
     let lastTick = Date.now(), maxGap = 0;
     const probe = () => { const n = Date.now(); maxGap = Math.max(maxGap, n - lastTick); lastTick = n; return cardOrMsg(); };
     // TAM ist teils sehr langsam → bis 20 s warten, nach 5 s einen Hinweis ins Log
-    let opened = await waitFor(probe, 5000);
+    let opened = await waitForDom(probe, 5000);
     if (!opened) {
       log(`${nr}: Auftragskarte noch nicht da – warte weiter … (Fenster offen: ${visibleWindows().map((w) => `„${winTitle(w) || '?'}“`).join(', ') || 'keine'})`, 'debug');
-      opened = await waitFor(probe, 15000);
+      opened = await waitForDom(probe, 15000);
     }
     const openMs = Date.now() - clickedAt;
     if (maxGap > 2000) log(`${nr}: Seite war beim Warten auf die Karte bis zu ${(maxGap / 1000).toFixed(1)} s blockiert (TAM ausgelastet oder Tab im Hintergrund).`, 'debug');
@@ -1340,22 +1369,25 @@
       log(`Falsche Auftragskarte ("${winTitle(card)}") – erwartet ${nr}. Abbruch.`, 'err');
       closeWindow(card); return false;
     }
-    await sleep(1000);
+    // Karte fertig aufgebaut: Warenkorb mit diesem Auftrag und „alle auswählen“ da, danach 150 ms keine Änderung
+    // mehr (TAM lädt „Aufträge in der Umgebung“ ggf. nach) – höchstens 1 s wie früher die feste Pause
+    const t1 = Date.now();
+    await waitForDom(() => selectAllOf(card) && warenkorbItems(card).some((x) => sameNr(x.nr, nr)), 1000, card);
+    await waitForQuiet(card, 150, Math.max(150, 1000 - (Date.now() - t1)));
 
     // 2) Erst "Aufträge in der Umgebung" mit 0 km je 1× anklicken (landen im Warenkorb) …
     const extra = [];
     for (const item of nearbyItems(card).filter((n) => n.kmNum === 0 && n.nr && n.nr !== nr.toUpperCase())) {
       await humanDelay(`0-km-Auftrag ${item.nr}`);
       fire(item.el, ['mouseover', 'mousedown', 'mouseup', 'click']);
-      const w = await waitFor(() => warenkorbItems(card).find((x) => sameNr(x.nr, item.nr)), 4000);
+      const w = await waitForDom(() => warenkorbItems(card).find((x) => sameNr(x.nr, item.nr)), 4000, card);
       if (w) { extra.push(item.nr); log(`+ ${item.nr} (0 km) in den Warenkorb`); }
       else log(`${item.nr} (0 km) erschien nicht im Warenkorb – übersprungen.`, 'err');
     }
     order.extra = extra;
 
     // … dann ganz am Ende "Warenkorb – alle auswählen" anhaken
-    const selectAll = [...card.querySelectorAll('input.x-view-item-checkbox')]
-      .find((cb) => !cb.closest('.x-view-item') && /warenkorb/i.test(text(cb.closest('.x-panel-header') || cb.parentElement)));
+    const selectAll = selectAllOf(card);
     if (!selectAll) { log('Checkbox "Warenkorb – alle auswählen" nicht gefunden.', 'err'); closeWindow(card); return false; }
     await humanDelay('Warenkorb – alle auswählen');
     await setChecked(selectAll, true);
@@ -1375,7 +1407,7 @@
     clickBtn(acceptBtn);
 
     // 4) Dialog "Auftragsannahme bestätigen" (einmalig für alle): Haken setzen -> "Bestätigen"
-    const dlg = await waitFor(() => visibleWindows()
+    const dlg = await waitForDom(() => visibleWindows()
       .find((w) => w !== card && cfg.confirmDialogTitle.test(winTitle(w))), 6000);
     if (!dlg) {
       const hint = [...document.querySelectorAll('div, span')].filter((e) => visible(e) && e.children.length === 0 &&
@@ -1390,10 +1422,10 @@
       const cancel = findButton(/^abbrechen$/i, dlg); if (cancel) clickBtn(cancel);
       await sleep(300); closeWindow(card); return false;
     }
-    const okBtn = await waitFor(() => {
+    const okBtn = await waitForDom(() => {
       const b = findButton(cfg.confirmButton, dlg);
       return b && !b.classList.contains('x-item-disabled') ? b : null;
-    }, 3000);
+    }, 3000, dlg);
     if (!okBtn) {
       log('"Bestätigen" bleibt gesperrt – Abbruch.', 'err');
       const cancel = findButton(/^abbrechen$/i, dlg); if (cancel) clickBtn(cancel);
@@ -2920,6 +2952,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       // (nicht während einer Annahme: Änderungen durch die Annahme selbst sind kein TAM-Takt)
       const src = relevant && !ownRefresh && !busy ? noteExternalRefresh() : '';
       if (!cfg.enabled) return;
+      if (relevant && !busy) watchNewRows(); // neue AuftragsNr → sofort prüfen (nicht erst im 250-ms-Takt)
       if (!relevant && !tabSwitch) return;
       // Während einer Prüfung/Annahme nicht verwerfen, sondern direkt danach erneut prüfen
       if (busy) { recheck = true; return; }

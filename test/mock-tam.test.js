@@ -276,7 +276,7 @@ describe('Rückgaben (Tages-Blacklist über ntfy)', { skip }, () => {
 describe('Gesperrte Aufträge in der Tabelle', { skip }, () => {
   const rowOf = (nr) => [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')].find((r) => r.textContent.includes(nr));
 
-  it('Excel-Sperrliste und Rückgaben → Zeile orange mit Grund, andere Zeilen nicht', async () => {
+  it('Excel „nicht annehmen“ → rot, Rückgabe → orange, andere Zeilen ohne Markierung', async () => {
     const places = { ...KOELN, plz: ['50825', '51'], block: { plz: ['51'], orte: [] } };
     tam = startTam({ gm: { places, retMinGoneSec: 1 } });
     await tam.ready();
@@ -284,9 +284,11 @@ describe('Gesperrte Aufträge in der Tabelle', { skip }, () => {
     tam.addOrder({ nr: 'MW3170003', plz: '50825', ort: 'Köln', onOpen: () => {} });
     tam.addOrder({ nr: 'MW3170004', plz: '51105', ort: 'Köln', onOpen: () => {} });
     tam.addOrder({ nr: 'MW3170005', plz: '99999', ort: 'Nirgendwo' });
-    assert.ok(await until(() => rowOf('MW3170003').classList.contains('tamauto-blocked'), 3000));
+    assert.ok(await until(() => rowOf('MW3170003').classList.contains('tamauto-returned'), 3000));
+    assert.ok(!rowOf('MW3170003').classList.contains('tamauto-blocked'));
     assert.ok(rowOf('MW3170004').classList.contains('tamauto-blocked'));
-    assert.ok(!rowOf('MW3170005').classList.contains('tamauto-blocked'));
+    assert.ok(!rowOf('MW3170004').classList.contains('tamauto-returned'));
+    assert.ok(!rowOf('MW3170005').classList.contains('tamauto-blocked') && !rowOf('MW3170005').classList.contains('tamauto-returned'));
     assert.match(rowOf('MW3170003').title, /zurückgegeben/);
     assert.doesNotMatch(rowOf('MW3170003').title, /erkannt von/);
   });
@@ -301,5 +303,34 @@ describe('Gesperrte Aufträge in der Tabelle', { skip }, () => {
     tam.addOrder({ nr: NR, plz: '50825', ort: 'Köln' });
     assert.ok(await until(() => tam.posts('tamret-').some((m) => m.t === 'ret'), 5000));
     tam.posts('tamret-').forEach((m) => assert.deepEqual(Object.keys(m).sort(), ['at', 'nrs', 't', 'v']));
+  });
+});
+
+describe('Tempo der Annahme (P2 Popup-Erkennung)', { skip }, () => {
+  it('Karte da → „Bestätigen“ ohne feste Pausen (< 500 ms ohne Humanizer)', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    let cardAt = 0;
+    tam.addOrder({ ...ORDER, nearby: [{ nr: 'MW3000001', km: 0 }], onOpen: (t, o) => setTimeout(() => { cardAt = Date.now(); t.openCard(o); }, 300) });
+    assert.ok(await until(() => tam.accepted.length, 15000), tam.logs().join('\n'));
+    assert.deepEqual(tam.accepted.sort(), ['MW3000001', 'MW3153893']);
+    assert.ok(tam.acceptedAt - cardAt < 500, `${tam.acceptedAt - cardAt} ms`);
+  });
+
+  it('Umgebung wird nachgeladen → 0-km-Auftrag trotzdem im Warenkorb', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder({ ...ORDER, onOpen: (t, o) => {
+      const card = t.openCard(o);
+      setTimeout(() => { // TAM liefert „Aufträge in der Umgebung“ 100 ms später nach
+        const z = t.document.createElement('div'); z.className = 'zusatzteilauftrag'; z.dataset.nr = 'MW3000002';
+        z.innerHTML = '<div class="entfernung">0 km</div>MW3000002 Dienst';
+        z.addEventListener('click', () => { const it = t.document.createElement('div'); it.className = 'x-view-item x-view-item-check';
+          it.innerHTML = '<input type="checkbox" class="x-view-item-checkbox">MW3000002'; card.querySelector('[data-wk]').appendChild(it); });
+        card.querySelectorAll('.x-view')[1].appendChild(z);
+      }, 100);
+    } });
+    assert.ok(await until(() => tam.accepted.length, 15000), tam.logs().join('\n'));
+    assert.deepEqual(tam.accepted.sort(), ['MW3000002', 'MW3153893']);
   });
 });
