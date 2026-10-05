@@ -160,6 +160,13 @@ Schließen solcher Meldungen den Aufbau („Aufbau: …“) selbst ins Log.
 copy([...document.querySelectorAll('div')].filter(e => /vergeben|verfügbar/i.test(e.textContent) && e.offsetParent && e.children.length < 15).slice(-3).map(e => e.className + ' | ' + e.textContent.trim().slice(0, 80)).join('\n'))
 ```
 
+Seitenaufbau als Datei für den Mock speichern (lädt `tam-<Reiter>-<Zeit>.html` herunter; ohne Bedienfeld des Scripts
+und ohne `<script>`, höchstens 5 Zeilen je Tabelle, Eingabewerte und Haken bleiben erhalten). Enthält echte
+Kundendaten → nur lokal in `test/fixtures/` ablegen (per `.gitignore` vom Repo ausgeschlossen):
+```js
+(()=>{const r=document.body.cloneNode(true);r.querySelectorAll('#tamauto,script,iframe,noscript').forEach(e=>e.remove());r.querySelectorAll('.x-grid3-body').forEach(b=>[...b.querySelectorAll('.x-grid3-row')].slice(5).forEach(x=>x.remove()));r.querySelectorAll('input,textarea').forEach(i=>{if(/checkbox|radio/.test(i.type)){if(i.checked)i.setAttribute('checked','')}else if(i.tagName==='TEXTAREA')i.textContent=i.value;else i.setAttribute('value',i.value)});const t=(document.querySelector('li.x-tab-strip-active[id*="__Agent"]')||{id:'tam'}).id.split('__').pop(),h=`<!-- TAM-Snapshot ${new Date().toISOString()} · ${t} · ${innerWidth}x${innerHeight} -->\n`+r.outerHTML,a=document.createElement('a');a.href=URL.createObjectURL(new Blob([h],{type:'text/html'}));a.download=`tam-${t}-${Date.now()}.html`;a.click()})()
+```
+
 ## 10. Testumgebung
 
 `test/mock-tam.test.js` baut die TAM-Struktur mit jsdom nach (Tab, Grid mit versteckten Spalten,

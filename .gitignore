@@ -4,3 +4,6 @@ package-lock.json
 lizenz-privat.json
 ausgestellte-lizenzen.csv
 TamAuto-Lizenzen/
+
+# Echte TAM-Seitenmitschnitte (Kundendaten) – nur lokal
+test/fixtures/
