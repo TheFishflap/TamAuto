@@ -163,7 +163,7 @@ function startTam(opts = {}) {
       cb.addEventListener('click', () => ok.classList.toggle('x-item-disabled', !cb.checked));
       ok.querySelector('button').addEventListener('click', () => {
         if (ok.classList.contains('x-item-disabled')) return;
-        tam.accepted.push(...checked); dl.remove();
+        tam.accepted.push(...checked); tam.acceptedAt = Date.now(); dl.remove();
         if (o.afterAccept) o.afterAccept(tam, o);
       });
       dl.querySelectorAll('button')[1].addEventListener('click', () => dl.remove());
@@ -183,6 +183,16 @@ function startTam(opts = {}) {
   };
 
   tam.local = (k) => w.localStorage.getItem(`tamauto.${k}`);
+  // TAM-Meldungsfenster (Titel + Text + OK), z. B. „Auftrag bereits vergeben!“
+  tam.showMessage = (title, body) => {
+    const m = d.createElement('div'); m.className = 'x-window x-component';
+    m.innerHTML = `<div class="x-window-header"><span class="x-window-header-text">${title}</span></div>` +
+      `<div class="x-window-body">${body}</div>${btnHtml('OK')}`;
+    m.querySelector('button').addEventListener('click', () => { tam.closed.push(title); m.remove(); });
+    d.body.appendChild(m);
+    return m;
+  };
+  tam.onPublished = () => d.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active');
   tam.logs = () => [...d.querySelectorAll('#tamauto-log div')].map((x) => x.textContent).reverse();
   tam.licensePanel = () => !!d.getElementById('tamauto-lic-key');
   tam.mainPanel = () => !!d.getElementById('tamauto-log');

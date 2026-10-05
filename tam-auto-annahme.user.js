@@ -1307,72 +1307,85 @@
     await humanDelay('Bestätigen');
     clickBtn(okBtn);
     lastAcceptAt = Date.now(); // ab jetzt darf ein Terminvergabe-Fenster sofort weggeklickt werden
-    // auf TAMs Reaktion warten (Meldung, Terminvergabe, Karte zu oder Reiterwechsel) – höchstens 2,5 s statt starr
-    await sleep(300);
-    await waitFor(() => !visible(card) || !onPublishedTab() ||
-      visibleWindows().some((w) => w !== card && w !== dlg && !before.has(w)), 2200, 100);
-    await sleep(200);
-
-    // 5) Fehlermeldung erkennen
-    const errWin = visibleWindows().find((w) => w !== card && !before.has(w) &&
-      /fehler|error|nicht möglich|bereits|vergeben/i.test(text(w)));
-    if (errWin) {
-      log(`TAM meldet: ${text(errWin).slice(0, 160)}`, 'err');
-      if (/bereits|vergeben|nicht mehr verfügbar/i.test(text(errWin))) order.failReason = 'vergeben';
-      closeWindow(errWin); await sleep(300); closeWindow(card);
-      return false;
-    }
-    // Vom Sofort-Wächter bereits geschlossene Meldung nach "Bestätigen":
-    // "bereits vergeben" = nicht angenommen; "nicht verfügbar" kommt teils trotz erfolgreicher Annahme → nur vermerken
-    if (lastUnavailable.at >= lastAcceptAt && !/zum Warenkorb hinzugefügt/i.test(lastUnavailable.text)) {
-      if (/bereits vergeben/i.test(lastUnavailable.text)) {
-        log(`TAM meldet: ${lastUnavailable.text}`, 'err');
-        order.failReason = 'vergeben'; closeWindow(card);
-        return false;
-      }
-      // "Fehler bei Auftragsannahme – Auftrag … kann nicht bestätigt werden, da er im falschen Status ist":
-      // betrifft er den Hauptauftrag → nicht angenommen (war nicht mehr frei); betrifft er einen mit
-      // angehakten Warenkorb-Auftrag → nur diesen nicht verbuchen
-      if (/falschen Status|kann nicht bestätigt werden|Fehler bei Auftragsannahme/i.test(lastUnavailable.text)) {
-        // betroffenen Auftrag bestimmen: welche der beteiligten AuftragsNrn steht in der Meldung? (Format egal)
-        const msgUp = lastUnavailable.text.toUpperCase();
-        const bad = [nr, ...(order.bulk || []), ...(order.extra || [])].find((x) => x && msgUp.includes(nrBase(x))) ||
-          lastUnavailable.nr;
-        log(`TAM meldet: ${lastUnavailable.text}`, 'err');
-        if (!bad || sameNr(bad, nr)) { order.failReason = 'vergeben'; closeWindow(card); return false; }
-        order.bulk = (order.bulk || []).filter((x) => !sameNr(x, bad));
-        order.extra = (order.extra || []).filter((x) => !sameNr(x, bad));
-        log(`${bad} war nicht mehr frei – wird nicht als angenommen verbucht; ${nr} gilt als angenommen.`, 'err');
-      } else if (!/nicht (mehr )?verfügbar/i.test(lastUnavailable.text)) {
-        // sonstige Fehlermeldung nach "Bestätigen" (vom Wächter schon geschlossen) → nicht angenommen
-        log(`TAM meldet: ${lastUnavailable.text}`, 'err');
-        if (/bereits|vergeben/i.test(lastUnavailable.text)) order.failReason = 'vergeben';
-        closeWindow(card);
-        return false;
-      } else {
-        log(`${nr}: TAM meldete nach der Annahme „nicht verfügbar“ – Meldung geschlossen, Annahme gilt als erfolgt.`, 'debug');
-      }
-    }
-    // Hinweis-/Erfolgsfenster wegklicken, Auftragskarte schließen
-    visibleWindows().filter((w) => w !== card && !before.has(w)).forEach((w) => {
-      const b = findButton(/^(ok|schließen)$/i, w); if (b) clickBtn(b);
-    });
-    await sleep(300);
-    closeWindow(card);
-    await sleep(500);
     order.auftragsNr = nr;
-    // Terminvergabe-Fenster (falls schon offen) wegklicken; TAM springt ggf. in einen anderen Reiter → sofort zurück
-    dismissTerminDialog();
-    await switchToPublishedTab();
+    // Nicht auf TAMs Reaktion warten: sofort zurück zur Tabelle. Ob TAM die Annahme doch ablehnt (z. B. „bereits
+    // vergeben“), prüft verifyAccept im Hintergrund und korrigiert dann die Buchung.
+    verifyAccept(order, card, dlg, before);
+    if (!onPublishedTab()) clickPublishedTab();
     return true;
   }
 
+  // TAMs Reaktion auf „Bestätigen“ im Hintergrund auswerten (2,5 s): springt TAM in einen anderen Reiter → sofort
+  // zurück (ohne aufs Laden zu warten); Fehlermeldung → Annahme nachträglich als fehlgeschlagen verbuchen.
+  // Meldungen, die eindeutig einen anderen Auftrag betreffen (z. B. von der nächsten Annahme), zählen nicht.
+  // Letzter Reiter-Klick des Nutzers (echte Klicks/Tipps sind isTrusted, TAMs eigener Reiterwechsel nicht)
+  let userTabAt = 0;
+  ['mousedown', 'touchstart'].forEach((t) => document.addEventListener(t, (e) => {
+    if (e.isTrusted && e.target.closest && e.target.closest('li[id*="__"]')) userTabAt = Date.now();
+  }, true));
+  async function verifyAccept(order, card, dlg, before) {
+    const nr = order.nr, t0 = lastAcceptAt, mine = () => [nr, ...bulkOf(order), ...(order.extra || [])];
+    const concerns = (txt, msgNr) => {
+      const up = String(txt || '').toUpperCase();
+      const hit = mine().find((x) => x && up.includes(nrBase(x)));
+      if (hit) return hit;
+      if (msgNr || (currentAcceptNr && currentAcceptNr !== nrBase(nr))) return null; // gehört zu einem anderen Auftrag
+      return nr; // ohne Nummer: dem Hauptauftrag zuordnen
+    };
+    let backAt = 0, handled = false, naLogged = false;
+    while (Date.now() - t0 < 2500 && !handled) {
+      if (!onPublishedTab() && !currentAcceptNr && userTabAt < t0 && Date.now() - backAt > 300) { backAt = Date.now(); clickPublishedTab(); }
+      const errWin = visibleWindows().find((w) => w !== card && w !== dlg && !before.has(w) && !isOrderWin(winTitle(w)) &&
+        /fehler|error|nicht möglich|bereits|vergeben/i.test(text(w)));
+      const msg = errWin ? { text: text(errWin), nr: ((text(errWin).match(NR_RE) || [])[0] || '').toUpperCase() }
+        : lastUnavailable.at >= t0 && !/zum Warenkorb hinzugefügt/i.test(lastUnavailable.text) ? lastUnavailable : null;
+      // „nicht verfügbar“ allein kommt teils trotz erfolgreicher Annahme → nur vermerken
+      const onlyNa = msg && /nicht (mehr )?verfügbar/i.test(msg.text) && !/bereits|vergeben|falschen Status|kann nicht bestätigt|fehler/i.test(msg.text);
+      if (onlyNa && !naLogged) { naLogged = true; log(`${nr}: TAM meldete nach der Annahme „nicht verfügbar“ – Annahme gilt als erfolgt.`, 'debug'); }
+      const bad = msg && !onlyNa ? concerns(msg.text, msg.nr) : null;
+      if (bad) {
+        handled = true;
+        if (errWin) dismissMessage(errWin);
+        unbookAccepted(order, bad, msg.text.replace(/\s+/g, ' ').slice(0, 120));
+      }
+      await sleep(50);
+    }
+    // Hinweis-/Erfolgsfenster (keine Auftragsfenster) und die Karte schließen, Terminvergabe wegklicken
+    visibleWindows().filter((w) => w !== card && !before.has(w) && !isOrderWin(winTitle(w)) && !cfg.confirmDialogTitle.test(winTitle(w)))
+      .forEach((w) => { const b = findButton(/^(ok|schließen)$/i, w); if (b) clickBtn(b); });
+    if (!sameNr(currentAcceptNr, nr)) closeWindow(card);
+    dismissTerminDialog();
+  }
+
+  // Bereits verbuchte Annahme korrigieren: Hauptauftrag betroffen → nichts angenommen; sonst nur der eine
+  // Warenkorb-Auftrag. Auftragsbuch, Trefferquote und done (befristet) werden angepasst.
+  function unbookAccepted(o, bad, reason) {
+    const main = sameNr(bad, o.nr);
+    const nrs = main ? [o.nr, ...bulkOf(o)] : [bad];
+    const vergeben = /bereits|vergeben|nicht mehr verfügbar|falschen Status/i.test(reason);
+    nrs.forEach((x) => markDone(x, `Annahme fehlgeschlagen (${vergeben ? 'vergeben' : 'Fehler'}, nach „Bestätigen“)`, FAIL_RETRY_MS));
+    saveDone();
+    const up = new Set(nrs.map((x) => String(x).toUpperCase()));
+    const book = GM_getValue('orderbook', []);
+    GM_setValue('orderbook', book.filter((e) => !(e.ts >= new Date(lastAcceptAt - 60000).toISOString() && up.has(String(e.nr).toUpperCase()))));
+    renderOrderbook();
+    nrs.forEach((x) => { const row = rowsByNr.get(x) || (sameNr(x, o.nr) ? o : null); if (row || hitStats()[x]) trackResult(row || { nr: x, plz: o.plz }, vergeben ? 'vergeben' : 'fehler'); });
+    if (!main) { o.bulk = (o.bulk || []).filter((x) => !sameNr(x, bad)); o.extra = (o.extra || []).filter((x) => !sameNr(x, bad)); }
+    log(`${o.nr}: nachträglich – TAM meldet „${reason}“ → ${main ? 'NICHT angenommen' : `${bad} nicht angenommen, ${o.nr} schon`}.`, 'err');
+    notify('TAM: Annahme doch fehlgeschlagen', `${main ? o.nr : bad} – ${reason}`);
+  }
+
   // Wechselt in den Reiter "Veröffentlichte Aufträge" (falls nicht schon aktiv)
-  async function switchToPublishedTab() {
-    if (onPublishedTab()) return true;
+  // Klick auf den Reiter "Veröffentlichte Aufträge" – ohne auf das Laden zu warten
+  function clickPublishedTab() {
     const li = document.querySelector(`li[id$="__${cfg.tabPanelId}"]`);
     if (!li) { log(`Reiter "${cfg.tabName}" nicht gefunden.`, 'err'); return false; }
     fire(li.querySelector('.x-tab-strip-text') || li, ['mouseover', 'mousedown', 'mouseup', 'click']);
+    return true;
+  }
+  async function switchToPublishedTab() {
+    if (onPublishedTab()) return true;
+    if (!clickPublishedTab()) return false;
     const ok = await waitFor(onPublishedTab, 3000);
     log(ok ? `Zurück im Reiter "${cfg.tabName}".` : `Wechsel in den Reiter "${cfg.tabName}" fehlgeschlagen.`, ok ? 'info' : 'err');
     return !!ok;

@@ -53,7 +53,7 @@ describe('Wächter (P2)', { skip }, () => {
     tam.addOrder(ORDER);
     // Annahme vollständig abgeschlossen (inkl. Warten auf TAMs Reaktion und Aufräumen)
     assert.ok(await until(() => tam.logs().some((l) => /Angenommen: MW3153893/.test(l)), 15000), tam.logs().join('\n'));
-    await sleep(500);
+    await sleep(3000); // Nachkontrolle nach „Bestätigen“ (2,5 s) vorbei – jsdom kann keinen echten Nutzerklick erzeugen
     tam.selectTab('AgentEigeneAuftraege');
     tam.showWindow(0); // Nutzer öffnet „Auftrag MW3153893“ per Doppelklick
     await sleep(1000);
@@ -185,5 +185,40 @@ describe('Bereits bearbeitet / done (P1 Sixt)', { skip }, () => {
     const info = tam.store.get('doneInfo')[SIXT.nr];
     assert.match(info.why, /fehlgeschlagen/);
     assert.ok(info.exp > Date.now() && info.exp - Date.now() <= 15 * MIN);
+  });
+});
+
+// Nach „Bestätigen“ nicht warten: sofort weiter, TAM-Reaktion im Hintergrund auswerten
+describe('Nach der Annahme sofort zurück (P2 Tabwechsel)', { skip }, () => {
+  const logAt = (re) => until(() => tam.logs().some((l) => re.test(l)), 15000);
+
+  it('„Angenommen“ direkt nach „Bestätigen“ (kein Warten auf TAM)', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder(ORDER);
+    assert.ok(await logAt(/Angenommen: MW3153893/), tam.logs().join('\n'));
+    const ms = Date.now() - tam.acceptedAt;
+    assert.ok(ms < 600, `erst nach ${ms} ms fertig`);
+  });
+
+  it('TAM springt nach der Annahme in „Angenommene Aufträge“ → sofort zurück', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    let jumpedAt = 0;
+    tam.addOrder({ ...ORDER, afterAccept: (t) => setTimeout(() => { t.selectTab('AgentEigeneAuftraege'); jumpedAt = Date.now(); }, 400) });
+    assert.ok(await until(() => jumpedAt, 15000));
+    assert.ok(await until(() => tam.onPublished(), 1000), 'nicht zurückgewechselt');
+    assert.ok(Date.now() - jumpedAt < 500, `Rückkehr nach ${Date.now() - jumpedAt} ms`);
+  });
+
+  it('TAM meldet nach „Bestätigen“ „bereits vergeben“ → Buchung wird korrigiert', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder({ ...ORDER, afterAccept: (t) => setTimeout(() => t.showMessage('Auftrag bereits vergeben!', 'Der Auftrag MW3153893 wurde bereits vergeben.'), 500) });
+    assert.ok(await logAt(/nachträglich/), tam.logs().join('\n'));
+    const info = tam.store.get('doneInfo')[ORDER.nr];
+    assert.match(info.why, /fehlgeschlagen/);
+    assert.ok(!(tam.store.get('orderbook') || []).some((e) => e.nr === ORDER.nr), 'steht noch im Auftragsbuch');
+    assert.equal(tam.store.get('hitstats')[ORDER.nr].s, 'vergeben');
   });
 });
