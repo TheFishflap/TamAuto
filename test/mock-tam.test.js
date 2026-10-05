@@ -265,11 +265,30 @@ describe('Rückgaben (Tages-Blacklist über ntfy)', { skip }, () => {
     const NR = 'MW3170002';
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();
-    tam.ntfy(RET, { v: 1, t: 'ret', nrs: [NR], by: 'Handy_T1', at: Date.now() });
+    tam.ntfy(RET, { v: 1, t: 'acc', nrs: [NR], at: Date.now() });
+    tam.ntfy(RET, { v: 1, t: 'ret', nrs: [NR], at: Date.now() });
     assert.match(retChips(), new RegExp(NR));
     tam.addOrder({ nr: NR, plz: '50825', ort: 'Köln' });
     await sleep(1500);
     assert.deepEqual(tam.dblclicks, []);
+  });
+});
+
+describe('Rückgabe-Kanal: gefälschte Meldungen (Sicherheit)', { skip }, () => {
+  it('Rückgabe ohne vorher gemeldete Annahme → ignoriert', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.ntfy('tamret-', { v: 1, t: 'ret', nrs: ['MW3170010'], at: Date.now() });
+    tam.addOrder({ nr: 'MW3170010', plz: '50825', ort: 'Köln' });
+    assert.ok(await until(() => tam.accepted.includes('MW3170010'), 15000), tam.logs().join('\n'));
+  });
+
+  it('ungültige Nummern und zu lange Listen → ignoriert', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.ntfy('tamret-', { v: 1, t: 'acc', nrs: ['<img src=x onerror=alert(1)>', 'x'.repeat(50)], at: Date.now() });
+    tam.ntfy('tamret-', { v: 1, t: 'acc', nrs: Array.from({ length: 21 }, (_, i) => `MW31700${10 + i}`), at: Date.now() });
+    assert.deepEqual(Object.keys((tam.store.get('accToday') || { items: {} }).items), []);
   });
 });
 
@@ -280,6 +299,7 @@ describe('Gesperrte Aufträge in der Tabelle', { skip }, () => {
     const places = { ...KOELN, plz: ['50825', '51'], block: { plz: ['51'], orte: [] } };
     tam = startTam({ gm: { places, retMinGoneSec: 1 } });
     await tam.ready();
+    tam.ntfy('tamret-', { v: 1, t: 'acc', nrs: ['MW3170003'], at: Date.now() });
     tam.ntfy('tamret-', { v: 1, t: 'ret', nrs: ['MW3170003'], at: Date.now() });
     tam.addOrder({ nr: 'MW3170003', plz: '50825', ort: 'Köln', onOpen: () => {} });
     tam.addOrder({ nr: 'MW3170004', plz: '51105', ort: 'Köln', onOpen: () => {} });

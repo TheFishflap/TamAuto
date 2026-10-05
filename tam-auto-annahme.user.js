@@ -613,12 +613,17 @@
     licFetch(`${LIC_NTFY}/${RET_TOPIC}`, { method: 'POST',
       body: JSON.stringify({ v: 1, t, nrs, at: Date.now() }) }).catch(() => {}); // nur Nummern, keine Namen/Adressen
   }
+  // Der Kanal ist nicht geheim (Name steht im Script): Meldungen streng prüfen. Rückgaben nur für Nummern, deren
+  // Annahme heute gemeldet wurde – sonst könnte jeder beliebige Aufträge auf allen Geräten sperren.
+  const RET_NR = /^[A-Z0-9][A-Z0-9-]{3,19}$/;
   function onRetMessage(d) {
-    if (!d || d.v !== 1 || !Array.isArray(d.nrs) || new Date(d.at || 0).toLocaleDateString('sv-SE') !== today()) return;
-    const info = { at: d.at };
-    if (d.t === 'acc') addToday('accToday', d.nrs, info);
-    if (d.t === 'ret' && addToday('returnsToday', d.nrs, info)) {
-      log(`Rückgabe gemeldet: ${d.nrs.join(', ')} – heute nicht annehmen.`, 'ok');
+    if (!d || d.v !== 1 || !Array.isArray(d.nrs) || d.nrs.length > 20 || new Date(d.at || 0).toLocaleDateString('sv-SE') !== today()) return;
+    const nrs = d.nrs.map(nrKey).filter((x) => RET_NR.test(x));
+    const info = { at: +d.at };
+    if (d.t === 'acc') addToday('accToday', nrs, info);
+    const known = dayList('accToday').items;
+    if (d.t === 'ret' && addToday('returnsToday', nrs.filter((x) => known[x]), info)) {
+      log(`Rückgabe gemeldet: ${nrs.filter((x) => known[x]).join(', ')} – heute nicht annehmen.`, 'ok');
       renderReturns();
       if (cfg.enabled) scheduleCheck('Rückgabe gemeldet'); // Tabelle sofort einfärben
     }
