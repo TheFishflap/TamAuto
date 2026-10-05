@@ -137,3 +137,42 @@ describe('Silent Reload', { skip }, () => {
     assert.equal(tam.document.getElementById('tamauto-silent-on').checked, true);
   });
 });
+
+// P1 Sixt: Auftrag passt, wird aber als „bereits bearbeitet“ übersprungen (done dauerhaft verunreinigt)
+describe('Bereits bearbeitet / done (P1 Sixt)', { skip }, () => {
+  const SIXT = { nr: 'MW3160001', plz: '50825', ort: 'Köln', dienst: 'Sixt Rückgabe' };
+  const MIN = 60000;
+
+  it('alter Eintrag aus früherer Version, nie angenommen → wird wieder angenommen', async () => {
+    tam = startTam({ gm: { places: KOELN, doneRefs: [SIXT.nr] } });
+    await tam.ready();
+    tam.addOrder(SIXT);
+    assert.ok(await until(() => tam.accepted.includes(SIXT.nr), 15000), tam.logs().join('\n'));
+  });
+
+  it('alter Eintrag, laut Auftragsbuch angenommen → bleibt gesperrt, Herkunft im Log', async () => {
+    tam = startTam({ gm: { places: KOELN, doneRefs: [SIXT.nr], orderbook: [{ ts: '2026-10-01T10:00:00Z', nr: SIXT.nr }] } });
+    await tam.ready();
+    tam.addOrder(SIXT);
+    assert.ok(await until(() => tam.logs().some((l) => l.includes(SIXT.nr) && /bereits bearbeitet/.test(l) && /angenommen/.test(l)), 5000), tam.logs().join('\n'));
+    assert.deepEqual(tam.dblclicks, []);
+  });
+
+  it('fehlgeschlagene Annahme sperrt nur befristet', async () => {
+    tam = startTam({ gm: { places: KOELN, doneRefs: [SIXT.nr],
+      doneInfo: { [SIXT.nr]: { at: Date.now() - 20 * MIN, why: 'Annahme fehlgeschlagen (vergeben)', exp: Date.now() - 5 * MIN } } } });
+    await tam.ready();
+    tam.addOrder(SIXT);
+    assert.ok(await until(() => tam.accepted.includes(SIXT.nr), 15000), tam.logs().join('\n'));
+  });
+
+  it('Fehlschlag wird mit Herkunft und Ablauf gemerkt', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder({ ...SIXT, onOpen: () => {} }); // Karte öffnet sich nicht
+    assert.ok(await until(() => (tam.store.get('doneInfo') || {})[SIXT.nr], 30000), 'kein done-Eintrag');
+    const info = tam.store.get('doneInfo')[SIXT.nr];
+    assert.match(info.why, /fehlgeschlagen/);
+    assert.ok(info.exp > Date.now() && info.exp - Date.now() <= 15 * MIN);
+  });
+});

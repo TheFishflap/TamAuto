@@ -93,7 +93,40 @@
   });
 
   let places = GM_getValue('places', { plz: [], orte: [], loadedAt: null, source: '' });
-  let done = new Set(GM_getValue('doneRefs', [])); // bereits bearbeitete Aufträge
+  // Bereits bearbeitete Aufträge (werden nicht erneut angenommen). Zu jedem Eintrag Herkunft und ggf. Ablauf:
+  // Angenommen = dauerhaft; fehlgeschlagene Annahme nur befristet (Auftrag kann später wieder veröffentlicht werden,
+  // z. B. vom anderen Anbieter zurückgegeben). Einträge älterer Versionen ohne Herkunft: laut Auftragsbuch
+  // angenommen → bleiben, sonst freigegeben (früher wurde auch jeder Fehlschlag dauerhaft gemerkt).
+  const FAIL_RETRY_MS = 15 * 60 * 1000;
+  let done = new Set(GM_getValue('doneRefs', []));
+  const doneInfo = GM_getValue('doneInfo', {});
+  (() => {
+    const legacy = [...done].filter((k) => !doneInfo[k]);
+    if (!legacy.length) return;
+    const booked = new Set(GM_getValue('orderbook', []).map((e) => String(e.nr || '').toUpperCase()));
+    legacy.forEach((k) => {
+      doneInfo[k] = booked.has(String(k).toUpperCase()) ? { at: 0, why: 'angenommen (laut Auftragsbuch, ältere Version)' }
+        : { at: 0, why: 'ältere Version, Herkunft unbekannt', exp: Date.now() };
+    });
+  })();
+  function isDone(k) {
+    if (!k || !done.has(k)) return false;
+    const i = doneInfo[k];
+    if (i && i.exp && i.exp <= Date.now()) { done.delete(k); delete doneInfo[k]; return false; }
+    return true;
+  }
+  function markDone(k, why, ttlMs = 0) {
+    if (!k) return;
+    done.delete(k); done.add(k); // ans Ende (Begrenzung auf die letzten 2000)
+    doneInfo[k] = Object.assign({ at: Date.now(), why }, ttlMs ? { exp: Date.now() + ttlMs } : {});
+  }
+  function saveDone() {
+    const keep = [...done].slice(-2000);
+    done = new Set(keep);
+    Object.keys(doneInfo).forEach((k) => { if (!done.has(k)) delete doneInfo[k]; });
+    GM_setValue('doneRefs', keep); GM_setValue('doneInfo', doneInfo);
+  }
+  const doneWhy = (k) => { const i = doneInfo[k] || {}; return `${i.at ? `${new Date(i.at).toLocaleString('de-DE')}, ` : ''}${i.why || 'Herkunft unbekannt'}`; };
   let timer = null;
   let lastRefreshOk = null;
   let busy = false;
@@ -421,9 +454,9 @@
   // Erfolgreiche Annahme verbuchen: Hauptauftrag + alle mit angenommenen Warenkorb-Einträge
   // (als erledigt merken, ins Auftragsbuch, in der Trefferquote als "angenommen")
   function bookAccepted(o) {
-    done.add(o.key || o.nr);
-    bulkOf(o).forEach((x) => done.add(x));
-    GM_setValue('doneRefs', [...done].slice(-2000));
+    markDone(o.key || o.nr, 'angenommen');
+    bulkOf(o).forEach((x) => markDone(x, `zusammen mit ${o.nr} angenommen`));
+    saveDone();
     recordOrder(o);
     const stats = hitStats();
     bulkOf(o).forEach((x) => {
@@ -1371,8 +1404,12 @@
         seen.add(o.key); log(`${o.key}: PLZ "${o.plz}" / Ort "${o.ort}" unplausibel – übersprungen`, 'err');
       });
       const noKey = all.filter((o) => !o.key);
-      const old = all.filter((o) => o.key && done.has(o.key));
-      const orders = all.filter((o) => o.valid && o.key && !done.has(o.key));
+      const old = all.filter((o) => isDone(o.key));
+      const orders = all.filter((o) => o.valid && o.key && !isDone(o.key));
+      // Passende, aber übersprungene Aufträge einmal mit Herkunft des Eintrags protokollieren
+      old.filter((o) => o.valid && matches(o) && !seen.has(`${o.key}|done`)).forEach((o) => {
+        seen.add(`${o.key}|done`); log(`${o.key} · ${o.plz} ${o.ort} passt, aber bereits bearbeitet – ${doneWhy(o.key)}`);
+      });
       // Gesperrte (Excel „nicht annehmen“) nicht annehmen, aber auch nicht als erledigt merken → nach Entsperren wieder möglich
       // Priorität: 1) mehrere Aufträge am selben Ort (gleiche Straße + PLZ + Ort → landen bei TAM gemeinsam im
       // Warenkorb und werden mit einer Annahme übernommen), 2) Summe der Preise am Ort, 3) Preis des Auftrags.
@@ -1420,7 +1457,7 @@
         if (n >= cfg.maxPerCycle) { log(`Limit ${cfg.maxPerCycle}/Zyklus erreicht.`); break; }
         const desc = `${o.nr || o.ref} · ${o.plz} ${o.ort} · ${o.dienst}${o.preis ? ' · ' + o.preis : ''}`;
         // Schon mit einem anderen Auftrag im Warenkorb (Bulk) angenommen → nicht erneut versuchen
-        if (done.has(o.key) || done.has((o.nr || '').toUpperCase())) { log(`${o.key}: bereits zusammen mit einem anderen Auftrag angenommen.`, 'ok'); continue; }
+        if (isDone(o.key) || isDone((o.nr || '').toUpperCase())) { log(`${o.key}: bereits zusammen mit einem anderen Auftrag angenommen.`, 'ok'); continue; }
         // Vor jeder Annahme erneut prüfen: richtiger Tab, Zeile noch in dieser Tabelle
         if (!onPublishedTab() || visibleGrid() !== grid || !grid.contains(o.row)) {
           log('Abbruch: Tab gewechselt oder Tabelle neu geladen – keine Annahme.', 'err'); recheck = true; break;
@@ -1440,11 +1477,12 @@
           bookAccepted(o); n++;
         } else {
           log(`Annahme fehlgeschlagen: ${desc}`, 'err');
-          notify('TAM: Annahme fehlgeschlagen', desc); done.add(o.key); // nicht endlos erneut versuchen
+          notify('TAM: Annahme fehlgeschlagen', desc);
+          markDone(o.key, `Annahme fehlgeschlagen${o.failReason ? ` (${o.failReason})` : ''}`, FAIL_RETRY_MS); // nicht sofort erneut versuchen
         }
         await sleep(1500);
       }
-      GM_setValue('doneRefs', [...done].slice(-2000));
+      saveDone();
     } catch (e) {
       log(`Fehler: ${e.message}`, 'err');
     } finally { releaseBusy(); }
