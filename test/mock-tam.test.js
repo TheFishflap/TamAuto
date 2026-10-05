@@ -334,3 +334,62 @@ describe('Tempo der Annahme (P2 Popup-Erkennung)', { skip }, () => {
     assert.deepEqual(tam.accepted.sort(), ['MW3000002', 'MW3153893']);
   });
 });
+
+// P3: Live-Verbindungen (ntfy) bleiben auch nach Schlaf/Netzwechsel verbunden
+describe('ntfy-Verbindung neu aufbauen (P3)', { skip }, () => {
+  const PUSH = 'tam-zrd6g634b4wej7aqhsycc9qm', RET = 'tamret-';
+  const gm = (sec) => ({ places: KOELN, pushOnV3: true, ntfyWatchdogSec: sec });
+
+  it('keine Lebenszeichen → Push-Verbindung wird neu aufgebaut', async () => {
+    tam = startTam({ gm: gm(1) });
+    await tam.ready();
+    tam.esEmit(PUSH, 'open');
+    assert.equal(tam.opened(PUSH), 1);
+    assert.ok(await until(() => tam.opened(PUSH) >= 2, 4000), 'nicht neu verbunden');
+    assert.equal(tam.live(PUSH).length, 1, 'alte Verbindung nicht geschlossen');
+  });
+
+  it('regelmäßige keepalives → keine neue Verbindung', async () => {
+    tam = startTam({ gm: gm(1) });
+    await tam.ready();
+    tam.esEmit(PUSH, 'open');
+    for (let i = 0; i < 8; i++) { await sleep(300); tam.esEmit(PUSH, 'keepalive'); }
+    assert.equal(tam.opened(PUSH), 1);
+  });
+
+  it('Tab wird nach längerer Stille wieder sichtbar → sofort neu verbinden', async () => {
+    tam = startTam({ gm: gm(4) });
+    await tam.ready();
+    tam.esEmit(PUSH, 'open');
+    await sleep(2200);
+    tam.document.dispatchEvent(new tam.window.Event('visibilitychange'));
+    assert.ok(await until(() => tam.opened(PUSH) >= 2, 300), 'nicht sofort neu verbunden');
+  });
+
+  it('Verbindung endgültig geschlossen → neuer Versuch', async () => {
+    tam = startTam({ gm: gm(60) });
+    await tam.ready();
+    tam.esEmit(PUSH, 'open');
+    tam.esEmit(PUSH, 'error', true);
+    assert.ok(await until(() => tam.opened(PUSH) >= 2, 4000), 'kein neuer Versuch');
+  });
+
+  it('Rückgabe-Kanal: neu verbinden und Verpasstes nachholen', async () => {
+    tam = startTam({ gm: gm(1) });
+    await tam.ready();
+    const polls = () => tam.fetches.filter((f) => f.url.includes(RET) && /poll=1/.test(f.url)).length;
+    await until(() => polls() >= 1, 2000);
+    tam.esEmit(RET, 'open');
+    assert.ok(await until(() => tam.opened(RET) >= 2 && polls() >= 2, 4000), `Verbindungen ${tam.opened(RET)}, Abrufe ${polls()}`);
+  });
+});
+
+describe('Log', { skip }, () => {
+  it('Millisekunden nur als ganze Zahl', async () => {
+    tam = startTam({ gm: { places: KOELN, pushOnV3: true } });
+    await tam.ready();
+    tam.ntfy('tam-zrd6g634b4wej7aqhsycc9qm', { v: 1, src: 'Test', ts: Date.now() - 123.456, test: true });
+    assert.ok(await until(() => tam.logs().some((l) => /Push-Signal empfangen/.test(l)), 2000), tam.logs().join('\n'));
+    assert.ok(!tam.logs().some((l) => /\d[.,]\d+ ?ms\b/.test(l)), tam.logs().filter((l) => /ms\b/.test(l)).join('\n'));
+  });
+});

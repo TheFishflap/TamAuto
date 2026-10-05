@@ -92,7 +92,11 @@ function startTam(opts = {}) {
   const fetches = [];
   w.fetch = async (url, o) => { fetches.push({ url, o }); return { ok: true, status: 200, text: async () => '', json: async () => ({}) }; };
   const sources = [];
-  w.EventSource = class { constructor(url) { this.url = url; this.readyState = 0; sources.push(this); } close() { this.readyState = 2; } };
+  w.EventSource = class {
+    constructor(url) { this.url = url; this.readyState = 0; this.ls = {}; sources.push(this); }
+    addEventListener(t, fn) { (this.ls[t] = this.ls[t] || []).push(fn); }
+    close() { this.readyState = 2; }
+  };
 
   const timers = new Set();
   const { setTimeout: st, setInterval: si } = w;
@@ -196,6 +200,16 @@ function startTam(opts = {}) {
   // ntfy-Nachricht an alle Live-Verbindungen eines Kanals zustellen (wie ntfy per SSE)
   tam.ntfy = (topicPart, obj) => sources.filter((x) => x.url.includes(topicPart) && x.readyState !== 2 && x.onmessage)
     .forEach((x) => x.onmessage({ data: JSON.stringify({ event: 'message', message: JSON.stringify(obj) }) }));
+  // Ereignis einer Live-Verbindung auslösen: 'open', 'keepalive' oder 'error' (closed: Verbindung endgültig zu)
+  tam.esEmit = (topicPart, type, closed) => sources.filter((x) => x.url.includes(topicPart) && x.readyState !== 2).forEach((x) => {
+    if (type === 'open') x.readyState = 1;
+    if (type === 'error' && closed) x.readyState = 2;
+    const ev = { type, data: JSON.stringify({ event: type }) };
+    if (x[`on${type}`]) x[`on${type}`](ev);
+    (x.ls[type] || []).forEach((fn) => fn(ev));
+  });
+  tam.live = (topicPart) => sources.filter((x) => x.url.includes(topicPart) && x.readyState !== 2);
+  tam.opened = (topicPart) => sources.filter((x) => x.url.includes(topicPart)).length;
   tam.posts = (topicPart) => fetches.filter((f) => f.url.includes(topicPart) && f.o && f.o.method === 'POST').map((f) => JSON.parse(f.o.body));
   tam.removeOrder = (nr) => [...d.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')]
     .filter((r) => r.textContent.includes(nr)).forEach((r) => r.remove());

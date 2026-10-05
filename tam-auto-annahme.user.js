@@ -87,7 +87,7 @@
     schedOn: GM_getValue('schedOn', true),
     schedFrom: GM_getValue('schedFrom', '08:00'),
     schedTo: GM_getValue('schedTo', '18:00'),
-    pushOn: GM_getValue('pushOnV2', false),         // Push-Signal (App „TAM-Signal“ über ntfy) – Standard aus (V2: gilt einmal für alle)
+    pushOn: GM_getValue('pushOnV3', true),          // Push-Signal (App „TAM-Signal“ über ntfy) – Standard an (V3: gilt einmal für alle)
     pushTopic: GM_getValue('pushTopic', 'tam-zrd6g634b4wej7aqhsycc9qm'), // gemeinsamer Kanal der IB Thomée // Silent Reload: Hintergrund-Abfrage alle x s (0 = aus, Standard)
     burstSec: GM_getValue('burstSecV2', 3), // Dauer des Burst-Refresh in s (1 Refresh pro Sekunde), Standard 3
   });
@@ -219,6 +219,7 @@
   addEventListener('pagehide', saveLogHistory);
 
   function log(msg, level = 'info') {
+    msg = String(msg).replace(/-?\d+[.,]\d+(?= ?ms\b)/g, (v) => String(Math.round(parseFloat(v.replace(',', '.'))))); // ms nur ganzzahlig
     const line = `${new Date().toLocaleTimeString('de-DE')}  ${msg}`;
     logHistory.push(`${new Date().toLocaleDateString('de-DE')} ${line}${level === 'err' ? '  [Fehler]' : ''}`);
     if (logHistory.length > LOG_KEEP + 500) logHistory = logHistory.slice(-LOG_KEEP);
@@ -601,14 +602,13 @@
   let retES = null;
   function startReturns() {
     const handle = (raw) => { try { const m = JSON.parse(raw); if (m.event === 'message') onRetMessage(JSON.parse(m.message)); } catch (e) { /* ignore */ } };
-    const since = Math.floor(new Date(new Date().toDateString()).getTime() / 1000); // seit Mitternacht nachholen
-    licFetch(`${LIC_NTFY}/${RET_TOPIC}/json?poll=1&since=${since}`).then((r) => r.text())
-      .then((t) => t.split('\n').filter(Boolean).forEach(handle)).catch(() => {});
-    try {
-      const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-      retES = new W.EventSource(`${LIC_NTFY}/${RET_TOPIC}/sse`);
-      retES.onmessage = (ev) => handle(ev.data);
-    } catch (e) { /* ohne Live-Verbindung: nur Nachholen */ }
+    const catchUp = () => { // seit Mitternacht nachholen (doppelte Meldungen schaden nicht)
+      const since = Math.floor(new Date(new Date().toDateString()).getTime() / 1000);
+      licFetch(`${LIC_NTFY}/${RET_TOPIC}/json?poll=1&since=${since}`).then((r) => r.text())
+        .then((t) => t.split('\n').filter(Boolean).forEach(handle)).catch(() => {});
+    };
+    catchUp();
+    retES = ntfyStream(`${LIC_NTFY}/${RET_TOPIC}/sse`, { onMessage: (ev) => handle(ev.data), onReconnect: catchUp });
   }
   // Im Abgleich: heute angenommene Aufträge, die nach Verschwinden wieder in der Tabelle stehen = zurückgegeben
   function noteReturns(all) {
@@ -1880,6 +1880,39 @@
   // Silent-Abfrage mit Zufallsversatz 0–1,5 s (viele Nutzer → keine gleichzeitige Last-Spitze), Tabelle nur
   // bei neuem Auftrag laden. Doppelte Signale (2 Master-Handys) innerhalb von 10 s werden zusammengefasst.
   const PUSH_SERVER = 'https://ntfy.sh';
+  // ---- ntfy-Live-Verbindung mit Überwachung (Push-Signal, Rückgaben). Auf Android stirbt die Verbindung im
+  // schlafenden Tab oft lautlos (Status bleibt „verbunden“). Darum: ntfy sendet alle 45 s ein keepalive – fehlt jedes
+  // Lebenszeichen länger als NTFY_WATCHDOG_MS → neu verbinden. Verbindung endgültig zu → erneut versuchen (2 s … 30 s).
+  // Tab wieder sichtbar / Netz wieder da nach längerer Stille → sofort neu verbinden. onReconnect: z. B. Verpasstes holen.
+  const NTFY_WATCHDOG_MS = GM_getValue('ntfyWatchdogSec', 90) * 1000;
+  function ntfyStream(url, { onMessage, onState = () => {}, onReconnect = () => {} }) {
+    const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    let es = null, lastSeen = Date.now(), retryMs = 2000, retryT = 0, stopped = false;
+    const alive = () => { lastSeen = Date.now(); };
+    const connect = (why) => {
+      if (stopped) return;
+      clearTimeout(retryT);
+      if (es) { try { es.close(); } catch (e) { /* ignore */ } }
+      try { es = new W.EventSource(url); } catch (e) { onState(`Fehler: ${e.message}`); return; }
+      alive();
+      if (why) { onState(`${why} – verbindet neu …`); onReconnect(); } else onState('verbindet …');
+      es.onopen = () => { alive(); retryMs = 2000; onState('verbunden'); };
+      es.addEventListener('keepalive', alive);
+      es.onmessage = (ev) => { alive(); onMessage(ev); };
+      es.onerror = () => {
+        if (es.readyState !== 2) { onState('Verbindung unterbrochen – verbindet neu …'); return; } // Browser versucht selbst
+        onState(`Verbindung getrennt – neuer Versuch in ${Math.round(retryMs / 1000)} s`);
+        retryT = setTimeout(() => connect('Verbindung getrennt'), retryMs);
+        retryMs = Math.min(30000, retryMs * 2);
+      };
+    };
+    const iv = setInterval(() => { if (Date.now() - lastSeen > NTFY_WATCHDOG_MS) connect('keine Lebenszeichen'); }, Math.min(5000, NTFY_WATCHDOG_MS / 2));
+    const wake = () => { if (document.visibilityState !== 'hidden' && Date.now() - lastSeen > Math.min(20000, NTFY_WATCHDOG_MS / 2)) connect('Tab wieder aktiv'); };
+    document.addEventListener('visibilitychange', wake);
+    addEventListener('online', () => connect('Netz wieder da'));
+    connect('');
+    return { close() { stopped = true; clearInterval(iv); clearTimeout(retryT); document.removeEventListener('visibilitychange', wake); if (es) es.close(); } };
+  }
   let pushES = null, pushState = 'aus', lastPushAt = 0, pushCount = 0;
   // Mitlese-Liste für den Reiter „Push-Signal“ (letzte 100, bleibt über Neuladen erhalten)
   let pushLog = GM_getValue('pushLog', []);
@@ -1918,32 +1951,28 @@
     }).join('') || '<tr><td colspan="4" style="padding:4px;color:#555">Noch keine Signale empfangen.</td></tr>';
   }
   function startPush() {
-    if (pushES) { try { pushES.close(); } catch (e) { /* ignore */ } pushES = null; }
+    if (pushES) { pushES.close(); pushES = null; }
     if (!cfg.pushOn || !cfg.pushTopic) { pushState = 'aus'; renderPush(); return; }
-    const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-    try {
-      pushES = new W.EventSource(`${PUSH_SERVER}/${encodeURIComponent(cfg.pushTopic)}/sse`);
-    } catch (e) { pushState = `Fehler: ${e.message}`; renderPush(); return; }
-    pushState = 'verbindet …'; renderPush();
-    pushES.onopen = () => { pushState = 'verbunden – wartet auf Signal'; renderPush(); };
-    pushES.onerror = () => { pushState = 'Verbindung unterbrochen – verbindet neu …'; renderPush(); };
-    pushES.onmessage = (ev) => {
-      let d, sig = {};
-      try { d = JSON.parse(ev.data); } catch (e) { return; }
-      if (!d || d.event !== 'message') return; // keepalive / open
-      try { sig = JSON.parse(d.message || '{}'); } catch (e) { sig = { src: '?', raw: String(d.message || '').slice(0, 60) }; }
-      onPushSignal(sig);
-    };
+    pushES = ntfyStream(`${PUSH_SERVER}/${encodeURIComponent(cfg.pushTopic)}/sse`, {
+      onState: (st) => { pushState = st === 'verbunden' ? 'verbunden – wartet auf Signal' : st; renderPush(); },
+      onMessage: (ev) => {
+        let d, sig = {};
+        try { d = JSON.parse(ev.data); } catch (e) { return; }
+        if (!d || d.event !== 'message') return; // keepalive / open
+        try { sig = JSON.parse(d.message || '{}'); } catch (e) { sig = { src: '?', raw: String(d.message || '').slice(0, 60) }; }
+        onPushSignal(sig);
+      },
+    });
   }
   function onPushSignal(sig) {
     const now = Date.now();
     // negative Werte = Handyuhr geht gegenüber dem PC etwas vor (keine echte Laufzeit)
     const ms = (v) => (v < 0 ? `≈ 0 ms (Uhr Handy ${-v} ms voraus)` : `${v} ms`);
-    const lat = sig.ts ? ` · Handy→Script ${ms(now - sig.ts)}` : '';
+    const lat = sig.ts ? ` · Handy→Script ${ms(Math.round(now - sig.ts))}` : '';
     const lat2 = sig.nts ? ` · TAM-Benachrichtigung→Script ${ms(now - sig.nts)}` : '';
     const from = `${sig.src || '?'}${sig.test ? ' (Test)' : ''}`;
     const entry = addPushEntry({ at: now, src: String(sig.src || '?').slice(0, 32), test: !!sig.test,
-      lat: sig.ts ? now - sig.ts : null, tam: sig.nts ? now - sig.nts : null, res: '' });
+      lat: sig.ts ? Math.round(now - sig.ts) : null, tam: sig.nts ? Math.round(now - sig.nts) : null, res: '' });
     if (sig.test) { log(`Push-Signal empfangen: ${from}${lat} – Test, keine Abfrage.`, 'ok'); pushState = `verbunden · Test von ${from} ${new Date().toLocaleTimeString('de-DE')}`; renderPush(); setPushResult(entry, 'Test – angekommen'); return; }
     if (now - lastPushAt < 10000) { log(`Push-Signal von ${from}${lat} – doppelt (innerhalb 10 s), zusammengefasst.`, 'debug'); setPushResult(entry, 'doppelt – zusammengefasst'); return; }
     lastPushAt = now; pushCount++;
@@ -2633,7 +2662,7 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
     $('tamauto-push').checked = cfg.pushOn;
     $('tamauto-push-topic').value = cfg.pushTopic;
     $('tamauto-push').onchange = (e) => {
-      cfg.pushOn = e.target.checked; GM_setValue('pushOnV2', cfg.pushOn);
+      cfg.pushOn = e.target.checked; GM_setValue('pushOnV3', cfg.pushOn);
       log(cfg.pushOn ? `Push-Signal an (Kanal ${cfg.pushTopic}).` : 'Push-Signal aus.'); startPush();
     };
     $('tamauto-push-topic').onchange = (e) => {
