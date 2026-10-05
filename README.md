@@ -398,6 +398,12 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.19.0 – 2026-10-05
+- **Geschützte Kanäle zwischen den Geräten:** Jede Installation hat einen eigenen Geräteschlüssel. Neue Lizenzen enthalten
+  einen Kanal-Schlüssel, den nur dieses Gerät lesen kann. Damit laufen die Rückgabe-Meldungen über einen nicht erratbaren
+  Kanal, verschlüsselt und fälschungssicher. Lizenzen ohne Kanal-Schlüssel arbeiten wie bisher; die Umstellung erfolgt
+  automatisch, sobald IB Thomée die Lizenz neu zustellt.
+
 ### 1.18.0 – 2026-10-05
 - **Lizenz an das Gerät gebunden:** Wird ein Tampermonkey-Backup auf einem anderen Gerät eingespielt, ist dort eine eigene
   Freigabe nötig („Neues Gerät erkannt“). Auf demselben Gerät bleibt die Lizenz auch nach Löschen der Website-Daten oder
