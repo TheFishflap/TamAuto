@@ -28,7 +28,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Fern-Lizenzierung** | „Lizenz anfragen“ direkt im Script → Freischaltung in der Lizenzverwaltung von IB Thomée → das Script **aktiviert sich selbst**; Verlängerung per Klick (Reiter Info); signierte **Sperrliste** zum Entziehen (7 Tage offline erlaubt) |
 | **Verzögerung** | Standard an: 0,12 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0–0,5 s |
 | **Termin offen** | Terminvereinbarung nach der Annahme weggeklickt und SLA-Ende (laut „Angenommene Aufträge“) in ≤ 2 h → **rote 1** im Auftragsbuch |
-| **„Ihr Zeichen“ neu** | Optional (Erweiterte Einstellungen): Doppelklick auf den Auftrag im Auftragsbuch hängt in TAM bei „Ihr Zeichen“ **neu** an |
+| **Ihr Zeichen** | Im Auftragsbuch: Haken „Ihr Zeichen setzen“, Text (max. 20 Zeichen wie in TAM), Aufträge anklicken, „In TAM übernehmen“ – still gespeichert, ohne Fenster; belegte Felder (grau) werden nicht überschrieben |
 
 ### 🔄 Aktualisierung – gezielt statt dauerhaft
 | | |
@@ -394,6 +394,13 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.20.4 – 2026-10-06
+- **Ihr Zeichen im Auftragsbuch** (statt Doppelklick über „Erweiterte Einstellungen“): Haken „Ihr Zeichen setzen“, Text
+  eingeben (höchstens 20 Zeichen wie in TAM), Aufträge anklicken (blau unterstrichen), „In TAM übernehmen“ setzt alle
+  ausgewählten auf einmal. **Still gespeichert** – dieselbe Anfrage wie TAMs Dialog, ohne Reiterwechsel und ohne Fenster.
+  Aufträge mit vorhandenem Zeichen werden nicht überschrieben und sind grau; neue Spalte „Ihr Zeichen“, abgeglichen mit
+  „Angenommene Aufträge“.
 
 ### 1.20.3 – 2026-10-06
 - **Tabelle bleibt aktuell ohne Neuladen:** Jede stille Abfrage (Silent Reload, Push-Signal, Nachfragen) gleicht die Tabelle

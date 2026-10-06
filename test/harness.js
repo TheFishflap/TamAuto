@@ -63,8 +63,11 @@ function startTam(opts = {}) {
     places: { v: 2, plz: [], orte: [], block: { plz: [], orte: [] }, loadedAt: new Date().toISOString(), source: 'Test' },
     ...(opts.gm || {}),
   }));
-  w.GM_getValue = (k, def) => (store.has(k) ? store.get(k) : def);
-  w.GM_setValue = (k, v) => store.set(k, v);
+  // wie Tampermonkey: Werte werden als Kopie gespeichert und geliefert (keine geteilten Objekte zwischen Tests/Aufrufen)
+  const copy = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
+  store.forEach((v, k) => store.set(k, copy(v)));
+  w.GM_getValue = (k, def) => (store.has(k) ? copy(store.get(k)) : def);
+  w.GM_setValue = (k, v) => store.set(k, copy(v));
   w.GM_info = { script: { version: (fs.readFileSync(SCRIPT_PATH, 'utf8').match(/@version\s+(\S+)/) || [])[1] } };
   w.GM_notification = () => {};
   const requests = [];
@@ -94,7 +97,9 @@ function startTam(opts = {}) {
   // fetch: TAM-Abfrage (GWT-RPC, Silent Reload/Push) liefert tam.rpc, alles andere leer
   w.fetch = async (url, o) => {
     fetches.push({ url, o });
-    const body = /\/gwt-rpc\//.test(url) ? tam.rpc : '';
+    const rpcBody = String((o && o.body) || '');
+    if (/saveMerkmal/.test(rpcBody)) tam.saves.push(rpcBody);
+    const body = !/\/gwt-rpc\//.test(url) ? '' : /saveMerkmal/.test(rpcBody) ? tam.rpcSave : tam.rpc;
     return { ok: true, status: 200, text: async () => body, json: async () => ({}) };
   };
   w.XMLHttpRequest.prototype.send = function () {}; // kein Netz im Test (das Script schneidet TAMs Anfrage beim Senden mit)
@@ -111,7 +116,7 @@ function startTam(opts = {}) {
   w.setInterval = (...a) => { const id = si.apply(w, a); timers.add(id); return id; };
 
   // ---- TAM-Verhalten
-  const tam = { accepted: [], closed: [], dblclicks: [], sources, fetches, requests, store, window: w, document: d, rpc: '//OK[]' };
+  const tam = { accepted: [], closed: [], dblclicks: [], sources, fetches, requests, store, window: w, document: d, rpc: '//OK[]', rpcSave: '//OK[[],0,7]', saves: [] };
 
   // Reiterwechsel: Klick auf einen Reiter der Hauptleiste
   const panels = () => [...d.querySelectorAll('li[id*="__"]')].filter((li) => d.getElementById(li.id.split('__').pop()) &&
@@ -147,7 +152,7 @@ function startTam(opts = {}) {
     const body = d.querySelector('#AgentVeroeffentlichteAuftraege .x-grid3-body');
     body.querySelectorAll('.x-grid-empty').forEach((x) => x.remove());
     const val = { teilAuftragNr: o.nr, besichtigungsPlz: o.plz, besichtigungsOrt: o.ort, besichtigungsStrasse: o.strasse || 'Teststr. 1',
-      cst_projekt_dienstleistung_name: o.dienst || 'Testdienst', preis: o.preis || '50,00 €', status: 'Veröffentlicht', referenz: o.ref || '',
+      id: o.id || '', cst_projekt_dienstleistung_name: o.dienst || 'Testdienst', preis: o.preis || '50,00 €', status: 'Veröffentlicht', referenz: o.ref || '',
       slaEndeAgent: o.sla || '' };
     const cell = (c, hidden) => `<td role="gridcell" class="x-grid3-col x-grid3-cell x-grid3-td-${c}"${hidden ? ' style="display:none;"' : ''}>` +
       `<div class="x-grid3-cell-inner x-grid3-col-${c}">${val[c] || ''}</div></td>`;
@@ -235,12 +240,14 @@ function startTam(opts = {}) {
   tam.ntfyRaw = (topicPart, text) => sources.filter((x) => x.url.includes(topicPart) && x.readyState !== 2 && x.onmessage)
     .forEach((x) => x.onmessage({ data: JSON.stringify({ event: 'message', message: text }) }));
   // Zeile in „Angenommene Aufträge“ (Kopie einer echten Zeile aus dem Mitschnitt, AuftragsNr/Endtermin gesetzt)
-  tam.addAccepted = (nr, sla) => {
+  tam.addAccepted = (nr, sla, extra = {}) => {
     const body = d.querySelector('#AgentEigeneAuftraege .x-grid3-body');
     const same = [...body.querySelectorAll('.x-grid3-row')].find((r) => r.querySelector('td.x-grid3-td-teilAuftragNr').textContent.trim() === nr);
     const row = same || body.querySelector('.x-grid3-row').cloneNode(true);
     row.querySelector('td.x-grid3-td-teilAuftragNr').textContent = nr;
     row.querySelector('td.x-grid3-td-slaEndeAgent').textContent = sla || '';
+    if (extra.id !== undefined) row.querySelector('td.x-grid3-td-id').textContent = extra.id;
+    if (extra.zeichen !== undefined) row.querySelector('td.x-grid3-td-zeichenAgent').textContent = extra.zeichen;
     if (!same) body.appendChild(row);
     return row;
   };

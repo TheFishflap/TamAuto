@@ -653,7 +653,7 @@ describe('Auftragsbuch: rote 1 (Terminvereinbarung weggeklickt, SLA ≤ 2 h)', {
   it('Endtermin in „Angenommene Aufträge“ in 1 h → rote 1 (auch beim Warenkorb-Auftrag)', async () => {
     await acceptWithTermin({ nearby: [{ nr: 'MW3000001', km: 0 }] });
     assert.equal(red().length, 0, 'rote 1 vor dem Lesen des Endtermins');
-    tam.addAccepted(ORDER.nr, inH(1)); tam.addAccepted('MW3000001', inH(1.5));
+    tam.addAccepted(ORDER.nr, inH(1), { zeichen: '' }); tam.addAccepted('MW3000001', inH(1.5), { zeichen: '' });
     tam.selectTab('AgentEigeneAuftraege');
     assert.ok(await until(() => red().length === 2, 3000), JSON.stringify(tam.store.get('orderbook')));
     assert.equal(red()[0].textContent, '1');
@@ -687,76 +687,68 @@ describe('Auftragsbuch: rote 1 (Terminvereinbarung weggeklickt, SLA ≤ 2 h)', {
   });
 });
 
-// „Ihr Zeichen“ um „neu“ ergänzen: Doppelklick im Auftragsbuch → Angenommene Aufträge → Rechtsklick → Dialog (echte Mitschnitte)
-describe('Ihr Zeichen „neu“ per Doppelklick im Auftragsbuch', { skip: !hasFixtures('angenommen-kontextmenue', 'angenommen-kurzzeichen') && 'Mitschnitte fehlen' }, () => {
-  const { JSDOM } = require('jsdom');
-  const part = (name, sel) => new JSDOM(fixture(name)).window.document.querySelector(sel).outerHTML;
-  const MENU = part('angenommen-kontextmenue', '.x-menu'), DIALOG = part('angenommen-kurzzeichen', '.x-window');
-  const inH = (h) => { const d = new Date(Date.now() + h * 3600000), p = (n) => String(n).padStart(2, '0');
-    return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
-  // TAM-Verhalten: Rechtsklick auf Zeile → Menü; „Ihr Zeichen bearbeiten“ → Dialog; Speichern → Wert merken
-  function wireTam(t) {
-    t.zeichen = {};
-    const d = t.document, holder = (html) => { const x = d.createElement('div'); x.innerHTML = html; return x.firstElementChild; };
-    d.querySelector('#AgentEigeneAuftraege .x-grid3-body').addEventListener('contextmenu', (e) => {
-      const row = e.target.closest('.x-grid3-row'); if (!row) return;
-      const nr = row.querySelector('td.x-grid3-td-teilAuftragNr').textContent.trim(), old = row.querySelector('td.x-grid3-td-zeichenAgent').textContent.trim();
-      const menu = holder(MENU); d.body.appendChild(menu);
-      [...menu.querySelectorAll('.x-menu-item')].find((i) => /ihr zeichen bearbeiten/i.test(i.textContent)).addEventListener('click', () => {
-        menu.remove();
-        const dlg = holder(DIALOG.replace(/MW3196225/g, nr)); d.body.appendChild(dlg);
-        const inp = dlg.querySelector('input'); inp.value = old;
-        const [save, cancel] = [...dlg.querySelectorAll('.x-btn button')];
-        save.addEventListener('click', () => { t.zeichen[nr] = inp.value; row.querySelector('td.x-grid3-td-zeichenAgent').textContent = inp.value; dlg.remove(); });
-        cancel.addEventListener('click', () => dlg.remove());
-      });
-    });
-  }
-  const terminWin = (t) => {
-    const m = t.document.createElement('div'); m.className = 'x-window x-component';
-    m.innerHTML = '<div class="x-window-header"><span class="x-window-header-text">Terminvereinbarung</span></div><div class="x-window-body">Termin <input type="checkbox"></div>' +
-      '<table class="x-btn"><tbody><tr><td><button>Abbrechen</button></td></tr></tbody></table>';
-    m.querySelector('button').addEventListener('click', () => m.remove());
-    t.document.body.appendChild(m);
-  };
-  async function setup(zeichenOn, old) {
-    tam = startTam({ gm: { places: KOELN, zeichenOn } });
+// „Ihr Zeichen“ im Auftragsbuch setzen: auswählen → „In TAM übernehmen“ → still per saveMerkmal (wie im Mitschnitt)
+describe('Ihr Zeichen still setzen (Auftragsbuch)', { skip }, () => {
+  const today = new Date().toISOString();
+  const BOOK = [{ ts: today, nr: 'MW3190201', plz: '50825', ort: 'Köln', preis: 50 }, { ts: today, nr: 'MW3190202', plz: '50825', ort: 'Köln', preis: 60 }];
+  const $ = (id) => tam.document.getElementById(id);
+  const bookRow = (nr) => [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.textContent.includes(nr));
+  async function setup(gm = {}) {
+    tam = startTam({ gm: { places: KOELN, orderbook: BOOK, ...gm } });
     await tam.ready();
-    wireTam(tam);
-    tam.addOrder({ ...ORDER, afterAccept: (t) => setTimeout(() => terminWin(t), 200) });
-    assert.ok(await until(() => (tam.store.get('orderbook') || []).length, 8000));
-    await sleep(3000);
-    const row = tam.addAccepted(ORDER.nr, inH(1));
-    row.querySelector('td.x-grid3-td-zeichenAgent').textContent = old;
+    // TAM-Anfrage übernehmen (für Kopfzeilen/Prüfsumme), Angenommene Aufträge mit IDs und Zeichen
+    const bar = [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-toolbar')].find((x) => /Einträge pro Seite/.test(x.textContent));
+    bar.querySelectorAll('.x-btn')[4].querySelector('button').click();
+    await sleep(1200);
+    tam.addAccepted('MW3190201', '', { id: '3705231', zeichen: '' });
+    tam.addAccepted('MW3190202', '', { id: '3705232', zeichen: 'PM' });
     tam.selectTab('AgentEigeneAuftraege');
-    await until(() => tam.document.querySelector('#tamauto-ob-rows span.tamauto-termin'), 3000);
+    assert.ok(await until(() => tam.store.get('orderbook').every((e) => e.tid), 3000), 'Abgleich mit „Angenommene Aufträge“ fehlt');
     tam.selectTab('AgentVeroeffentlichteAuftraege');
     await sleep(500);
   }
-  const dbl = (el) => el.dispatchEvent(new tam.window.MouseEvent('dblclick', { bubbles: true }));
 
-  it('eingeschaltet: Doppelklick auf die rote 1 → „ neu“ angehängt, rote 1 weg, zurück in „Veröffentlichte Aufträge“', async () => {
-    await setup(true, 'PM Okt 07 10 T');
-    dbl(tam.document.querySelector('#tamauto-ob-rows span.tamauto-termin'));
-    assert.ok(await until(() => tam.zeichen[ORDER.nr], 8000), tam.logs().slice(-6).join('\n'));
-    assert.equal(tam.zeichen[ORDER.nr], 'PM Okt 07 10 T neu');
-    assert.ok(await until(() => tam.onPublished(), 3000), 'nicht zurückgewechselt');
-    assert.ok(await until(() => !tam.document.querySelector('#tamauto-ob-rows span.tamauto-termin'), 2000), 'rote 1 noch da');
+  it('Eingabefeld: höchstens 20 Zeichen, Standard „neu“', async () => {
+    await setup();
+    assert.equal($('tamauto-zeichen-text').maxLength, 20);
+    assert.equal($('tamauto-zeichen-text').value, 'neu');
   });
 
-  it('„neu“ steht schon drin → nicht doppelt', async () => {
-    await setup(true, 'PM neu');
-    dbl([...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.textContent.includes(ORDER.nr)));
-    assert.ok(await until(() => tam.zeichen[ORDER.nr], 8000), tam.logs().slice(-6).join('\n'));
-    assert.equal(tam.zeichen[ORDER.nr], 'PM neu');
+  it('vorhandenes Zeichen aus „Angenommene Aufträge“ im Auftragsbuch, grau', async () => {
+    await setup();
+    assert.ok(await until(() => bookRow('MW3190202') && bookRow('MW3190202').textContent.includes('PM'), 2000));
+    assert.equal(bookRow('MW3190202').style.background, 'rgb(238, 238, 238)');
   });
 
-  it('ausgeschaltet (Standard): Doppelklick tut nichts', async () => {
-    await setup(false, 'PM');
-    dbl(tam.document.querySelector('#tamauto-ob-rows span.tamauto-termin'));
-    await sleep(1500);
-    assert.deepEqual(tam.zeichen, {});
-    assert.ok(tam.onPublished());
+  it('auswählen und übernehmen → still gespeichert (ID kodiert wie TAM), belegte Aufträge übersprungen', async () => {
+    await setup();
+    $('tamauto-zeichen-on').click();
+    bookRow('MW3190201').click();
+    bookRow('MW3190202').click(); // grau/belegt → nicht auswählbar
+    assert.match($('tamauto-zeichen-go').textContent, /\(1\)/);
+    $('tamauto-zeichen-go').click();
+    assert.ok(await until(() => tam.saves.length, 3000), tam.logs().slice(-4).join('\n'));
+    assert.equal(tam.saves.length, 1);
+    assert.match(tam.saves[0], /\|saveMerkmal\|java\.lang\.Long\/4227064769\|java\.lang\.String\/2004016611\|neu\|1\|2\|3\|4\|2\|5\|6\|5\|OImP\|7\|$/);
+    assert.ok(await until(() => (tam.store.get('orderbook').find((e) => e.nr === 'MW3190201') || {}).zeichen === 'neu', 2000));
+    assert.equal(tam.store.get('orderbook').find((e) => e.nr === 'MW3190202').zeichen, 'PM');
+  });
+
+  it('TAM meldet Fehler → Zeichen nicht übernommen', async () => {
+    await setup();
+    tam.rpcSave = '//EX[1,["com.google.gwt.user.client.rpc.SerializationException"]]';
+    $('tamauto-zeichen-on').click();
+    bookRow('MW3190201').click();
+    $('tamauto-zeichen-go').click();
+    assert.ok(await until(() => tam.saves.length, 3000));
+    await sleep(300);
+    assert.ok(!tam.store.get('orderbook').find((e) => e.nr === 'MW3190201').zeichen);
+  });
+
+  it('ausgeschaltet (Standard): Klick wählt nichts aus', async () => {
+    await setup();
+    bookRow('MW3190201').click();
+    assert.equal($('tamauto-zeichen-go').disabled, true);
   });
 });
 

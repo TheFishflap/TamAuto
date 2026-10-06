@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.20.3
+// @version      1.20.4
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -78,7 +78,8 @@
     delayRandomMs: Math.min(500, GM_getValue('delayRandomMsV3', 80)), // Streuung 0 … x ms (0–500, Standard 80 ms; V3 = neuer Standard für alle)
     hideTips: GM_getValue('hideTips', false), // alle ?-Erklärungen ausblenden
     colorRows: GM_getValue('colorRows', true),   // Aufträge in der TAM-Tabelle einfärben (nur lokal in diesem Browser) – Standard an
-    zeichenOn: GM_getValue('zeichenOn', false), // Doppelklick im Auftragsbuch: „Ihr Zeichen“ um „neu“ ergänzen – Standard aus
+    zeichenOn: GM_getValue('zeichenOn', false),     // Auftragsbuch: „Ihr Zeichen“ setzen (Auswahl + „In TAM übernehmen“) – Standard aus
+    zeichenText: GM_getValue('zeichenText', 'neu'), // Text für „Ihr Zeichen“ (TAM erlaubt höchstens 20 Zeichen)
     wakeLock: GM_getValue('wakeLock', /android/i.test(navigator.userAgent)), // Bildschirm anlassen – auf Android standardmäßig an
     // Priorität bei mehreren Treffern: Stufe 1–3 mit je einem Kriterium (siehe PRIO_CRIT), aus dem alten
     // Dropdown (prioMode) einmalig übernommen
@@ -453,7 +454,7 @@
   // Das Fenster kann schon vor dem Eintrag ins Auftragsbuch kommen → vormerken und beim Eintragen setzen.
   const SLA_SOON_MS = 2 * 3600 * 1000;
   const slaMs = (s) => { const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})/.exec(String(s || '')); return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5]).getTime() : null; };
-  const terminRed = (e) => { const t = slaMs(e.sla); return !!e.terminWeg && !e.zeichenNeu && t !== null && t - new Date(e.ts).getTime() <= SLA_SOON_MS; };
+  const terminRed = (e) => { const t = slaMs(e.sla); return !!e.terminWeg && !e.zeichen && t !== null && t - new Date(e.ts).getTime() <= SLA_SOON_MS; };
   const terminPending = new Set();
   function markTermin(nrs) {
     const up = new Set(nrs.filter(Boolean).map((x) => String(x).toUpperCase()));
@@ -463,77 +464,76 @@
     up.forEach((x) => terminPending.add(x));
     GM_setValue('orderbook', book);
   }
-  // „Ihr Zeichen“ eines angenommenen Auftrags um „neu“ ergänzen (Doppelklick im Auftragsbuch, Erweiterte Einstellungen):
-  // Reiter „Angenommene Aufträge“ → Rechtsklick auf die Zeile (AuftragsNr in ausgeblendeter Spalte) → „Ihr Zeichen
-  // bearbeiten“ → Dialog prüfen (richtiger Auftrag) → „neu“ anhängen → Speichern → zurück. Währenddessen keine Annahme.
-  const onAcceptedTab = () => { const li = document.querySelector(`li[id$="__${cfg.acceptedTabId}"]`), p = document.getElementById(cfg.acceptedTabId);
-    return !!li && li.classList.contains('x-tab-strip-active') && !!p && !p.closest('.x-hide-display'); };
-  async function addZeichenNeu(nr) {
-    if (busy) { log(`${nr}: „Ihr Zeichen“ wartet auf den laufenden Abgleich …`, 'debug'); await waitFor(() => !busy, 15000, 50); } // auch laufender Refresh
-    if (busy) { log('Gerade läuft eine Annahme – Doppelklick bitte gleich noch einmal.', 'err'); return; }
-    busy = true;
-    const back = onPublishedTab();
-    let dlg = null;
-    try {
-      if (!onAcceptedTab()) {
-        const li = document.querySelector(`li[id$="__${cfg.acceptedTabId}"]`);
-        if (!li) throw new Error('Reiter „Angenommene Aufträge“ nicht gefunden');
-        fire(li.querySelector('.x-tab-strip-text') || li);
-      }
-      const row = await waitForDom(() => onAcceptedTab() && [...document.querySelectorAll(`#${cfg.acceptedTabId} .x-grid3-row`)]
-        .find((r) => sameNr(text(r.querySelector('td.x-grid3-td-teilAuftragNr')), nr)), 8000);
-      if (!row) throw new Error('Auftrag in „Angenommene Aufträge“ nicht gefunden');
-      const cell = [...row.querySelectorAll('td.x-grid3-cell')].find(visible) || row;
-      fire(cell, ['mousedown', 'mouseup', 'click']);
-      const r = cell.getBoundingClientRect();
-      cell.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left + 5, clientY: r.top + 5 }));
-      const item = await waitForDom(() => [...document.querySelectorAll('.x-menu .x-menu-item')]
-        .find((i) => visible(i) && /^ihr zeichen bearbeiten$/i.test(text(i)) && !i.classList.contains('x-item-disabled')), 3000);
-      if (!item) throw new Error('Menüpunkt „Ihr Zeichen bearbeiten“ nicht gefunden');
-      fire(item);
-      dlg = await waitForDom(() => visibleWindows().find((w) => /ihr zeichen bearbeiten/i.test(winTitle(w))), 5000);
-      if (!dlg) throw new Error('Dialog „Ihr Zeichen bearbeiten“ öffnete sich nicht');
-      if (!text(dlg).toUpperCase().includes(nrBase(nr))) throw new Error('Dialog gehört zu einem anderen Auftrag');
-      const inp = dlg.querySelector('input.x-form-text, input[type=text]');
-      if (!inp) throw new Error('Eingabefeld nicht gefunden');
-      const old = inp.value.trim(), neu = /(^|\s)neu(\s|$)/i.test(old) ? old : (old ? `${old} neu` : 'neu');
-      inp.focus(); inp.value = neu;
-      ['input', 'keyup', 'change'].forEach((t) => inp.dispatchEvent(new Event(t, { bubbles: true })));
-      inp.blur();
-      const save = findButton(/^speichern$/i, dlg);
-      if (!save) throw new Error('Button „Speichern“ nicht gefunden');
-      clickBtn(save);
-      if (!(await waitForDom(() => !visible(dlg) || !dlg.isConnected, 5000))) throw new Error('Dialog blieb offen – nicht gespeichert');
-      dlg = null;
-      const book = GM_getValue('orderbook', []);
-      book.forEach((e) => { if (sameNr(e.nr, nr)) e.zeichenNeu = 1; });
-      GM_setValue('orderbook', book); renderOrderbook();
-      log(`${nr}: „Ihr Zeichen“ ${old === neu ? `enthält schon „neu“ (${old})` : `„${old || '–'}“ → „${neu}“`} gespeichert.`, 'ok');
-    } catch (e) {
-      log(`${nr}: „Ihr Zeichen“ nicht gesetzt – ${e.message}.`, 'err');
-      if (dlg) { const c = findButton(/^abbrechen$/i, dlg); if (c) clickBtn(c); }
-    } finally {
-      busy = false;
-      if (back && !onPublishedTab()) clickPublishedTab();
-      releaseBusy();
+  // „Ihr Zeichen“ (TAM: Merkmal des Auftrags, höchstens 20 Zeichen) still setzen – dieselbe Anfrage, die TAM beim
+  // Speichern im Dialog sendet: IAuftragService.saveMerkmal(Long interne ID, String Text). Kopfzeilen, Modul und
+  // Prüfsumme stammen aus der mitgeschnittenen Listenabfrage (tamLoadReq). Kein Reiterwechsel, kein Dialog.
+  const ZEICHEN_MAX = 20;
+  const zeichenSel = new Set(); // im Auftragsbuch ausgewählte AuftragsNrn
+  const GWT64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_';
+  const gwtLong = (n) => { let v = BigInt(n), out = ''; do { out = GWT64[Number(v & 63n)] + out; v >>= 6n; } while (v > 0n); return out; };
+  const gwtStr = (v) => String(v).replace(/\\/g, '\\\\').replace(/\|/g, '\\!');
+  async function saveIhrZeichen(tid, value) {
+    if (!tamLoadReq) throw new Error('TAM-Anfrage noch nicht übernommen – „Veröffentlichte Aufträge“ einmal aktualisieren');
+    const p = tamLoadReq.body.split('|'); // 7|0|n|Modul|Prüfsumme|Service|…
+    const svc = /AuftragService$/.test(p[5] || '') ? p[5] : 'de.tomcom.tam.client.rpc.gwt.IAuftragService';
+    const body = `7|0|7|${p[3]}|${p[4]}|${svc}|saveMerkmal|java.lang.Long/4227064769|java.lang.String/2004016611|${gwtStr(value)}|1|2|3|4|2|5|6|5|${gwtLong(tid)}|7|`;
+    const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    const res = await W.fetch(tamLoadReq.url, { method: 'POST', credentials: 'include', headers: tamLoadReq.headers, body });
+    const txt = await res.text();
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!/^\/\/OK/.test(txt)) throw new Error(`TAM meldet ${txt.slice(0, 60)}`);
+  }
+  // Zeile in „Angenommene Aufträge“ (DOM, auch wenn der Reiter gerade nicht sichtbar ist): interne ID und Ihr Zeichen
+  function acceptedInfo(nr) {
+    const r = [...document.querySelectorAll(`#${cfg.acceptedTabId} .x-grid3-row`)]
+      .find((x) => sameNr(text(x.querySelector('td.x-grid3-td-teilAuftragNr')), nr));
+    return r ? { tid: text(r.querySelector('td.x-grid3-td-id')).replace(/\D/g, ''), zeichen: text(r.querySelector('td.x-grid3-td-zeichenAgent')) } : null;
+  }
+  // Ausgewählte Aufträge: nur leere Felder setzen (nichts überschreiben)
+  async function applyZeichen() {
+    const val = String(cfg.zeichenText || '').trim().slice(0, ZEICHEN_MAX);
+    if (!val) { log('Ihr Zeichen: bitte einen Text eingeben.', 'err'); return; }
+    const book = GM_getValue('orderbook', []);
+    let ok = 0; const skip = [], fail = [];
+    for (const nr of [...zeichenSel]) {
+      const a = acceptedInfo(nr), e = [...book].reverse().find((x) => sameNr(x.nr, nr)) || {};
+      const has = (a && a.zeichen) || e.zeichen;
+      if (has) { skip.push(`${nr} („${has}“)`); continue; }
+      const tid = e.tid || (a && a.tid);
+      if (!tid) { fail.push(`${nr} (interne ID unbekannt – „Angenommene Aufträge“ einmal öffnen)`); continue; }
+      try {
+        await saveIhrZeichen(tid, val);
+        book.forEach((x) => { if (sameNr(x.nr, nr)) { x.zeichen = val; x.tid = tid; } });
+        ok++;
+      } catch (err) { fail.push(`${nr} (${err.message})`); }
     }
+    GM_setValue('orderbook', book);
+    zeichenSel.clear();
+    renderOrderbook();
+    log(`Ihr Zeichen „${val}“: ${ok} gesetzt` + (skip.length ? ` · übersprungen (schon belegt): ${skip.join(', ')}` : '') +
+      (fail.length ? ` · nicht gesetzt: ${fail.join('; ')}` : '') + '.', fail.length ? 'err' : 'ok');
   }
 
-  // Endtermin (Agent) aus „Angenommene Aufträge“ für vorgemerkte Aufträge übernehmen (AuftragsNr steht dort in einer
-  // ausgeblendeten Spalte – Zuordnung über die Spalten-ID)
+  // Aus „Angenommene Aufträge“ ins Auftragsbuch übernehmen, sobald die Tabelle dort angezeigt wird: interne ID,
+  // Ihr Zeichen (so, wie es in TAM steht) und – für vorgemerkte Aufträge – den Endtermin (Agent). AuftragsNr und ID
+  // stehen dort in ausgeblendeten Spalten (Zuordnung über die Spalten-ID).
   function scanAccepted() {
     const panel = document.getElementById(cfg.acceptedTabId);
     if (!panel || panel.closest('.x-hide-display')) return;
+    const info = new Map([...panel.querySelectorAll('.x-grid3-row')].map((r) => [text(r.querySelector('td.x-grid3-td-teilAuftragNr')).toUpperCase(), {
+      sla: text(r.querySelector('td.x-grid3-td-slaEndeAgent')), tid: text(r.querySelector('td.x-grid3-td-id')).replace(/\D/g, ''),
+      zeichen: text(r.querySelector('td.x-grid3-td-zeichenAgent')) }]));
     const book = GM_getValue('orderbook', []);
-    const open = book.filter((e) => e.terminWeg && !e.sla);
-    if (!open.length) return;
-    const sla = new Map([...panel.querySelectorAll('.x-grid3-row')].map((r) => [
-      text(r.querySelector('td.x-grid3-td-teilAuftragNr')).toUpperCase(), text(r.querySelector('td.x-grid3-td-slaEndeAgent'))]));
-    let n = 0;
-    open.forEach((e) => { const v = sla.get(String(e.nr).toUpperCase()); if (v && slaMs(v) !== null) { e.sla = v; n++; } });
-    if (!n) return;
+    let changed = 0; const red = [];
+    book.forEach((e) => {
+      const a = info.get(String(e.nr).toUpperCase());
+      if (!a) return;
+      if (a.tid && e.tid !== a.tid) { e.tid = a.tid; changed++; }
+      if ((e.zeichen || '') !== a.zeichen) { e.zeichen = a.zeichen; changed++; }
+      if (e.terminWeg && !e.sla && slaMs(a.sla) !== null) { e.sla = a.sla; changed++; if (terminRed(e)) red.push(e.nr); }
+    });
+    if (!changed) return;
     GM_setValue('orderbook', book);
-    const red = book.filter((e) => e.sla && terminRed(e)).map((e) => e.nr);
     if (red.length) log(`Termin offen und SLA endet in ≤ 2 h: ${red.join(', ')} – im Auftragsbuch rot markiert.`, 'err');
     renderOrderbook();
   }
@@ -541,11 +541,12 @@
     const book = GM_getValue('orderbook', []);
     const ts = new Date().toISOString();
     const termin = (e) => { if (terminPending.delete(String(e.nr).toUpperCase())) e.terminWeg = 1; return e; };
-    book.push(termin({ ts, nr: o.nr, plz: o.plz, ort: o.ort, dienst: o.dienst, preis: parseEuro(o.preis) }));
+    const tidOf = (r) => (r ? text(r.querySelector('td.x-grid3-td-id')).replace(/\D/g, '') : '');
+    book.push(termin({ ts, nr: o.nr, plz: o.plz, ort: o.ort, dienst: o.dienst, preis: parseEuro(o.preis), tid: tidOf(o.row) }));
     bulkOf(o).forEach((x) => {
       const row = rowsByNr.get(x);
       const art = (o.extra || []).includes(x) ? '0 km' : 'Warenkorb';
-      book.push(termin({ ts, nr: x, plz: row ? row.plz : o.plz, ort: row ? row.ort : o.ort, zu: o.nr,
+      book.push(termin({ ts, nr: x, plz: row ? row.plz : o.plz, ort: row ? row.ort : o.ort, zu: o.nr, tid: row ? tidOf(row.row) : '',
         dienst: `${art} – zusammen mit ${o.nr} angenommen${row && row.dienst ? ` · ${row.dienst}` : ''}`,
         preis: row ? parseEuro(row.preis) : null }));
     });
@@ -619,7 +620,7 @@
       const tr = document.createElement('tr');
       const d = new Date(e.ts);
       [`${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`,
-        e.zu ? `↳ ${e.nr}` : e.nr, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis)].forEach((v, i) => {
+        e.zu ? `↳ ${e.nr}` : e.nr, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis), e.zeichen || ''].forEach((v, i) => {
         const td = document.createElement('td');
         td.textContent = v;
         if (i === 1 && terminRed(e)) { // rote 1: Terminvereinbarung weggeklickt, SLA endet in ≤ 2 h
@@ -632,10 +633,19 @@
         tr.appendChild(td);
       });
       tr.title = e.dienst || '';
-      tr.ondblclick = () => { if (cfg.zeichenOn) addZeichenNeu(e.nr); };
+      // Ihr Zeichen: belegt = grau (wird nicht überschrieben); sonst bei eingeschalteter Funktion per Klick auswählen
+      const sel = zeichenSel.has(String(e.nr).toUpperCase());
+      if (e.zeichen) tr.style.background = '#eeeeee';
+      else if (sel) Object.assign(tr.style, { background: '#e3f2fd', textDecoration: 'underline' });
+      if (cfg.zeichenOn && !e.zeichen) {
+        tr.style.cursor = 'pointer';
+        tr.onclick = () => { const k = String(e.nr).toUpperCase(); if (!zeichenSel.delete(k)) zeichenSel.add(k); renderOrderbook(); };
+      }
       tbody.appendChild(tr);
     });
-    if (!rows.length) tbody.innerHTML = '<tr><td colspan="5" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
+    if (!rows.length) tbody.innerHTML = '<tr><td colspan="6" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
+    const go = document.getElementById('tamauto-zeichen-go');
+    if (go) { go.disabled = !cfg.zeichenOn || !zeichenSel.size; go.textContent = `In TAM übernehmen (${zeichenSel.size})`; }
     // Unten: Anzahl Aufträge, Anzahl PLZ (mit Aufträgen je PLZ), Summe Euro
     const perPlz = {};
     rows.forEach((e) => { perPlz[e.plz] = (perPlz[e.plz] || 0) + 1; });
@@ -2426,12 +2436,6 @@ Wichtig: Die Farben ändern nur die Anzeige der TAM-Oberfläche lokal in diesem 
           </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
-              <label class="tamauto-chk"><input type="checkbox" id="tamauto-zeichen"> <b>„Ihr Zeichen“ per Doppelklick um „neu“ ergänzen</b></label>
-              <span class="tamauto-help" title="Doppelklick auf einen Auftrag (oder die rote 1) im Auftragsbuch: Das Script wechselt in „Angenommene Aufträge“, öffnet per Rechtsklick „Ihr Zeichen bearbeiten“, hängt „neu“ an und speichert – danach zurück zu „Veröffentlichte Aufträge“. Standard: aus.">?</span>
-            </span>
-          </div>
-          <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
-            <span class="tamauto-chk">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-wakelock"> <b>Bildschirm anlassen</b></label>
               <span class="tamauto-help" title="Verhindert, dass der Bildschirm ausgeht, solange TAM im Vordergrund offen ist (Wake Lock). Wichtig auf Android/Handy: Geht der Bildschirm aus oder wird der Browser in den Hintergrund gelegt, friert das System die Seite ein – das Script kann dann nicht mehr prüfen und annehmen. Tipp: Gerät ans Ladegerät, Helligkeit herunterdrehen. Wird automatisch neu angefordert, sobald TAM wieder sichtbar ist.">?</span>
             </span>
@@ -2556,12 +2560,18 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
               <option value="month">Dieser Monat</option><option value="all">Alle</option></select></span>
             <button id="tamauto-ob-clear" title="Auftragsbuch vollständig löschen">Liste leeren</button>
           </div>
+          <div class="tamauto-chk" style="margin-top:4px;gap:6px">
+            <label class="tamauto-chk"><input type="checkbox" id="tamauto-zeichen-on"> <b>Ihr Zeichen setzen</b></label>
+            <input id="tamauto-zeichen-text" maxlength="20" style="width:110px;margin:0" title="Text für „Ihr Zeichen“ (höchstens 20 Zeichen wie in TAM)">
+            <button id="tamauto-zeichen-go" disabled>In TAM übernehmen (0)</button>
+            <span class="tamauto-help" title="Kurzzeichen „Ihr Zeichen“ für angenommene Aufträge setzen: Haken setzen, Text eingeben (höchstens 20 Zeichen wie in TAM), Aufträge in der Liste anklicken (ausgewählt = blau unterstrichen, erneuter Klick hebt auf), dann „In TAM übernehmen“. Das Script speichert still in TAM – ohne Reiterwechsel und ohne Fenster. Aufträge, die schon ein Zeichen haben (grau), werden nicht überschrieben. Die Spalte „Ihr Zeichen“ wird beim Öffnen von „Angenommene Aufträge“ mit TAM abgeglichen.">?</span>
+          </div>
           <div style="max-height:180px;overflow:auto;margin-top:4px;border:1px solid #ddd">
             <table style="border-collapse:collapse;width:100%;font-size:11px">
               <thead><tr style="background:#e8f0fb;position:sticky;top:0">
                 <th style="text-align:left;padding:2px 4px">Datum</th><th style="text-align:left;padding:2px 4px">AuftragsNr</th>
                 <th style="text-align:left;padding:2px 4px">PLZ</th><th style="text-align:left;padding:2px 4px">Ort</th>
-                <th style="text-align:right;padding:2px 4px">Euro</th></tr></thead>
+                <th style="text-align:right;padding:2px 4px">Euro</th><th style="text-align:left;padding:2px 4px">Ihr Zeichen</th></tr></thead>
               <tbody id="tamauto-ob-rows"></tbody>
             </table>
           </div>
@@ -2772,8 +2782,11 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
       const g = visibleGrid(); if (g) markBlockedRows(readOrders(g)); else clearRowMarks();
       log(`Farbige TAM-Einträge: ${cfg.colorRows ? 'an' : 'aus'} (nur lokale Anzeige).`);
     };
-    $('tamauto-zeichen').checked = cfg.zeichenOn;
-    $('tamauto-zeichen').onchange = (e) => { cfg.zeichenOn = e.target.checked; GM_setValue('zeichenOn', cfg.zeichenOn); log(`„Ihr Zeichen“ per Doppelklick: ${cfg.zeichenOn ? 'an' : 'aus'}.`); };
+    $('tamauto-zeichen-on').checked = cfg.zeichenOn;
+    $('tamauto-zeichen-on').onchange = (e) => { cfg.zeichenOn = e.target.checked; GM_setValue('zeichenOn', cfg.zeichenOn); if (!cfg.zeichenOn) zeichenSel.clear(); renderOrderbook(); };
+    $('tamauto-zeichen-text').value = String(cfg.zeichenText || '').slice(0, ZEICHEN_MAX);
+    $('tamauto-zeichen-text').oninput = (e) => { cfg.zeichenText = e.target.value.slice(0, ZEICHEN_MAX); GM_setValue('zeichenText', cfg.zeichenText); };
+    $('tamauto-zeichen-go').onclick = () => applyZeichen();
     $('tamauto-hidetips').onchange = (e) => { cfg.hideTips = e.target.checked; GM_setValue('hideTips', cfg.hideTips); applyTips(); };
     applyTips();
 
@@ -3128,7 +3141,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
       }
       const acc = document.getElementById(cfg.acceptedTabId);
       if (acc && muts.some((m) => acc.contains(m.target) || (m.type === 'attributes' && m.target.tagName === 'LI'))) {
-        clearTimeout(accScanTimer); accScanTimer = setTimeout(scanAccepted, 300);
+        if (!accScanTimer) accScanTimer = setTimeout(() => { accScanTimer = 0; scanAccepted(); }, 300); // spätestens 300 ms nach der ersten Änderung
       }
       const panel = document.getElementById(cfg.tabPanelId);
       if (!panel) return;
