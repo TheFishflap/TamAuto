@@ -60,6 +60,7 @@ function startTam(opts = {}) {
   // ---- Tampermonkey / Browser-APIs
   const store = new Map(Object.entries({
     installId: INSTALL_ID, licenseKey: licenseKey(), delayOnV2: false, running: true,
+    startTabs: false, // Start-Routine (beide Reiter öffnen) stört die übrigen Tests nicht; eigener Test setzt true
     accSyncAt: Date.now(), // MA-Management gleicht beim Öffnen mit TAM ab – in den übrigen Tests nicht
     morgenScan: new Date().toLocaleDateString('sv-SE'), // Morgenroutine (07:30–09:00) stört die übrigen Tests nicht; eigene Tests setzen ''
     places: { v: 2, plz: [], orte: [], block: { plz: [], orte: [] }, loadedAt: new Date().toISOString(), source: 'Test' },

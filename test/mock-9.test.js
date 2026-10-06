@@ -112,4 +112,14 @@ describe('„XX zurück“ und Morgenroutine', { skip }, () => {
     const chips = () => tam.document.getElementById('tamauto-ret').textContent;
     assert.match(chips(), /MW3190810/); assert.doesNotMatch(chips(), /MW3190811/);
   });
+
+  it('Start: „Angenommene Aufträge“ wird geöffnet (Zeichen abgleichen), danach wieder „Veröffentlichte Aufträge“', async () => {
+    tam = startTam({ gm: { startTabs: true, places: KOELN, orderbook: [{ ts: new Date().toISOString(), nr: 'MW3190820', plz: '44141', ort: 'Dortmund', tid: '3706820', zeichen: '' }] } });
+    tam.addAccepted('MW3190820', '', { id: '3706820', zeichen: 'GS 12.10 10:00 T' });
+    tam.selectTab('AgentVeroeffentlichteAuftraege');
+    await tam.ready();
+    assert.ok(await until(() => (book().find((e) => e.nr === 'MW3190820') || {}).zeichen === 'GS 12.10 10:00 T', 15000), tam.logs().slice(-5).join('\n'));
+    assert.ok(await until(() => tam.document.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active'), 5000));
+  });
 });
+

@@ -396,102 +396,30 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
-### 1.23.3 – 2026-10-06
-- **Mail:** Louis Thomee (LU) ist in der Cc-Auswahl nicht mehr enthalten (bleibt als Absender wählbar).
+### 1.23.4 – 2026-10-06
+Fasst die Entwicklung 1.21.0 bis 1.23.4 zusammen (zwischenzeitlich gebaute und wieder entfernte Funktionen wie Zeichen-Schreiben, Marktgebiete und mehrere Mail-Bausteine sind hier nicht aufgeführt).
 
-### 1.23.2 – 2026-10-06
-- **Tages-Blacklist (Rückgaben) gilt 48 Stunden rollierend** statt bis Mitternacht – wer nachts arbeitet, verliert „XX zurück“ nicht um 00:00. Rückgabemeldungen werden bis 48 h alt übernommen.
-- **MA-Management:** die rote 1 (Terminfenster war offen, Reservierung läuft in ≤ 2 h aus) steht auch in der Liste; in der **Mail** stehen Ampel (🔴/🟡) und die 1 in der Spalte „Reservierung bis“ mit einer Legende unter der Tabelle.
+**Neuer Reiter „MA-Management“ – eine Logik: offene Terminvereinbarungen**
+- Aufträge der letzten 7 Tage mit **Terminpflicht** (ab 150 € bzw. Status „Terminvereinbarung“), deren **Kürzel in „Ihr Zeichen“** steht und die noch keine Tour mit Datum haben, **nach FIN sortiert** (FIN = Referenz). Die Zahl in Klammern beim MA (Summe am Reiter) zählt die offenen Terminvereinbarungen; ein Hinweis nennt Terminaufträge ohne Kürzel. Ihre Rückgabe („XX zurück“) fällt heraus.
+- **Mail** an den MA: Titel „Neue Terminvereinbarung <Auftragsart> in <Ort> (x)“, Text „Für dich ist ein <Auftragsart> Auftrag angenommen worden … Die Reservierung läuft in x Stunden aus, bitte kümmere dich zeitig um eine Terminvereinbarung.“ Tabelle mit Auftrag, FIN, PLZ/Ort, Auftragsart, Reservierung bis (Ampel 🔴/🟡, rote 1, Stunden) und Kontakt, darunter eine Legende. Kennzeichenversand steht unter dem Hauptauftrag (gleiche FIN bzw. gleicher Ort). Kontakt: Telefon, sonst bei Terminpflicht die E-Mail; bei Sixt steht die Telefonzeile immer (ohne Nummer leer).
+- „Mail öffnen“ öffnet ein **Popup** (TAM bleibt im Tab) und legt die **schöne Tabelle in die Zwischenablage**; im Mailfenster steht an ihrer Stelle die Marke „[Tabelle hier einfügen]“ (ein mailto-Link kann kein HTML). „Als Tabelle kopieren“ kopiert ohne Mailfenster; das blaue Fragezeichen erklärt es. Hinweis „Keine E-Mail-Adresse für …“ neben der Überschrift.
+- **Excel-Blatt „MA“:** Kürzel | Name | E-Mail | **Backoffice** (Haken: x, ja, ✓, 1 …). Backoffice-Zeilen sind Absender (letzte Auswahl gemerkt) und Cc der Mails (Louis Thomee, LU, ist in Cc nicht wählbar). Andere Blätter braucht das Script nicht (die früheren Blätter „Marktgebiete“, „Kontakte“ und „Workflow“ werden nicht gelesen).
+- **Telefon/Kontakt** kommt aus TAMs Liste „Angenommene Aufträge“ (Knopf „Kontakte laden“, automatisch alle 30 min; lädt auch die Excel neu). Beim Öffnen des Reiters wird höchstens alle 5 min kurz „Angenommene Aufträge“ mit TAM abgeglichen.
+- **„Ihr Zeichen“ wird gelesen:** Kürzel, Datum und Uhrzeit in beliebiger Reihenfolge; Kontaktstatus T/t/M/m (auch kombiniert, z. B. `Tm`; ein bekanntes Kürzel wie MM hat Vorrang); „?“ = ungeklärt; „XX zurück“ = Rückgabe. Das Script **schreibt keine Zeichen**.
 
-### 1.23.1 – 2026-10-06
-- **Auftragsbuch:** Spalte PLZ entfällt; „Von“ (angenommen von) steht jetzt links neben der AuftragsNr; bei einem einzelnen Tag (Heute, Gestern … Vor 7 Tagen) zeigt „Datum“ nur die Uhrzeit.
+**Auftragsbuch**
+- Spalten Datum | Von | AuftragsNr | Ort | Euro | Z. – „Ihr Zeichen“ nur als **✓** (Text als Tooltip), Zeile grau; „Von“ = von welchem Gerät angenommen; bei einem einzelnen Tag nur die Uhrzeit. Zeitraum zusätzlich Gestern, Vorgestern, Vor 3 … Vor 7 Tagen.
+- **Flaggen** 🔴 (SLA überfällig oder in ≤ 2 h) und 🟡 (≤ 24 h) wie in TAM.
+- **Rote 1 nur im Auftragsbuch:** Das Terminfenster nach der Annahme (z. B. Sixt, „Ende: 02.10.2026 15:13“) wird beim Wegklicken gelesen; fällt die Reservierung innerhalb der nächsten 2 Stunden aus der SLA (oder ist abgelaufen), steht die rote 1 und die Zeile ist rosa. Die Anzeige wandert mit der Zeit.
+- **Auftragsbuch über alle Geräte:** Annahmen anderer Geräte erscheinen mit dem Lizenznamen; auf dem **geheimen Kanal** (Lizenz mit Kanal-Schlüssel) mit PLZ, Ort, Straße, Dienstleistung, Preis und Referenz, sodass ein später eingeloggtes Gerät das Tages-Auftragsbuch sofort vollständig hat. **Chronologisch** nach Annahmezeit (neueste oben), **31 Tage Datenspeicherung**; Endtermin, Status, Referenz und Straße werden aus „Angenommene Aufträge“ aktuell gehalten. (ntfy hält Meldungen nur etwa 12 Stunden.)
 
-### 1.23.0 – 2026-10-06
-Noch weiter ausgedünnt:
-- **Marktgebiete entfallen** (Blatt und Zuordnung nach Ort/PLZ; Excel von Hand zu füllen war nicht sinnvoll). Ein Auftrag gehört dem MA, dessen **Kürzel in „Ihr Zeichen“** steht. Die Spalte „Zuständig“ im Auftragsbuch entfällt.
-- **Blatt „Kontakte“ und „MA“ sind eins:** Spalten Kürzel | Name | E-Mail | **Backoffice** (Haken: x, ja, ✓, 1 …). Backoffice-Zeilen sind Absender und Cc der Mails.
-- **MA-Management nur noch eine Logik** (ab 150 €): Liste der offenen Terminvereinbarungen, „Nicht zugeordnet“ und die übrigen Anzeigen entfallen; ein Hinweis nennt die Terminaufträge ohne Kürzel.
-- **Mail-Titel:** „Neue Terminvereinbarung <Auftragsart> in <Ort> (x)“. Die Tabelle bekommt die Spalte **FIN** und ist **nach FIN sortiert** (gleiche Fahrzeuge zusammen). Neben „Als Tabelle kopieren“ steht ein blaues Fragezeichen: erst „Mail öffnen“ klicken (legt die schöne Tabelle in die Zwischenablage), dann im Mailfenster an der Marke einfügen.
-- **Rote 1 nur im Auftragsbuch** und nur, wenn die Reservierung (Ende aus dem Terminfenster) innerhalb der nächsten 2 Stunden aus der SLA fällt (oder schon abgelaufen ist); die Zeile ist dann rosa markiert. Die Anzeige wandert mit der Zeit (minütliche Aktualisierung).
-
-### 1.22.0 – 2026-10-06
-Aufgeräumt: **eine einheitliche Logik, weniger Code.**
-- **Kurzzeichen schreiben entfällt** (Knopf „Kurzzeichen setzen“, Dropdown „Zuständig“, Haken, Automatik und Einstellung). Zu viele Besonderheiten – das Zeichen wird nur noch in TAM gepflegt und vom Script **gelesen**.
-- **Auftragsbuch schmaler:** „Ihr Zeichen“ nur noch als **✓** (Text beim Darüberfahren), „Zuständig“ als reiner Text (Kürzel, bei Mischgebieten z. B. MB/PM).
-- **Rote 1:** Das Terminfenster nach der Annahme (z. B. Sixt) enthält „Ende: 02.10.2026 15:13“ – das Script liest es beim Wegklicken, markiert den Auftrag im Auftragsbuch (Zeile rosa) und setzt die **rote 1**; sie **bleibt stehen**, auch wenn später ein Zeichen eingetragen wird. Die Zeile wird grau, sobald ein Zeichen steht.
-- **MA-Management: ein Baustein „neue Terminvereinbarung“** (Bausteinauswahl, Mahnung, „Zugewiesen“, Tour, PMA entfallen): Aufträge mit Terminpflicht (ab 150 € bzw. Status „Terminvereinbarung“) ohne Tour mit Datum. Mail: „Für dich ist ein <Auftragsart> Auftrag angenommen worden … Die Reservierung läuft in x Stunden aus, bitte kümmere dich zeitig um eine Terminvereinbarung.“ (Tabelle mit Auftragsart und Reservierung bis, Flagge 🔴/🟡). Zuständig: der MA des Marktgebiets; steht ein Kürzel im Zeichen, dieser MA; bei Mischgebieten sehen alle Zuständigen den Auftrag.
-- Die Zahl in Klammern beim MA (und am Reiter, als Summe) zeigt die **offenen Terminvereinbarungen**.
-- **Bildschirm anlassen** ist standardmäßig an (auf allen Geräten; ausdrücklich ausgeschaltet bleibt aus).
-
-### 1.21.11 – 2026-10-06
-- **Silent Reload ersetzt den Auto-Refresh:** Silent Reload ist jetzt standardmäßig **an, alle 30 s** (wer ihn ausdrücklich ausgeschaltet oder einen eigenen Wert eingestellt hatte, behält das). Der Auto-Refresh entfällt.
-- **MA-Management gleicht mit TAM ab:** Beim Öffnen des Reiters liest das Script (höchstens alle 5 min, nur im Ruhezustand) kurz „Angenommene Aufträge“ und übernimmt die Zeichen – die Zahlen (Mahnungen) beruhen so auf dem Stand in TAM, nicht auf dem, was dieses Gerät zuletzt gesehen hat.
-- **Morgenroutine einmal um 07:58** (statt ab 07:30; wer später kommt, holt sie bis 09:00 nach). Hat ein anderes Gerät sie schon gemeldet, entfällt sie auf den übrigen Geräten.
-
-### 1.21.10 – 2026-10-06
-- **„XX zurück“ im Zeichen** (auch bei Aufträgen von früheren Tagen) setzt den Auftrag auf die **Tagesblacklist** (Rückgaben von heute) und meldet ihn den anderen Geräten; er wird nicht erneut angenommen.
-- **Morgenroutine:** einmal je Tag zwischen 07:30 und 09:00 öffnet das Script kurz „Angenommene Aufträge“, gleicht die Zeichen ab und wechselt zurück – so stehen „zurück“-Aufträge **vor 08:00** auf der Blacklist, wenn TAM sie aus dem Account nimmt und neu veröffentlicht. Nur im Ruhezustand (nicht während einer Annahme). Hinweis: gelesen wird die angezeigte Seite der Liste (bis 500 Zeilen).
-
-### 1.21.9 – 2026-10-06
-- **Arbeitszeit fest 08:00–18:00** (nicht mehr einstellbar, kein Ein-/Ausschalter): außerhalb pausieren Auto-Refresh und Silent Reload. Die Annahme selbst läuft weiter.
-
-### 1.21.8 – 2026-10-06
-- **Tages-Auftragsbuch für später eingeloggte Geräte:** Annahmen werden auf dem **geheimen Kanal** (Lizenz mit Kanal-Schlüssel) mit PLZ, Ort, Straße, Dienstleistung, Preis und Referenz gemeldet. Ein Gerät, das sich später einloggt, holt die Meldungen seit Mitternacht nach und hat das Auftragsbuch des Tages sofort vollständig – ohne „Angenommene Aufträge“ öffnen zu müssen. Auf dem öffentlichen Kanal (alte Lizenzen) bleibt es bei den Nummern. Empfangene Angaben werden geprüft und gekürzt; fehlende Angaben bereits vorhandener Einträge werden ergänzt.
-- Auftragsbuch **chronologisch nach Annahmezeit** (neueste oben), auch bei nachgeholten Meldungen.
-- **31 Tage Datenspeicherung** im Auftragsbuch (statt der letzten 5000 Einträge). Grenze: ntfy hält Meldungen etwa 12 Stunden – wer sich später als 12 Stunden nach einer Annahme einloggt, bekommt sie über „Angenommene Aufträge“ nachgetragen.
-
-### 1.21.7 – 2026-10-06
-- **MA-Management:** Im Mitarbeiter-Dropdown steht in Klammern die Zahl fälliger Mahnungen je MA (z. B. „PM – Name (2)“); die Summe ergibt die Zahl am Reiter „MA-Management (n)“.
-
-### 1.21.6 – 2026-10-06
-- **Auftragsbuch:** Knopf **„Kurzzeichen setzen (n)“** (statt „In TAM übernehmen“) schreibt „KÜRZEL neu“ **nur für die angehakten Aufträge** (Haken in der Spalte „Zuständig“, Kopfhaken = alle): eindeutig Zuständige und Mischgebiete mit gewähltem Dropdown (wird beim Wählen automatisch angehakt). Das **Dropdown wählt nur aus** (wird gemerkt), geschrieben wird erst mit dem Knopf. Textfeld („neu“/„?“), Haken „Ihr Zeichen setzen“ und Zeilenauswahl entfallen.
-- **Zeitraum** zusätzlich: Gestern, Vorgestern, Vor 3 … Vor 7 Tagen (genau dieser Tag).
-- **MA-Management:** Haken „nur ohne Tour“ entfällt (der Baustein bestimmt die Auswahl: „Neue Aufträge“ nur ohne Tour, die übrigen alle); Fragezeichen erklärt die Bausteine.
-- **Baustein „Zugewiesen“** listet nur Aufträge mit „KÜRZEL neu“ in TAM (erst Zeichen schreiben, dann Kollegen per Mail informieren).
-- **MA-Mail:** „Mail öffnen“ legt die Tabelle als echte Tabelle in die Zwischenablage; im Mailfenster steht an ihrer Stelle die Marke
-  „[Tabelle hier einfügen: Strg+V (Mac: Cmd+V)]“ (ein mailto-Link kann technisch kein HTML übergeben). Im Feld „SLA bis“ steht statt „(rot)“ die Flagge 🔴/🟡.
-
-### 1.21.4 – 2026-10-06
-- **Zuständigkeit im Auftragsbuch:** neue Spalte „Zuständig“ – eindeutiges Marktgebiet zeigt das Kürzel, bei Mischgebieten wählst du per
-  Dropdown (setzt das Zeichen „KÜRZEL neu“ still in TAM). Neue Einstellung (Erweiterte Einstellungen, Standard aus): bei eindeutigem
-  Marktgebiet das Zeichen „GS neu“ automatisch setzen – gebündelt, nur nach dem Schreiben ins Auftragsbuch, nie über ein vorhandenes Zeichen, höchstens 30 je Durchgang.
-- **MA-Mails ohne Konkurrenz:** ein Auftrag geht nur an den MA, dessen Kürzel im Zeichen steht (oder an den eindeutig Zuständigen, solange noch kein Zeichen gesetzt ist).
-  Neuer Baustein „Zugewiesen“ (Kürzel gesetzt – entfernen, „zurück“ dahinter schreiben oder Termin ausmachen) mit zweitem Block „Weitere Aufträge in der Nähe“.
-- **Automatische Mahnung:** Kürzel ohne Datum, Zeichen älter als 2 h → „Mahnung fällig“ (Zahl am Reiter „MA-Management (n)“ und je MA).
-- **Flaggen im Auftragsbuch:** 🔴 (SLA überfällig oder in ≤ 2 h) und 🟡 (≤ 24 h) wie im MA-Management. Das Kürzel wird nur im Auftragsbuch gesetzt; das MA-Management ist reine Verwaltung (lesen, Mails).
-- Die Statuszeile „Abgleich … in Tabelle … passend“ im Kopf entfällt (mehr Platz; die Angaben stehen weiter im Protokoll).
-
-### 1.21.3 – 2026-10-06
-- **Kontaktstatus in „Ihr Zeichen“** auch als Kombination (z. B. `tm` = Telefon- und Mailversuch, `Tm` = telefonisch bestätigt, Mail nur versucht);
-  ein bekanntes Kürzel (z. B. MM) hat Vorrang vor den Kontaktbuchstaben.
-- Protokoll MA-Management: nicht zugeordnete Aufträge mit PLZ, Ort und Anzahl.
-- **„?“ im Zeichen = ungeklärt** (eigener Status). **„zurück LH“ = Rückgabe:** solche Aufträge werden bei den Rückgaben eingetragen
-  (heute nicht erneut annehmen, den anderen Geräten gemeldet) und tauchen bei den Mitarbeitern nicht mehr unter „neue Aufträge“ auf.
-- Mail-Hinweis „Keine E-Mail-Adresse für … “ steht neben der Überschrift „Mail an den Mitarbeiter“.
-
-### 1.21.2 – 2026-10-06
-- **MA-Management – Mail:** Aufträge stehen als **Tabelle mit Kontakt** in der Mail (Auftrag · PLZ/Ort · SLA · Kontakt · Hinweis); neuer Knopf
-  „Als Tabelle kopieren“ legt eine echte Tabelle zum Einfügen in die Mail in die Zwischenablage. Neuer Baustein **„Termin vereinbaren + Kurzzeichen“**.
-  „Mail öffnen“ öffnet als **Popup** (TAM bleibt im Tab).
-- **Terminvereinbarung ist Pflicht** bei Status „Terminvereinbarung“ **und ab 150 €**: Kontakt (Telefon, sonst E-Mail) und Hinweis „Termin erforderlich“.
-- **Backoffice-Kräfte** (Blatt „Kontakte“, Rolle „Backoffice-Kraft“) sind automatisch Mitarbeiter im Reiter (Kürzel aus der optionalen Spalte
-  „Kürzel“, sonst ein vorangestelltes Kürzel im Namen oder die Initialen).
-- Protokoll: Zeichen ohne erkennbare Tour (häufigste) zum Debuggen.
-
-### 1.21.1 – 2026-10-06
-- **MA-Management:** „Nicht zugeordnet“ ist **klappbar** (zu Beginn offen, Zustand wird gemerkt); „Mail öffnen“ öffnet in einem **neuen Tab**;
-  die Kontakte werden **alle 30 min** automatisch neu geladen, der Knopf „Kontakte laden“ lädt zusätzlich die Excel (Listen, MA, Marktgebiete) neu.
-- Nach einem Update werden die neuen Excel-Blätter (MA, Marktgebiete, Kontakte) **sofort** geladen statt erst nach bis zu 30 min.
-- Ausführlicheres Protokoll zum MA-Management (Excel-Stand, Zuordnung, Ladevorgang der Kontakte, geöffnete Mails).
-
-### 1.21.0 – 2026-10-06
-- **Neuer Reiter „MA-Management“:** Aufträge der letzten 7 Tage je Mitarbeiter nach **Marktgebiet** (Excel, Blatt
-  „Marktgebiete“: PLZ-Anfang + Ort, mit Hinweisen wie „nur 42106“, „nur Choice“, „SIXT …“), Tour aus „Ihr Zeichen“ gelesen
-  (Kürzel, Datum und Uhrzeit in beliebiger Reihenfolge; T = telefonisch bestätigt, t = nur Versuch, M/m = Mail), SLA-Ampel,
-  Liste der **nicht zugeordneten** Aufträge, **Mail-Entwurf** mit Bausteinen (Neue Aufträge, Tour ergänzen, Mahnung, PMA),
-  Cc-Auswahl und Absender (Blatt „Kontakte“, letzte Auswahl gemerkt), Telefon/Kontakt aus TAM („Kontakte laden“), Kennzeichenversand unter
-  dem Hauptauftrag. Die Marktgebiete beeinflussen die Annahme **nicht** – es gelten nur die Blätter „annehmen“ und „nicht annehmen“.
-- Das Auftragsbuch hält Endtermin, Status, Referenz und Straße aus „Angenommene Aufträge“ aktuell.
+**Sonstiges**
+- **Tages-Blacklist (Rückgaben) gilt 48 Stunden rollierend** – auch für „XX zurück“ im Zeichen (auch bei Aufträgen früherer Tage), damit Nachtarbeit sie nicht um Mitternacht löscht.
+- **Morgenroutine** einmal um 07:58 (nachholbar bis 09:00): „Angenommene Aufträge“ kurz öffnen, Zeichen abgleichen, zurück – so stehen „zurück“-Aufträge **vor 08:00** auf der Blacklist. Hat ein anderes Gerät sie schon gemeldet, entfällt sie.
+- **Start:** Beim Öffnen von TAM werden einmal beide Reiter geöffnet („Veröffentlichte“ und „Angenommene Aufträge“); danach bleibt „Veröffentlichte Aufträge“ aktiv.
+- **Silent Reload ersetzt den Auto-Refresh** (Standard an, alle 30 s; eigene Einstellungen bleiben). **Arbeitszeit fest 08:00–18:00** (außerhalb pausiert Silent Reload; die Annahme läuft weiter). **Bildschirm anlassen** standardmäßig an.
+- Die Statuszeile „Abgleich … in Tabelle … passend“ im Kopf entfällt (steht im Protokoll).
+- Die Marktgebiete beeinflussen die Annahme nie – es gelten nur „annehmen“ und „nicht annehmen“.
 
 ### 1.20.8 – 2026-10-06
 - Lizenz anfragen auf der TAM-Anmeldeseite: kein Kontoname mehr mitgeschickt (wurde in der Lizenzverwaltung fälschlich
@@ -515,11 +443,7 @@ Aufgeräumt: **eine einheitliche Logik, weniger Code.**
   Aufträge“ aus TAM übernommen (z. B. bei Warenkorb-Aufträgen ohne Preis).
 
 ### 1.20.4 – 2026-10-06
-- **Ihr Zeichen im Auftragsbuch** (statt Doppelklick über „Erweiterte Einstellungen“): Haken „Ihr Zeichen setzen“, Text
-  eingeben (höchstens 20 Zeichen wie in TAM), Aufträge anklicken (blau unterstrichen), „In TAM übernehmen“ setzt alle
-  ausgewählten auf einmal. **Still gespeichert** – dieselbe Anfrage wie TAMs Dialog, ohne Reiterwechsel und ohne Fenster.
-  Aufträge mit vorhandenem Zeichen werden nicht überschrieben und sind grau; neue Spalte „Ihr Zeichen“, abgeglichen mit
-  „Angenommene Aufträge“.
+- **Ihr Zeichen im Auftragsbuch:** neue Spalte „Ihr Zeichen“, abgeglichen mit „Angenommene Aufträge“ (das Script liest das Zeichen nur; Schreiben wurde in 1.23.4 zusammengefasst entfernt).
 
 ### 1.20.3 – 2026-10-06
 - **Tabelle bleibt aktuell ohne Neuladen:** Jede stille Abfrage (Silent Reload, Push-Signal, Nachfragen) gleicht die Tabelle

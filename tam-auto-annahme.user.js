@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.23.3
+// @version      1.23.4
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1983,6 +1983,18 @@
     morgenTry = Date.now();
     if (await syncAcceptedTab('Morgenroutine')) { GM_setValue('morgenScan', heute); retPost('scan', []); }
   }
+  // Beim Start von TAM beide Reiter öffnen: „Veröffentlichte Aufträge“ (Liste laden, Silent Reload) und „Angenommene Aufträge“ (existiert erst,
+  // wenn der Reiter einmal geöffnet wurde: Zeichen abgleichen, Kontakte). Danach bleibt „Veröffentlichte Aufträge“ aktiv. Einmal je Seitenaufruf.
+  let startTabsDone = false;
+  async function openTabsOnStart() {
+    if (startTabsDone || !license || busy || accSyncing || !GM_getValue('startTabs', true)) return;
+    if (!document.querySelector(`li[id$="__${cfg.tabPanelId}"]`) || !document.querySelector(`li[id$="__${cfg.acceptedTabId}"]`)) return; // TAM noch nicht aufgebaut
+    startTabsDone = true;
+    log('Start: „Veröffentlichte“ und „Angenommene Aufträge“ werden geöffnet …', 'debug');
+    if (!onPublishedTab()) { clickPublishedTab(); await waitFor(onPublishedTab, 4000); }
+    await sleep(1500); // Liste laden lassen
+    await syncAcceptedTab('Start');
+  }
   // Beim Öffnen des MA-Managements mit TAM abgleichen (TAM ist die Quelle – nicht nur der lokale Stand), höchstens alle 5 min
   function maAutoSync() { if (Date.now() - GM_getValue('accSyncAt', 0) > 5 * 60e3) syncAcceptedTab('MA-Management').then((ok) => { if (ok) renderMa(); }).catch(() => {}); }
 
@@ -2549,7 +2561,8 @@
       scanAccepted();    // Auftragsbuch mit „Angenommene Aufträge“ abgleichen (nur wenn sichtbar und geändert)
       const bookPage = document.getElementById('tamauto-page-book');
       if (bookPage && bookPage.style.display !== 'none' && now - lastBookRenderAt > 60000) { lastBookRenderAt = now; renderOrderbook(); } // rote 1 wandert mit der Zeit
-      morgenScan().catch(() => {}); // einmal morgens ab 07:30
+      morgenScan().catch(() => {}); // einmal morgens ab 07:58
+      openTabsOnStart().catch(() => {}); // einmal je Seitenaufruf
     }
     renderSync(now);
     if (busy || !onPublishedTab()) return;
