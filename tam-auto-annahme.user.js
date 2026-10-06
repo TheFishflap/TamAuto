@@ -561,6 +561,7 @@
     markDone(o.key || o.nr, 'angenommen');
     bulkOf(o).forEach((x) => markDone(x, `zusammen mit ${o.nr} angenommen`));
     saveDone();
+    hideAcceptedRows([o.nr, ...bulkOf(o)]);
     recordOrder(o);
     const stats = hitStats();
     bulkOf(o).forEach((x) => {
@@ -740,9 +741,18 @@
     retPost('ret', ret.map((o) => o.nr));
     renderReturns();
   }
-  // Aufträge in der TAM-Tabelle markieren: Excel „nicht annehmen“ rot, heute zurückgegeben orange, nicht auf der
+  // Aufträge in der TAM-Tabelle markieren: Excel „nicht annehmen“ braun, heute zurückgegeben orange, nicht auf der
   // Annahmeliste grau, auf der Annahmeliste grün; Grund als Tooltip
-  const ROW_MARKS = ['tamauto-blocked', 'tamauto-returned', 'tamauto-nomatch', 'tamauto-match'];
+  const ROW_MARKS = ['tamauto-blocked', 'tamauto-returned', 'tamauto-nomatch', 'tamauto-match', 'tamauto-gone'];
+  // Gerade angenommene Aufträge stehen bis zum nächsten TAM-Refresh noch in der Tabelle → lokal ausblenden
+  // (nicht löschen – TAMs Zeilenverwaltung bleibt unberührt). show = wieder einblenden (Annahme doch fehlgeschlagen).
+  function hideAcceptedRows(nrs, show = false) {
+    if (!cfg.colorRows && !show) return;
+    const up = new Set(nrs.filter(Boolean).map((x) => String(x).toUpperCase()));
+    document.querySelectorAll(`#${cfg.tabPanelId} .x-grid3-row`).forEach((r) => {
+      if (up.has(text(r.querySelector('td.x-grid3-td-teilAuftragNr')).toUpperCase())) r.classList.toggle('tamauto-gone', !show);
+    });
+  }
   function clearRowMarks() {
     document.querySelectorAll(ROW_MARKS.map((c) => `.x-grid3-row.${c}`).join(', ')).forEach((r) => {
       r.classList.remove(...ROW_MARKS);
@@ -753,17 +763,18 @@
     if (!cfg.colorRows) { clearRowMarks(); return; }
     if (!document.getElementById('tamauto-blocked-style')) {
       const st = document.createElement('style'); st.id = 'tamauto-blocked-style';
-      st.textContent = '.x-grid3-row.tamauto-blocked, .x-grid3-row.tamauto-blocked td { background: #ffcdd2 !important; }' +
+      st.textContent = '.x-grid3-row.tamauto-blocked, .x-grid3-row.tamauto-blocked td { background: #efebe9 !important; color: #6d4c41 !important; }' +
         '.x-grid3-row.tamauto-returned, .x-grid3-row.tamauto-returned td { background: #ffe0b2 !important; }' +
         '.x-grid3-row.tamauto-nomatch td, .x-grid3-row.tamauto-nomatch td * { color: #9e9e9e !important; }' +
-        '.x-grid3-row.tamauto-match, .x-grid3-row.tamauto-match td { background: #e8f5e9 !important; }';
+        '.x-grid3-row.tamauto-match, .x-grid3-row.tamauto-match td { background: #e8f5e9 !important; }' +
+        '.x-grid3-row.tamauto-gone { display: none !important; }';
       document.head.appendChild(st);
     }
     all.forEach((o) => {
       const why = o.valid ? blocked(o) : '';
       const ret = !!dayList('returnsToday').items[nrKey(o.nr)];
       o.row.classList.toggle('tamauto-returned', !!why && ret);  // heute zurückgegeben → orange
-      o.row.classList.toggle('tamauto-blocked', !!why && !ret);  // Excel „nicht annehmen“ → rot
+      o.row.classList.toggle('tamauto-blocked', !!why && !ret);  // Excel „nicht annehmen“ → braun (wie im Bedienfeld)
       const no = !why && !(o.valid && matches(o));                  // nicht auf der Annahmeliste → grau
       o.row.classList.toggle('tamauto-nomatch', no);
       o.row.classList.toggle('tamauto-match', !why && !no);         // auf der Annahmeliste → grün
@@ -1656,6 +1667,7 @@
   function unbookAccepted(o, bad, reason) {
     const main = sameNr(bad, o.nr);
     const nrs = main ? [o.nr, ...bulkOf(o)] : [bad];
+    hideAcceptedRows(nrs, true);
     const vergeben = /bereits|vergeben|nicht mehr verfügbar|falschen Status/i.test(reason);
     nrs.forEach((x) => markDone(x, `Annahme fehlgeschlagen (${vergeben ? 'vergeben' : 'Fehler'}, nach „Bestätigen“)`, FAIL_RETRY_MS));
     saveDone();
@@ -2403,7 +2415,7 @@ Standard: 1 Anzahl am Ort · 2 Summe am Ort · 3 Einzelpreis.">?</span>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-colorrows"> <b>Farbige TAM-Einträge</b></label>
-              <span class="tamauto-help" title="Färbt die Aufträge in der TAM-Tabelle „Veröffentlichte Aufträge“ ein: grün = steht auf der Annahmeliste (wird angenommen), grau = nicht auf der Annahmeliste, rot = gesperrt (Excel „nicht annehmen“), orange = heute zurückgegeben. Der Grund steht im Tooltip der Zeile.
+              <span class="tamauto-help" title="Färbt die Aufträge in der TAM-Tabelle „Veröffentlichte Aufträge“ ein: grün = steht auf der Annahmeliste (wird angenommen), grau = nicht auf der Annahmeliste, braun = gesperrt (Excel „nicht annehmen“), orange = heute zurückgegeben. Der Grund steht im Tooltip der Zeile. Gerade angenommene Aufträge werden ausgeblendet, bis TAM die Tabelle neu lädt.
 
 Wichtig: Die Farben ändern nur die Anzeige der TAM-Oberfläche lokal in diesem Browser. In TAM selbst, bei TÜV SÜD und bei anderen Nutzern ändert sich nichts. Standard: an.">?</span>
             </span>

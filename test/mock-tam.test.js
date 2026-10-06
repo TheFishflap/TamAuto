@@ -775,3 +775,34 @@ describe('Burst-Refresh', { skip }, () => {
     assert.equal(tam.refreshes, n, 'Burst refresht nach dem Treffer weiter');
   });
 });
+
+describe('Angenommene Zeile lokal ausblenden', { skip }, () => {
+  const rowOf = (nr) => [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')].find((r) => r.textContent.includes(nr));
+  const terminLess = (t, title, body) => setTimeout(() => t.showMessage(title, body), 300);
+
+  it('nach erfolgreicher Annahme: Auftrag und Warenkorb-Auftrag ausgeblendet', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder({ nr: 'MW3000001', plz: '99999', ort: 'Nirgendwo' }); // 0-km-Auftrag steht auch in der Tabelle
+    tam.addOrder({ ...ORDER, nearby: [{ nr: 'MW3000001', km: 0 }] });
+    assert.ok(await until(() => rowOf(ORDER.nr).classList.contains('tamauto-gone'), 15000), tam.logs().slice(-5).join('\n'));
+    assert.ok(rowOf('MW3000001').classList.contains('tamauto-gone'));
+  });
+
+  it('TAM meldet danach „bereits vergeben“ → wieder eingeblendet', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder({ ...ORDER, afterAccept: (t) => terminLess(t, 'Auftrag bereits vergeben!', 'Der Auftrag MW3153893 wurde bereits vergeben.') });
+    assert.ok(await until(() => tam.logs().some((l) => /nachträglich/.test(l)), 15000), tam.logs().join('\n'));
+    assert.ok(!rowOf(ORDER.nr).classList.contains('tamauto-gone'));
+  });
+
+  it('Schalter „Farbige TAM-Einträge“ aus → nichts ausgeblendet', async () => {
+    tam = startTam({ gm: { places: KOELN, colorRows: false } });
+    await tam.ready();
+    tam.addOrder(ORDER);
+    assert.ok(await until(() => tam.accepted.length, 15000));
+    await sleep(1000);
+    assert.ok(!rowOf(ORDER.nr).classList.contains('tamauto-gone'));
+  });
+});
