@@ -396,7 +396,7 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
-### 1.21.5 – 2026-10-06
+### 1.21.6 – 2026-10-06
 - **Auftragsbuch:** Knopf **„Kurzzeichen setzen (n)“** (statt „In TAM übernehmen“) schreibt „KÜRZEL neu“ **nur für die angehakten Aufträge** (Haken in der Spalte „Zuständig“, Kopfhaken = alle): eindeutig Zuständige und Mischgebiete mit gewähltem Dropdown (wird beim Wählen automatisch angehakt). Das **Dropdown wählt nur aus** (wird gemerkt), geschrieben wird erst mit dem Knopf. Textfeld („neu“/„?“), Haken „Ihr Zeichen setzen“ und Zeilenauswahl entfallen.
 - **Zeitraum** zusätzlich: Gestern, Vorgestern, Vor 3 … Vor 7 Tagen (genau dieser Tag).
 - **MA-Management:** Haken „nur ohne Tour“ entfällt (der Baustein bestimmt die Auswahl: „Neue Aufträge“ nur ohne Tour, die übrigen alle); Fragezeichen erklärt die Bausteine.
