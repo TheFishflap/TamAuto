@@ -396,6 +396,12 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.21.1 – 2026-10-06
+- **MA-Management:** „Nicht zugeordnet“ ist **klappbar** (zu Beginn offen, Zustand wird gemerkt); „Mail öffnen“ öffnet in einem **neuen Tab**;
+  die Kontakte werden **alle 30 min** automatisch neu geladen, der Knopf „Kontakte laden“ lädt zusätzlich die Excel (Listen, MA, Marktgebiete) neu.
+- Nach einem Update werden die neuen Excel-Blätter (MA, Marktgebiete, Kontakte) **sofort** geladen statt erst nach bis zu 30 min.
+- Ausführlicheres Protokoll zum MA-Management (Excel-Stand, Zuordnung, Ladevorgang der Kontakte, geöffnete Mails).
+
 ### 1.21.0 – 2026-10-06
 - **Neuer Reiter „MA-Management“:** Aufträge der letzten 7 Tage je Mitarbeiter nach **Marktgebiet** (Excel, Blatt
   „Marktgebiete“: PLZ-Anfang + Ort, mit Hinweisen wie „nur 42106“, „nur Choice“, „SIXT …“), Tour aus „Ihr Zeichen“ gelesen

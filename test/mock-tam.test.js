@@ -1052,6 +1052,31 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.match($('tamauto-ma-rows').textContent, /0171 1234567/);
   });
 
+  it('„Nicht zugeordnet“ ist klappbar (zu Beginn offen) und merkt den Zustand', async () => {
+    await setup();
+    const box = () => $('tamauto-ma-unz').style.display;
+    assert.equal(box(), 'flex');
+    $('tamauto-ma-unzhead').click();
+    assert.equal(box(), 'none'); assert.equal(tam.store.get('maUnzOpen'), false);
+    assert.match($('tamauto-ma-unzcount').textContent, /\(1\)/); // Anzahl bleibt sichtbar
+    $('tamauto-ma-unzhead').click();
+    assert.equal(box(), 'flex');
+  });
+
+  it('„Mail öffnen“ öffnet in neuem Tab (TAM bleibt offen)', async () => {
+    await setup();
+    assert.equal($('tamauto-ma-open').getAttribute('target'), '_blank');
+    assert.match($('tamauto-ma-open').getAttribute('rel'), /noopener/);
+  });
+
+  it('„Kontakte laden“ lädt auch die Excel einmal neu', async () => {
+    await setup();
+    const n = () => tam.requests.filter((o) => o.url.includes('IQDymsXIGo99')).length;
+    const before = n();
+    $('tamauto-ma-load').click();
+    assert.ok(await until(() => n() > before, 3000), 'Excel nicht neu geladen');
+  });
+
   it('Kontakte laden ohne bekannte TAM-Anfrage → Hinweis statt Fehler', async () => {
     await setup();
     $('tamauto-ma-load').click();
@@ -1080,5 +1105,25 @@ describe('Ortsliste hat Vorrang vor Marktgebieten', { skip }, () => {
     assert.ok(await until(() => tam.accepted.includes('MW3190503'), 15000), tam.logs().join('\n'));
     await sleep(1000);
     assert.deepEqual(tam.dblclicks, ['MW3190503']);
+  });
+});
+
+// Nach einem Update fehlen im gespeicherten Stand die neuen Excel-Blätter (MA, Kontakte, Marktgebiete) → sofort neu laden
+describe('Excel nach Update sofort neu laden', { skip }, () => {
+  const { makeXlsx, revocationList } = require('./harness');
+  const xlsx = makeXlsx({ annehmen: [['PLZ', 'Ort'], ['50825', 'Köln']], 'nicht annehmen': [['PLZ', 'Ort']], MA: [['Kürzel', 'Name', 'E-Mail'], ['MK', 'Markus', 'mk@example.com']] });
+  const xhr = (o) => o.url.includes('IQBmSNFRkXF5') ? { status: 200, responseText: revocationList() } : o.url.includes('IQDymsXIGo99') ? { status: 200, response: xlsx } : { error: true };
+  it('gespeicherter Stand ohne MA-Daten, frisch geladen → trotzdem sofort neu laden', async () => {
+    const places = { v: 2, plz: ['50825'], orte: [], block: { plz: [], orte: [] }, loadedAt: new Date().toISOString(), source: 'alt' };
+    tam = startTam({ gm: { places }, xhr });
+    await tam.ready();
+    assert.ok(await until(() => (tam.store.get('places').ma || []).length === 1, 5000), JSON.stringify(Object.keys(tam.store.get('places'))));
+  });
+  it('Stand mit MA-Daten, frisch geladen → kein erneutes Laden', async () => {
+    const places = { v: 2, plz: ['50825'], orte: [], block: { plz: [], orte: [] }, ma: [], kontakte: [], gebiete: [], blockAddr: [], loadedAt: new Date().toISOString(), source: 'neu' };
+    tam = startTam({ gm: { places }, xhr });
+    await tam.ready();
+    await sleep(800);
+    assert.ok(!tam.requests.some((o) => o.url.includes('IQDymsXIGo99')), 'lud unnötig neu');
   });
 });

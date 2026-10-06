@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.21.0
+// @version      1.21.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -420,7 +420,9 @@
             places = p; GM_setValue('places', places);
             const summary = `Ortsliste "${name}": ${places.plz.length} PLZ, ${places.orte.length} Orte · ` +
               `Sperrliste "${cfg.blockSheet}": ${b.plz.length} PLZ, ${b.orte.length} Orte` + (bl ? '' : ' (Blatt nicht gefunden)') +
-              (ba ? ` · "${cfg.blockAddrSheet}": ${p.blockAddr.length} Adressen` : '');
+              (ba ? ` · "${cfg.blockAddrSheet}": ${p.blockAddr.length} Adressen` : '') +
+              ` · MA: ${ma ? `${p.ma.length} Mitarbeiter (${p.ma.filter((x) => x.mail).length} mit E-Mail)` : 'Blatt fehlt'}` +
+              ` · Marktgebiete: ${mg ? `${p.gebiete.length} Zeilen` : 'Blatt fehlt'} · Kontakte: ${ko ? p.kontakte.length : 'Blatt fehlt'}`;
             if (changed) log(`Ortslisten aktualisiert – ${summary}`, 'ok');
             else log(`Ortslisten unverändert – ${summary}`, manual ? 'ok' : 'debug');
             renderStatus(); renderBlacklist(); resolve(true);
@@ -2589,10 +2591,15 @@
   async function ladeMaKontakte() {
     if (!tamAcceptedReq) throw new Error('„Angenommene Aufträge“ öffnen und dort einmal aktualisieren (Refresh-Pfeil)');
     const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-    const res = await W.fetch(tamAcceptedReq.url, { method: 'POST', credentials: 'include', headers: tamAcceptedReq.headers, body: mitLimit(tamAcceptedReq.body, 1500) });
+    const t0 = Date.now(), neu = mitLimit(tamAcceptedReq.body, 1500);
+    const res = await W.fetch(tamAcceptedReq.url, { method: 'POST', credentials: 'include', headers: tamAcceptedReq.headers, body: neu });
     const txt = await res.text();
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     maKontakte = { map: parseListeKontakte(txt), at: Date.now() };
+    const v = [...maKontakte.map.values()], buch = maOrders();
+    log(`MA-Management: Antwort ${Math.round(txt.length / 1024)} KB in ${Date.now() - t0} ms · Seitengröße ${neu === tamAcceptedReq.body ? 'unverändert (Aufbau der Anfrage unbekannt)' : '1500'} · ` +
+      `${v.length} Aufträge gelesen, ${v.filter((x) => x.telefon).length} mit Telefon, ${v.filter((x) => !x.eindeutig).length} nicht eindeutig · ` +
+      `Auftragsbuch: ${buch.length} Aufträge (7 Tage), davon ${buch.filter((o) => o.kontakt).length} mit Kontakt, ${buch.filter((o) => o.kontakt && o.kontakt.telefon).length} mit Telefon`, 'debug');
     return maKontakte.map.size;
   }
   // Aufträge der letzten 7 Tage aus dem Auftragsbuch, ergänzt um Tourzeichen (erkannt) und Kontakt
@@ -2627,6 +2634,14 @@
     const m = ma.find((x) => x.k === sel.value);
     const all = maOrders(), nurOhne = $('tamauto-ma-nurohne').checked;
     const mine = m ? all.filter((o) => zustaendig(o).includes(m.k) && (!nurOhne || o.tour.status !== 'tour')) : [];
+    const sumKey = `${m ? m.k : ''}|${all.length}|${mine.length}|${(places.ma || []).length}|${(places.gebiete || []).length}|${maKontakte.at}`;
+    if (sumKey !== renderMa.last) {
+      renderMa.last = sumKey;
+      const znt = all.filter((o) => zustaendig(o).length).length, zeichen = all.filter((o) => o.zeichen);
+      const cnt = (st) => zeichen.filter((o) => o.tour.status === st).length;
+      log(`MA-Management: ${(places.ma || []).length} MA, ${(places.gebiete || []).length} Marktgebiete, ${(places.kontakte || []).length} Kontakte · Auftragsbuch ${all.length} Aufträge (7 Tage), ${znt} zugeordnet, ${all.length - znt} nicht · ` +
+        `${m ? `${m.k}: ${mine.length} Aufträge${nurOhne ? ' ohne Tour' : ''}` : 'kein MA gewählt'} · Zeichen gelesen: ${cnt('tour')} Tour, ${cnt('ohneDatum')} ohne Datum, ${cnt('ohneKuerzel')} ohne Kürzel, ${cnt('unklar')} unklar`, 'debug');
+    }
     $('tamauto-ma-hint').textContent = maFehler || (!ma.length ? 'Excel-Blatt „MA“ fehlt oder ist leer (Ortsliste.xlsx).'
       : m && !(places.gebiete || []).length && !m.gebiet.length ? `${m.k} hat noch kein Marktgebiet (Blatt „Marktgebiete“).`
         : m && !(places.gebiete || []).some((g) => g.ma.includes(m.k)) && (places.gebiete || []).length ? `${m.k} steht in keinem Marktgebiet (Blatt „Marktgebiete“).` : m && !m.mail ? `${m.k} hat keine E-Mail im Blatt „MA“.` : '');
@@ -2644,6 +2659,8 @@
       box.appendChild(c);
     });
     $('tamauto-ma-unzcount').textContent = `(${unz.size})`;
+    const unzOpen = GM_getValue('maUnzOpen', true);
+    $('tamauto-ma-unz').style.display = unzOpen ? 'flex' : 'none'; $('tamauto-ma-unzarrow').textContent = unzOpen ? '▾' : '▸';
     $('tamauto-ma-loadstate').textContent = maKontakte.at ? `Kontakte: ${maKontakte.map.size} · ${hhmm(new Date(maKontakte.at))}` : 'Kontakte: nicht geladen';
     // Cc-Auswahl und Absender aus dem Blatt „Kontakte“
     const kon = (places.kontakte || []), withMail = kon.filter((k) => k.mail);
@@ -2679,19 +2696,26 @@
   function initMa() {
     const $ = (id) => document.getElementById(id);
     $('tamauto-ma-sel').onchange = (e) => { GM_setValue('maSel', e.target.value); renderMa(); };
+    $('tamauto-ma-unzhead').onclick = () => { GM_setValue('maUnzOpen', !GM_getValue('maUnzOpen', true)); renderMa(); };
     $('tamauto-ma-nurohne').onchange = renderMa; $('tamauto-ma-baustein').onchange = renderMa;
     $('tamauto-ma-absender').onchange = (e) => { GM_setValue('maSender', e.target.value); renderMa(); };
     $('tamauto-ma-subject').oninput = updateMaLink; $('tamauto-ma-body').oninput = updateMaLink;
+    $('tamauto-ma-open').addEventListener('click', () => {
+      const a = $('tamauto-ma-open'), n = ($('tamauto-ma-body').value.match(/^•/gm) || []).length;
+      log(`MA-Management: Mail geöffnet – an ${a.dataset.to || '(keine Adresse)'}, Cc: ${a.dataset.cc || '–'}, Baustein ${$('tamauto-ma-baustein').value}, ${n} Aufträge, Absender ${$('tamauto-ma-absender').value || '–'}, Link ${a.href.length} Zeichen`, 'debug');
+    });
     $('tamauto-ma-copy').onclick = () => { try { navigator.clipboard.writeText(`${$('tamauto-ma-subject').value}\n\n${$('tamauto-ma-body').value}`); log('Mailtext kopiert.'); } catch (e) { /* ignore */ } };
     $('tamauto-ma-load').onclick = async () => {
       $('tamauto-ma-loadstate').textContent = 'lädt …';
+      try { await loadPlacesFromSheet(true); } catch (e) { /* Fehler steht im Log */ } // Excel: Listen, MA, Marktgebiete, Kontakte
       try { const n = await ladeMaKontakte(); maFehler = ''; log(`MA-Management: Kontakte zu ${n} Aufträgen geladen.`, 'ok'); }
       catch (e) { maFehler = e.message; log(`MA-Management: Kontakte nicht geladen – ${e.message}`, 'err'); }
       renderMa();
     };
   }
+  const MA_RELOAD_MS = 30 * 60e3; // Kontakte alle 30 min (wie die Excel)
   function maAutoLoad() { // beim Öffnen des Reiters, wenn die Anfrage bekannt und der Stand älter als 5 min ist
-    if (tamAcceptedReq && Date.now() - maKontakte.at > 5 * 60e3) ladeMaKontakte().then(renderMa).catch(() => {});
+    if (tamAcceptedReq && Date.now() - maKontakte.at > MA_RELOAD_MS) ladeMaKontakte().then(renderMa).catch(() => {});
   }
 
   function buildPanel() {
@@ -2957,7 +2981,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
           <div id="tamauto-ma-hint" style="color:#b36b00;margin-top:2px"></div>
           <div style="max-height:150px;overflow:auto;margin-top:4px;border:1px solid #ddd">
             <table style="border-collapse:collapse;width:100%;font-size:11px"><tbody id="tamauto-ma-rows"></tbody></table></div>
-          <div style="margin-top:6px"><b>Nicht zugeordnet <span id="tamauto-ma-unzcount"></span></b>
+          <div style="margin-top:6px"><b id="tamauto-ma-unzhead" style="cursor:pointer" title="Aus-/einklappen"><span id="tamauto-ma-unzarrow">▾</span> Nicht zugeordnet <span id="tamauto-ma-unzcount"></span></b>
             <span class="tamauto-help" title="Aufträge, deren PLZ und Ort in keiner Zeile des Blatts „Marktgebiete“ (Ortsliste.xlsx) vorkommen. Anklicken kopiert PLZ und Ort – dann in der Excel einem Mitarbeiter zuordnen.">?</span>
             <div id="tamauto-ma-unz" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px"></div></div>
           <div style="margin-top:8px;padding-top:6px;border-top:2px solid #1a4d8f"><b>Mail an den Mitarbeiter</b>
@@ -2967,7 +2991,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
             <div style="margin:2px 0">Cc: <span id="tamauto-ma-cc"></span></div>
             <input id="tamauto-ma-subject" style="width:100%;margin:2px 0">
             <textarea id="tamauto-ma-body" style="width:100%;height:150px;font:11px monospace"></textarea>
-            <div class="tamauto-chk" style="gap:6px;margin-top:4px"><a id="tamauto-ma-open" href="#" style="padding:3px 8px;border:1px solid #1a4d8f;border-radius:3px;background:#e8f0fb;color:#000;text-decoration:none">✉ Mail öffnen</a>
+            <div class="tamauto-chk" style="gap:6px;margin-top:4px"><a id="tamauto-ma-open" href="#" target="_blank" rel="noopener noreferrer" style="padding:3px 8px;border:1px solid #1a4d8f;border-radius:3px;background:#e8f0fb;color:#000;text-decoration:none">✉ Mail öffnen</a>
               <button id="tamauto-ma-copy">Text kopieren</button><span id="tamauto-ma-mailstate" style="color:#b36b00"></span></div>
           </div>
         </div>
@@ -3933,8 +3957,9 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;
     // Excel (Ortsliste + Sperrliste) beim Start laden, wenn älter als 30 min oder altes Format, danach alle 30 min
     const reloadMs = cfg.placesReloadMin * 60 * 1000;
-    if (age > reloadMs || places.v !== 2 || !places.block) loadPlacesFromSheet();
+    if (age > reloadMs || places.v !== 2 || !places.block || places.ma === undefined) loadPlacesFromSheet(); // places.ma fehlt = Stand von vor dem MA-Management
     setInterval(loadPlacesFromSheet, reloadMs);
+    setInterval(() => { if (tamAcceptedReq && license) ladeMaKontakte().then(renderMa).catch(() => {}); }, MA_RELOAD_MS); // Kontakte der angenommenen Aufträge
     restartTimer();
     if (cfg.enabled) cycle('Start');
     // Update-Prüfung beim Start (max. alle 6 h) und danach alle 6 h
