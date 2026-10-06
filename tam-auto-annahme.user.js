@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.23.5
+// @version      1.23.6
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1990,19 +1990,41 @@
     const pa = document.getElementById(cfg.acceptedTabId);
     return `Reiter: ${ids.join(', ') || 'keine'} · Panel Angenommene: ${pa ? `da, ${pa.querySelectorAll('.x-grid3-row').length} Zeilen${pa.closest('.x-hide-display') ? ', verborgen' : ''}` : 'fehlt'}`;
   };
+  // TAM startet nur mit dem „Information Cockpit“; die Reiter „[Meine Aufträge] …“ entstehen erst über einen Menüpunkt/Link. Kleinstes sichtbares Element
+  // mit genau diesem Text (nicht im Bedienfeld des Scripts, nicht in der Reiterleiste, nicht im Raster)
+  const findByText = (re, root = document) => {
+    const c = [...root.querySelectorAll('a, button, span, em, td')].filter((e) => e.children.length < 3 && e.textContent.length < 40 && re.test(text(e)) && visible(e) && !e.closest('#tamauto, .x-tab-strip, .x-grid3'));
+    return c.find((e) => !c.some((o) => o !== e && e.contains(o))) || null; // innerstes Element
+  };
+  const clickEl = (el) => fire(el.closest('.x-menu-item, .x-btn, a, li') || el, ['mouseover', 'mousedown', 'mouseup', 'click']);
+  async function openTabViaMenu(panelId, labelRe) {
+    const has = () => !!document.querySelector(`li[id$="__${panelId}"]`);
+    if (has()) return true;
+    let el = findByText(labelRe);                                 // Link/Menüpunkt schon sichtbar?
+    if (!el) {                                                      // sonst Menü „Meine Aufträge“ öffnen
+      const menu = findByText(/^Meine Auftr(ä|ae)ge$/i);
+      if (menu) { clickEl(menu); await sleep(350); el = findByText(labelRe); }
+    }
+    if (!el) return false;
+    clickEl(el);
+    return !!(await waitFor(has, 4000, 200));
+  }
   async function openTabsOnStart() {
     if (startTabsDone || !license || busy || accSyncing || !GM_getValue('startTabs', true) || Date.now() < startNextAt) return;
-    startNextAt = Date.now() + 15000;
-    if (!document.querySelector(`li[id$="__${cfg.tabPanelId}"]`) || !document.querySelector(`li[id$="__${cfg.acceptedTabId}"]`)) { // TAM noch nicht aufgebaut
-      if (++startTries > 12) { startTabsDone = true; log(`Start: Reiter nicht gefunden – aufgegeben (${tabDiag()}).`, 'err'); }
+    startNextAt = Date.now() + 3000;
+    if (!document.querySelector('li[id*="__"]')) return; // TAM noch nicht aufgebaut
+    if (++startTries > 15) { startTabsDone = true; log(`Start: Reiter öffnen hat nicht geklappt – aufgegeben (${tabDiag()}).`, 'err'); return; }
+    log(`Start: „Veröffentlichte“ und „Angenommene Aufträge“ werden geöffnet (Versuch ${startTries}) …`, 'debug');
+    if (!(await openTabViaMenu(cfg.tabPanelId, /^Ver(ö|oe)ffentlichte Auftr(ä|ae)ge$/i))) {
+      const knöpfe = [...document.querySelectorAll('.x-btn, .x-menu-item')].filter((e) => visible(e) && !e.closest('#tamauto, .x-grid3')).map((e) => text(e)).filter((t) => t && t.length < 40).slice(0, 25);
+      log(`Start: Menü/Link „Veröffentlichte Aufträge“ nicht gefunden (${tabDiag()} · sichtbare Schaltflächen: ${[...new Set(knöpfe)].join(' | ') || 'keine'}).`, 'debug');
       return;
     }
-    if (++startTries > 6) { startTabsDone = true; log(`Start: Reiter öffnen hat nicht geklappt – aufgegeben (${tabDiag()}).`, 'err'); return; }
-    log(`Start: „Veröffentlichte“ und „Angenommene Aufträge“ werden geöffnet (Versuch ${startTries}) …`, 'debug');
-    if (!onPublishedTab()) { clickPublishedTab(); await waitFor(onPublishedTab, 4000); }
-    await sleep(1500); // Liste laden lassen
-    if (await syncAcceptedTab('Start', true)) startTabsDone = true;
-    else log(`Start: Reiter noch nicht bereit, neuer Versuch in 15 s (${tabDiag()}).`, 'debug');
+    if (!onPublishedTab()) { clickPublishedTab(); await waitFor(onPublishedTab, 3000, 200); }
+    await sleep(1200); // Liste laden lassen
+    if (!(await openTabViaMenu(cfg.acceptedTabId, /^Angenommene Auftr(ä|ae)ge$/i))) { log(`Start: Menü/Link „Angenommene Aufträge“ nicht gefunden (${tabDiag()}).`, 'debug'); return; }
+    if (await syncAcceptedTab('Start', true)) { startTabsDone = true; log(`Start: beide Reiter geöffnet („Veröffentlichte“ und „Angenommene Aufträge“), aktiv: ${onPublishedTab() ? 'Veröffentlichte Aufträge' : 'anderer Reiter'}.`, 'ok'); }
+    else log(`Start: Reiter noch nicht bereit, neuer Versuch (${tabDiag()}).`, 'debug');
   }
   // Beim Öffnen des MA-Managements mit TAM abgleichen (TAM ist die Quelle – nicht nur der lokale Stand), höchstens alle 5 min
   function maAutoSync() { if (Date.now() - GM_getValue('accSyncAt', 0) > 5 * 60e3) syncAcceptedTab('MA-Management').then((ok) => { if (ok) renderMa(); }).catch(() => {}); }
@@ -2070,6 +2092,7 @@
       setStatus(''); // „Abgleich … in Tabelle … passend“ steht im Protokoll, die Zeile im Kopf entfällt (mehr Platz)
 
       // Protokoll: jeder Abgleich eine Zeile, jeden Auftrag einmalig mit Entscheidung
+      if (reason !== 'Intervall' || hits.length || blockedHits.length || noKey.length) // der minütliche Routine-Abgleich ohne Treffer wird nicht mehr protokolliert
       log(`${reason} → Abgleich: ${all.length} Aufträge in Tabelle, ${orders.length} offen, ${hits.length} passend, ` +
         (blockedHits.length ? `${blockedHits.length} gesperrt, ` : '') +
         `${old.length} bereits bearbeitet` + (noKey.length ? `, ${noKey.length} ohne AuftragsNr` : ''), hits.length ? 'ok' : 'info');

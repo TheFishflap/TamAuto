@@ -118,13 +118,29 @@ describe('„XX zurück“ und Morgenroutine', { skip }, () => {
     assert.ok(await until(() => tam.document.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active'), 5000));
   });
 
-  it('Start aus dem Information Cockpit: Reiter werden trotzdem geöffnet, am Ende „Veröffentlichte Aufträge“', async () => {
+  it('Start nur mit „Information Cockpit“ (wie in TAM): Reiter entstehen über das Menü „Meine Aufträge“; am Ende „Veröffentlichte Aufträge“ aktiv, Zeichen abgeglichen', async () => {
     tam = startTam({ gm: { startTabs: true, places: KOELN, orderbook: [{ ts: new Date().toISOString(), nr: 'MW3190821', plz: '44141', ort: 'Dortmund', tid: '3706821', zeichen: '' }] } });
     tam.addAccepted('MW3190821', '', { id: '3706821', zeichen: 'LE' });
+    const d = tam.document, parts = {};
+    for (const id of ['AgentVeroeffentlichteAuftraege', 'AgentEigeneAuftraege']) {
+      const li = d.querySelector(`li[id$="__${id}"]`), panel = d.getElementById(id);
+      parts[id] = { li, panel, liParent: li.parentElement, panelParent: panel.parentElement }; li.remove(); panel.remove();
+    }
     tam.selectTab('x-auto-36');
+    // das echte Menü „Meine Aufträge“ (im Mitschnitt vorhanden) öffnet beim Klick ein Menü mit zwei Einträgen; ein Eintrag öffnet den Reiter (wie in TAM)
+    const btn = [...d.querySelectorAll('.x-btn')].find((b) => /^Meine Aufträge$/.test(b.textContent.trim()));
+    btn.addEventListener('click', () => {
+      if (d.querySelector('.x-menu')) return;
+      const menu = d.createElement('div'); menu.className = 'x-menu';
+      menu.innerHTML = '<a class="x-menu-item"><span>Veröffentlichte Aufträge</span></a><a class="x-menu-item"><span>Angenommene Aufträge</span></a>';
+      [...menu.querySelectorAll('.x-menu-item')].forEach((a, n) => a.addEventListener('click', () => {
+        const id = ['AgentVeroeffentlichteAuftraege', 'AgentEigeneAuftraege'][n], p = parts[id];
+        p.liParent.appendChild(p.li); p.panelParent.appendChild(p.panel); tam.selectTab(id); menu.remove();
+      }));
+      d.body.appendChild(menu);
+    });
     await tam.ready();
     assert.ok(await until(() => (book().find((e) => e.nr === 'MW3190821') || {}).zeichen === 'LE', 20000), tam.logs().slice(-6).join('\n'));
-    assert.ok(await until(() => tam.document.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active'), 5000));
-  });
-});
-
+    assert.ok(await until(() => d.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active'), 5000), 'nicht in „Veröffentlichte Aufträge“');
+    assert.ok(await until(() => tam.logs().some((l) => /Start: beide Reiter geöffnet/.test(l)), 3000), tam.logs().slice(-5).join('\n'));
+  });});

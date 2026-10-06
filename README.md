@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.23.6 – 2026-10-06
+- **Start-Routine öffnet die Reiter über TAMs Menü „Meine Aufträge“:** TAM startet nur mit dem „Information Cockpit“, die Reiter „Veröffentlichte“ und „Angenommene Aufträge“ entstehen erst über das Menü. Das Script öffnet beide (Versuche alle 3 s), liest „Angenommene Aufträge“ einmal aus und bleibt in „Veröffentlichte Aufträge“. Im Protokoll steht „Start: beide Reiter geöffnet …“; bei Misserfolg die gefundenen Reiter und sichtbaren Schaltflächen.
+- Protokoll: der minütliche Routine-Abgleich ohne Treffer („Intervall → Abgleich: 0 Aufträge in Tabelle, 0 offen …“) wird nicht mehr geschrieben.
+
 ### 1.23.5 – 2026-10-06
 - **Auftragsbuch:** die Spalte „Z.“ (Zeichen gesetzt ✓) entfällt komplett – fünf Spalten: Datum | Von | AuftragsNr | Ort | Euro.
 - **Start-Routine robuster:** bis zu 6 Versuche im Abstand von 15 s (auch wenn TAM mit einem anderen Reiter startet); das Protokoll nennt bei Misserfolg die vorhandenen Reiter und den Zustand des Panels „Angenommene Aufträge“.

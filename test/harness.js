@@ -124,8 +124,8 @@ function startTam(opts = {}) {
   const tam = { accepted: [], closed: [], dblclicks: [], sources, fetches, requests, store, window: w, document: d, rpc: '//OK[]', rpcSave: '//OK[[],0,7]', saves: [] };
 
   // Reiterwechsel: Klick auf einen Reiter der Hauptleiste
-  const panels = () => [...d.querySelectorAll('li[id*="__"]')].filter((li) => d.getElementById(li.id.split('__').pop()) &&
-    li.parentElement === d.querySelector(`li[id$="__AgentVeroeffentlichteAuftraege"]`).parentElement);
+  const strip = d.querySelector(`li[id$="__AgentVeroeffentlichteAuftraege"]`).parentElement; // Reiterleiste (einmal merken: Tests können Reiter entfernen)
+  const panels = () => [...d.querySelectorAll('li[id*="__"]')].filter((li) => d.getElementById(li.id.split('__').pop()) && li.parentElement === strip);
   tam.selectTab = (panelId) => panels().forEach((li) => {
     const id = li.id.split('__').pop(), on = id === panelId;
     li.classList.toggle('x-tab-strip-active', on);
