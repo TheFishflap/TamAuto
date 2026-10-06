@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.20.2
+// @version      1.20.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -103,6 +103,7 @@
   // z. B. vom anderen Anbieter zurückgegeben). Einträge älterer Versionen ohne Herkunft: laut Auftragsbuch
   // angenommen → bleiben, sonst freigegeben (früher wurde auch jeder Fehlschlag dauerhaft gemerkt).
   const FAIL_RETRY_MS = 15 * 60 * 1000;
+  if (GM_getValue('extraPlaces', null)) GM_setValue('extraPlaces', null); // frühere 24-h-Zusatzliste („Liste einfügen“) entfällt
   let done = new Set(GM_getValue('doneRefs', []));
   const doneInfo = GM_getValue('doneInfo', {});
   (() => {
@@ -269,23 +270,6 @@
   }
 
   // ------------------------------------------------------------------ Ortsliste laden
-  function parseCSV(str) {
-    const rows = []; let row = []; let cur = ''; let q = false;
-    for (let i = 0; i < str.length; i++) {
-      const c = str[i];
-      if (q) {
-        if (c === '"' && str[i + 1] === '"') { cur += '"'; i++; }
-        else if (c === '"') q = false;
-        else cur += c;
-      } else if (c === '"') q = true;
-      else if (c === ',' || c === ';') { row.push(cur); cur = ''; }
-      else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
-      else if (c !== '\r') cur += c;
-    }
-    if (cur || row.length) { row.push(cur); rows.push(row); }
-    return rows;
-  }
-
   // PLZ aus der Liste: 2–5 Ziffern = Anfang der PLZ ("43" → alle 43xxx, "47877" → genau diese).
   // "43***" wird wie "43" behandelt; 1 Ziffer = von Excel verschluckte führende 0 ("1" → "01").
   function normPlz(v) {
@@ -415,35 +399,10 @@
     });
   }
 
-  // Zusätzliche Liste ("Liste einfügen"): wird ZUSÄTZLICH zur geladenen Ortsliste angenommen
-  // und nach 24 h automatisch gelöscht. Die Excel-Listen bleiben unverändert.
-  const EXTRA_TTL = 24 * 3600 * 1000;
-  function extraPlaces() {
-    const e = GM_getValue('extraPlaces', null);
-    if (e && Date.now() - e.at < EXTRA_TTL) return e;
-    if (e) GM_setValue('extraPlaces', null); // abgelaufen
-    return { plz: [], orte: [], at: 0 };
-  }
-
-  function loadPlacesFromText(t) {
-    const x = extractPlaces(parseCSV(t), 'manuell');
-    if (!x.plz.length && !x.orte.length) {
-      GM_setValue('extraPlaces', null);
-      log('Zusätzliche Liste geleert.', 'ok');
-    } else {
-      GM_setValue('extraPlaces', { plz: x.plz, orte: x.orte, at: Date.now() });
-      log(`Zusätzliche Liste übernommen: ${x.plz.length} PLZ, ${x.orte.length} Orte – gilt 24 h zusätzlich zur Ortsliste.`, 'ok');
-    }
-    renderStatus();
-  }
-
   function matches(order) {
-    // Treffer, wenn die PLZ mit einem Listeneintrag beginnt ODER der Ort (Listenzeile ohne PLZ) passt –
-    // in der geladenen Ortsliste oder in der zusätzlichen 24-h-Liste
+    // Treffer, wenn die PLZ mit einem Listeneintrag beginnt ODER der Ort (Listenzeile ohne PLZ) passt
     const p = (order.plz || '').trim();
-    const ex = extraPlaces();
     return places.plz.some((x) => p.startsWith(x)) || places.orte.includes(norm(order.ort)) ||
-      ex.plz.some((x) => p.startsWith(x)) || ex.orte.includes(norm(order.ort)) ||
       acceptlist().plz.includes(p); // Tages-Annahmeliste: nur exakte 5-stellige PLZ
   }
 
@@ -2331,14 +2290,6 @@
         ? at.toLocaleTimeString('de-DE') : at.toLocaleString('de-DE');
       upd.textContent = `Zuletzt aktualisiert: ${when} · automatisch alle ${cfg.placesReloadMin} min`;
     }
-    const ex = extraPlaces();
-    const exEl = document.getElementById('tamauto-extra');
-    if (exEl) {
-      const n = ex.plz.length + ex.orte.length;
-      exEl.textContent = n ? `+ Zusätzlich: ${[...ex.plz, ...ex.orte].join(', ')} (bis ${new Date(ex.at + EXTRA_TTL)
-        .toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })})` : '';
-      exEl.style.display = n ? '' : 'none';
-    }
     const btn = document.getElementById('tamauto-toggle');
     if (btn) { btn.textContent = cfg.enabled ? '■ Stop' : '▶ Start'; btn.style.background = cfg.enabled ? '#c62828' : '#2e7d32'; }
     updateTabStatus();
@@ -2363,7 +2314,6 @@
         <a id="tamauto-update" href="${UPDATE_URL}" target="_blank" style="display:none;font-weight:bold;color:#1a4d8f;margin:4px 0"></a>
         <div id="tamauto-tab" style="font-weight:bold;margin:4px 0"></div>
         <div id="tamauto-places"></div>
-        <div id="tamauto-extra" style="color:#1a4d8f;display:none"></div>
         <div id="tamauto-status" style="color:#555">bereit</div>
         <div id="tamauto-refresh" style="color:#555"></div>
         <div id="tamauto-sync" style="color:#555"></div>
@@ -2605,13 +2555,6 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
             title="Passend = veröffentlichte Aufträge, deren PLZ in der Ortsliste steht. Tatsächlich verfügbar = davon versucht und beim Öffnen nicht schon an einen anderen Anbieter vergeben."></div>
         </div>
         <div id="tamauto-page-main" style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          <button id="tamauto-load" title="Lädt Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) neu">Ortslisten laden</button>
-          <span class="tamauto-chk">
-            <button id="tamauto-paste">Liste einfügen</button>
-            <span class="tamauto-help" title="BULK-Einfügen: viele PLZ (bzw. Orte) auf einmal – z. B. aus Excel kopiert – ZUSÄTZLICH zur geladenen Ortsliste annehmen. Gleiche Logik: „43“ = alle 43xxx, „47877“ = nur diese PLZ. Eine PLZ oder „PLZ;Ort“ je Zeile. Wird nach 24 Stunden automatisch gelöscht. Leer übernehmen = sofort löschen.
-
-Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser gedacht – sie nimmt nur vollständige 5-stellige PLZ an, so wird nicht versehentlich ein ganzes Gebiet angenommen.">?</span>
-          </span>
           <span class="tamauto-chk">
             <label class="tamauto-chk"><input type="checkbox" id="tamauto-ar"> Auto-Refresh</label>
             alle <input id="tamauto-int" type="number" min="10" style="width:48px;margin:0" value="${cfg.intervalSec}"> s
@@ -2651,7 +2594,6 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
             <div id="tamauto-al-list" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
           </div>
         </div>
-        <textarea id="tamauto-ta" placeholder="Bulk: zusätzliche PLZ für 24 h – eine je Zeile, z. B.&#10;43        (= alle 43xxx!)&#10;47877&#10;&#10;Für einzelne PLZ besser die Tages-Annahmeliste nutzen (nur 5-stellig)." style="display:none;width:100%;height:96px"></textarea>
         <div id="tamauto-log" style="max-height:220px;overflow:auto;font:11px monospace;border-top:1px solid #ddd;padding-top:4px"></div>
       </div>`;
     // Bedienfeld: verschiebbar (Titelzeile) und in der Größe änderbar (Ecke unten rechts); beides wird gespeichert
@@ -2702,18 +2644,6 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       renderAr(); restartTimer();
     };
     renderAr();
-    $('tamauto-load').onclick = () => loadPlacesFromSheet(true);
-    // Zusätzliche Liste: Feld zeigt die aktuelle Zusatzliste zum Bearbeiten; leer übernehmen = löschen
-    $('tamauto-paste').onclick = () => {
-      const ta = $('tamauto-ta');
-      if (ta.style.display === 'none') {
-        const ex = extraPlaces();
-        ta.value = [...ex.plz, ...ex.orte].join('\n');
-        ta.style.display = 'block'; $('tamauto-paste').textContent = 'Übernehmen'; ta.focus();
-      } else {
-        loadPlacesFromText(ta.value); ta.style.display = 'none'; $('tamauto-paste').textContent = 'Liste einfügen';
-      }
-    };
     // Ohne gefundenes Update: nach Updates suchen. Mit Update: als Link die Installation öffnen.
     $('tamauto-upd').onclick = () => {
       if (pendingUpdate) { window.open(updateLink, '_blank'); log(`Update ${pendingUpdate}: Installation geöffnet.`); return; }
@@ -2731,7 +2661,6 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
           borderRadius: '3px 3px 0 0', borderBottom: '2px solid #1a4d8f', flex: '1 1 auto', whiteSpace: 'nowrap',
           marginTop: '2px' });
       });
-      if (id === 'tamauto-page-main') $('tamauto-ta').style.display = 'none';
       if (id === 'tamauto-page-main') renderBlacklist();
       if (id === 'tamauto-page-book') renderOrderbook();
       if (id === 'tamauto-page-push') renderPushPage();

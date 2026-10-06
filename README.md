@@ -47,7 +47,6 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Farbige TAM-Einträge** | Optional, Standard an: grün = wird angenommen, grau = nicht auf der Annahmeliste, rot = gesperrt, orange = zurückgegeben – nur lokale Anzeige |
 | **Rückgaben** | Heute angenommene und wieder zurückgegebene Aufträge werden auf **allen Geräten** bis Mitternacht nicht angenommen (in der TAM-Tabelle **orange**) |
 | **Tages-Annahmeliste** | Einzelne 5-stellige PLZ heute zusätzlich annehmen |
-| **Liste einfügen** | Bulk: viele PLZ auf einmal für 24 h zusätzlich annehmen |
 
 ### 📊 Überblick & Komfort
 | | |
@@ -125,8 +124,7 @@ anderer Browser genutzt, ist dort eine eigene Aktivierung nötig („Lizenz anfr
 | **Start / Stop** | Automatische Prüfung und **verbindliche** Annahme ein/aus |
 | **Auto-Refresh** | Optional – klickt regelmäßig den Refresh-Pfeil der Tabelle, am TAM-Takt ausgerichtet (unabhängig von Start/Stop). **Standard: aus** |
 | **alle … s** | Intervall für Refresh und Abgleich – Standard **60 s**, Minimum **10 s**. Niedriger = höhere Auslastung, mit Bedacht wählen. **Über 60 s** schaltet sich Auto-Refresh ab; der Abgleich läuft dann synchron mit der TAM-eigenen Aktualisierung (bleibt immer an). Erklärung auch über das **?** |
-| **Ortslisten laden** | Lädt **beide** Listen neu: Ortsliste (Blatt „annehmen“) und Sperrliste (Blatt „nicht annehmen“) aus dem Excel in SharePoint – ohne Anmeldung; Ergebnis im Log; automatisch alle 30 min |
-| **Liste einfügen** | **Bulk-Einfügen** – viele PLZ auf einmal (z. B. aus Excel kopiert) **zusätzlich** zur geladenen Ortsliste annehmen; für **einzelne** PLZ ist die **Tages-Annahmeliste** (nur 5-stellig) besser gedacht. (eine je Zeile, gleiche PLZ-Logik), wird **nach 24 h automatisch gelöscht**. Das Feld zeigt die aktuelle Zusatzliste; leer übernehmen = löschen. Anzeige „+ Zusätzlich: … (bis …)“. Erklärung über das **?** |
+| **Neu laden** | Bei der Ortsliste: lädt **beide** Listen neu – Ortsliste (Blatt „annehmen“) und Sperrlisten (Blätter „nicht annehmen“, „nicht annehmen Adresse“) aus dem Excel in SharePoint, ohne Anmeldung; Ergebnis im Log; automatisch alle 30 min |
 
 ### Sperren (Reiter „Bedienung“)
 
@@ -401,6 +399,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.20.3 – 2026-10-06
+- Buttons **„Ortslisten laden“** und **„Liste einfügen“** (24-h-Zusatzliste) entfernt – „Neu laden“ bei der Ortsliste lädt
+  alle Listen; für zusätzliche einzelne PLZ gibt es die Tages-Annahmeliste.
 
 ### 1.20.2 – 2026-10-06
 - **Farbige TAM-Einträge** (Erweiterte Einstellungen, Standard an): In „Veröffentlichte Aufträge“ sind Aufträge
