@@ -52,6 +52,16 @@ describe('Tourzeichen', () => {
     }
     const o = p('MK 12.10 10:00'); assert.equal(o.kontakt, ''); assert.equal(o.bestaetigt, false); assert.equal(o.versuch, false);
   });
+  it('Kombinationen aus T/t/M/m (z. B. „tm“ = Telefon- und Mailversuch)', () => {
+    const r = p('LE tm'); assert.equal(r.kuerzel, 'LE'); assert.equal(r.kontakt, 'tm'); assert.equal(r.versuch, true); assert.equal(r.bestaetigt, false);
+    const s = p('MK 12.10 10:00 Tm'); assert.equal(s.kontakt, 'Tm'); assert.equal(s.bestaetigt, true); assert.equal(s.versuch, false); // T bestätigt, m nur Versuch
+    assert.equal(p('MK 12.10 10:00 tmt').kontakt, 'tmt');
+    assert.equal(p('MK 12.10 10:00 ttmm').kontakt, ''); // zu lang → kein Kontaktstatus
+  });
+  it('bekanntes Kürzel hat Vorrang vor Kontaktbuchstaben (MM, TM)', () => {
+    const r = parse('MM 12.10 10:00', ['MM', 'MK'], new Date(2026, 9, 6)); assert.equal(r.kuerzel, 'MM'); assert.equal(r.kontakt, '');
+    assert.equal(parse('tm 12.10', ['TM'], new Date(2026, 9, 6)).kuerzel, 'TM');
+  });
   it('einzelne Zahl neben dem Datum ist die volle Stunde (10 → 10:00)', () => {
     ok(p('MK 12.10 10'), 'MK', 12, 10, 10, 0);
     ok(p('MK 12.10 8 T'), 'MK', 12, 10, 8, 0);

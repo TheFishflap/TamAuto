@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.21.2
+// @version      1.21.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -518,14 +518,14 @@
     rest = rest.replace(/(?<![\d.:])(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\.?(?![\d:])/g, (all, a, b, y) =>
       ((!y && setDate(+a, +b)) || (y && setDate(+a, +b, +y)) || (!y && setTime(+a, +b)) ? ' ' : all));
     // 4) Kontaktstatus: einzelner Buchstabe T/t/M/m; danach eine einzelne Zahl neben gültigem Datum = volle Stunde
-    const kt = /(?<![A-Za-zÄÖÜäöüß])([TtMm])(?![A-Za-zÄÖÜäöüß])/.exec(rest);
-    if (kt) { out.kontakt = kt[1]; rest = rest.slice(0, kt.index) + ' ' + rest.slice(kt.index + 1); }
+    const known = new Set((kuerzelListe || []).map((k) => String(k).toUpperCase()));
+    const kt = [...rest.matchAll(/(?<![A-Za-zÄÖÜäöüß])([TtMm]{1,3})(?![A-Za-zÄÖÜäöüß])/g)].find((x) => !known.has(x[1].toUpperCase())); // bekanntes Kürzel (z. B. MM) hat Vorrang
+    if (kt) { out.kontakt = kt[1]; rest = rest.slice(0, kt.index) + ' ' + rest.slice(kt.index + kt[1].length); }
     if (datum && !zeit) rest = rest.replace(/(?<![\d.:])(\d{1,2})(?![\d.:])/, (all, h) => (setTime(+h, 0) ? ' ' : all));
-    out.bestaetigt = out.kontakt === 'T' || out.kontakt === 'M'; out.versuch = out.kontakt === 't' || out.kontakt === 'm';
+    out.bestaetigt = /[TM]/.test(out.kontakt); out.versuch = !!out.kontakt && !out.bestaetigt; // Großbuchstabe = bestätigt, nur Kleinbuchstaben = Versuch
     // 5) Kürzel: erstes bekanntes Wort, sonst das erste 2–4-stellige Wort (ohne Füllwörter wie „neu“, „erl“)
     const SKIP = /^(neu|erl|uhr|tour|tel|ok|am|um)$/i;
     const words = (rest.match(/[A-Za-zÄÖÜäöüß]{2,4}(?![A-Za-zÄÖÜäöüß])/g) || []).filter((w) => !SKIP.test(w));
-    const known = new Set((kuerzelListe || []).map((k) => String(k).toUpperCase()));
     const hit = words.find((w) => known.has(w.toUpperCase())) || words[0] || '';
     out.kuerzel = hit.toUpperCase(); out.bekannt = !!hit && known.has(out.kuerzel);
     out.datum = datum; out.zeit = zeit;
@@ -2664,6 +2664,8 @@
       const cnt = (st) => zeichen.filter((o) => o.tour.status === st).length;
       log(`MA-Management: ${(places.ma || []).length} MA, ${(places.gebiete || []).length} Marktgebiete, ${(places.kontakte || []).length} Kontakte · Auftragsbuch ${all.length} Aufträge (7 Tage), ${znt} zugeordnet, ${all.length - znt} nicht · ` +
         `${m ? `${m.k}: ${mine.length} Aufträge${nurOhne ? ' ohne Tour' : ''}` : 'kein MA gewählt'} · Zeichen gelesen: ${cnt('tour')} Tour, ${cnt('ohneDatum')} ohne Datum, ${cnt('ohneKuerzel')} ohne Kürzel, ${cnt('unklar')} unklar`, 'debug');
+      const nz = new Map(); all.filter((o) => !zustaendig(o).length).forEach((o) => nz.set(`${o.plz} ${o.ort}`, (nz.get(`${o.plz} ${o.ort}`) || 0) + 1));
+      if (nz.size) log(`MA-Management: nicht zugeordnet (${nz.size}): ${[...nz.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([k, n]) => `${k} ×${n}`).join(', ')}`, 'debug');
       const rest = new Map(); zeichen.filter((o) => o.tour.status !== 'tour').forEach((o) => rest.set(o.zeichen, (rest.get(o.zeichen) || 0) + 1));
       if (rest.size) log(`MA-Management: Zeichen ohne erkennbare Tour (häufigste): ${[...rest.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([z, n]) => `„${z}“ ×${n}`).join(', ')}`, 'debug');
     }

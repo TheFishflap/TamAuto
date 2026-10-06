@@ -396,6 +396,11 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.21.3 – 2026-10-06
+- **Kontaktstatus in „Ihr Zeichen“** auch als Kombination (z. B. `tm` = Telefon- und Mailversuch, `Tm` = telefonisch bestätigt, Mail nur versucht);
+  ein bekanntes Kürzel (z. B. MM) hat Vorrang vor den Kontaktbuchstaben.
+- Protokoll MA-Management: nicht zugeordnete Aufträge mit PLZ, Ort und Anzahl.
+
 ### 1.21.2 – 2026-10-06
 - **MA-Management – Mail:** Aufträge stehen als **Tabelle mit Kontakt** in der Mail (Auftrag · PLZ/Ort · SLA · Kontakt · Hinweis); neuer Knopf
   „Als Tabelle kopieren“ legt eine echte Tabelle zum Einfügen in die Mail in die Zwischenablage. Neuer Baustein **„Termin vereinbaren + Kurzzeichen“**.
