@@ -150,3 +150,36 @@ describe('Zuständigkeit und Zeichen aus dem Marktgebiet', { skip }, () => {
     assert.doesNotMatch($('tamauto-ma-body').value, /MW3190602/); // hat schon eine Tour
   });
 });
+
+describe('„XX zurück“ und Morgenroutine', { skip }, () => {
+  const old = new Date(Date.now() - 3 * 864e5).toISOString();
+  const book = () => tam.store.get('orderbook') || [];
+  const ret = () => (tam.store.get('returnsToday') || {}).items || {};
+
+  it('„GS zurück“ bei einem Auftrag von einem früheren Tag → heute auf der Tagesblacklist', async () => {
+    tam = startTam({ gm: { places: KOELN, orderbook: [{ ts: old, nr: 'MW3190801', plz: '44141', ort: 'Dortmund', tid: '3706801', zeichen: '' }] } });
+    await tam.ready();
+    tam.addAccepted('MW3190801', '', { id: '3706801', zeichen: 'GS zurück' });
+    tam.selectTab('AgentEigeneAuftraege');
+    assert.ok(await until(() => Object.keys(ret()).length, 3000), JSON.stringify(tam.store.get('returnsToday')));
+    assert.ok(ret().MW3190801, JSON.stringify(ret()));
+  });
+
+  it('Morgenroutine: ab 07:30 einmal „Angenommene Aufträge“ lesen und zurück zu „Veröffentlichte Aufträge“', async () => {
+    tam = startTam({ fakeHour: 7, gm: { morgenScan: '', places: KOELN, orderbook: [{ ts: old, nr: 'MW3190802', plz: '44141', ort: 'Dortmund', tid: '3706802', zeichen: '' }] } });
+    tam.addAccepted('MW3190802', '', { id: '3706802', zeichen: 'LE zurück' });
+    tam.selectTab('AgentVeroeffentlichteAuftraege');
+    await tam.ready();
+    assert.ok(await until(() => ret().MW3190802, 15000), tam.logs().slice(-6).join('\n'));
+    assert.ok(await until(() => tam.store.get('morgenScan') === new Date().toLocaleDateString('sv-SE'), 3000), 'Tagesmarke fehlt');
+    assert.ok(await until(() => tam.document.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active'), 5000), 'nicht zurück im Reiter');
+    assert.equal(book().find((e) => e.nr === 'MW3190802').zeichen, 'LE zurück');
+  });
+
+  it('Morgenroutine läuft vor 07:30 nicht', async () => {
+    tam = startTam({ fakeHour: 6, gm: { morgenScan: '', places: KOELN } });
+    await tam.ready();
+    await sleep(6500);
+    assert.equal(tam.store.get('morgenScan'), '');
+  });
+});

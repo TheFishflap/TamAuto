@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.21.10 – 2026-10-06
+- **„XX zurück“ im Zeichen** (auch bei Aufträgen von früheren Tagen) setzt den Auftrag auf die **Tagesblacklist** (Rückgaben von heute) und meldet ihn den anderen Geräten; er wird nicht erneut angenommen.
+- **Morgenroutine:** einmal je Tag zwischen 07:30 und 09:00 öffnet das Script kurz „Angenommene Aufträge“, gleicht die Zeichen ab und wechselt zurück – so stehen „zurück“-Aufträge **vor 08:00** auf der Blacklist, wenn TAM sie aus dem Account nimmt und neu veröffentlicht. Nur im Ruhezustand (nicht während einer Annahme). Hinweis: gelesen wird die angezeigte Seite der Liste (bis 500 Zeilen).
+
 ### 1.21.9 – 2026-10-06
 - **Arbeitszeit fest 08:00–18:00** (nicht mehr einstellbar, kein Ein-/Ausschalter): außerhalb pausieren Auto-Refresh und Silent Reload. Die Annahme selbst läuft weiter.
 

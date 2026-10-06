@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.21.9
+// @version      1.21.10
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -761,10 +761,9 @@
     // „zurück …“ im Zeichen = Rückgabe: bei den Rückgaben eintragen (heute nicht erneut annehmen) und den anderen Geräten melden
     const known = (places.ma || []).map((m) => m.k), neuRet = [];
     book.forEach((e) => {
-      if (!e.zeichen || e.zurueck || !/\bzur(ü|ue)ck\b/i.test(e.zeichen) || parseTourzeichen(e.zeichen, known).status !== 'rueckgabe') return;
-      e.zurueck = 1;
-      if (new Date(e.ts).toDateString() === new Date().toDateString() && addToday('returnsToday', [e.nr], { plz: e.plz, ort: e.ort })) neuRet.push(e.nr);
-      else if (!dayList('returnsToday').items[nrKey(e.nr)]) neuRet.push(e.nr);
+      if (!e.zeichen || e.zurueck === today() || !/\bzur(ü|ue)ck\b/i.test(e.zeichen) || parseTourzeichen(e.zeichen, known).status !== 'rueckgabe') return;
+      e.zurueck = today(); // „XX zurück“ (auch von früheren Tagen): heute auf die Tagesblacklist, damit der Auftrag nach der Rückgabe nicht erneut angenommen wird
+      if (addToday('returnsToday', [e.nr], { plz: e.plz, ort: e.ort })) neuRet.push(e.nr);
       changed++;
     });
     if (neuRet.length) { log(`Rückgabe laut Zeichen („zurück …“): ${neuRet.join(', ')} – bei den Rückgaben eingetragen.`, 'ok'); retPost('ret', neuRet); renderReturns(); }
@@ -1015,8 +1014,8 @@
     const info = { at: +d.at };
     if (d.t === 'acc') { addToday('accToday', nrs, info); addRemoteAccepts(nrs, String(d.by || '').slice(0, 40), +d.at, secure ? cleanDetails(d.det, nrs) : {}); }
     const known = dayList('accToday').items;
-    if (d.t === 'ret' && addToday('returnsToday', nrs.filter((x) => known[x]), info)) {
-      log(`Rückgabe gemeldet: ${nrs.filter((x) => known[x]).join(', ')} – heute nicht annehmen.`, 'ok');
+    if (d.t === 'ret' && addToday('returnsToday', nrs.filter((x) => known[x] || secure), info)) {
+      log(`Rückgabe gemeldet: ${nrs.filter((x) => known[x] || secure).join(', ')} – heute nicht annehmen.`, 'ok');
       renderReturns();
       if (cfg.enabled) scheduleCheck('Rückgabe gemeldet'); // Tabelle sofort einfärben
     }
@@ -2035,6 +2034,34 @@
     return !!ok;
   }
 
+  // Morgenroutine: einmal je Tag ab 07:30 „Angenommene Aufträge“ lesen (Reiter kurz öffnen, Zeichen abgleichen, zurück). Aufträge mit
+  // „XX zurück“ kommen so vor 08:00 – wenn TAM sie aus dem Account nimmt und neu veröffentlicht – auf die Tagesblacklist.
+  const MORGEN_AB = 7 * 60 + 30, MORGEN_BIS = 9 * 60;
+  let morgenRunning = false, morgenTry = 0;
+  async function morgenScan() {
+    const nowD = new Date(), heute = today();
+    if (morgenRunning || busy || !license || GM_getValue('morgenScan', '') === heute) return;
+    const min = nowD.getHours() * 60 + nowD.getMinutes();
+    if (min < MORGEN_AB || min >= MORGEN_BIS || Date.now() - morgenTry < 10 * 60e3) return; // nur morgens (07:30–09:00)
+    if (!onPublishedTab() || Date.now() - lastAcceptAt < 60e3) return; // nur im Ruhezustand, nie mitten in einer Annahme
+    morgenRunning = true; morgenTry = Date.now();
+    try {
+      const li = document.querySelector(`li[id$="__${cfg.acceptedTabId}"]`);
+      if (!li) { log('Morgenroutine: Reiter „Angenommene Aufträge“ nicht gefunden.', 'err'); return; }
+      log('Morgenroutine: „Angenommene Aufträge“ werden einmal gelesen …', 'debug');
+      fire(li.querySelector('.x-tab-strip-text') || li, ['mouseover', 'mousedown', 'mouseup', 'click']);
+      if (!(await waitFor(onAcceptedTab, 3000))) { log('Morgenroutine: Reiterwechsel fehlgeschlagen – nächster Versuch in 10 min.', 'err'); return; }
+      await waitFor(() => document.querySelectorAll(`#${cfg.acceptedTabId} .x-grid3-row`).length > 0, 10000);
+      await sleep(800);
+      scanAccepted();
+      GM_setValue('morgenScan', heute);
+      log(`Morgenroutine: ${document.querySelectorAll(`#${cfg.acceptedTabId} .x-grid3-row`).length} Zeilen aus „Angenommene Aufträge“ abgeglichen.`, 'ok');
+    } finally {
+      morgenRunning = false;
+      if (!onPublishedTab()) await switchToPublishedTab();
+    }
+  }
+
   // ------------------------------------------------------------------ Hauptzyklus
   // reason: Anlass für das Protokoll (Refresh, Tabelle aktualisiert, Reiterwechsel, Start …)
   async function cycle(reason = 'Prüfung') {
@@ -2596,6 +2623,7 @@
       dismissTamErrors(); // technische TAM-Fehlerfenster (z. B. TypeError auf Android) schließen // liegengebliebene TAM-Meldungen (z. B. "bereits vergeben") wegklicken
       hookAllConsoles(); // später geladene TAM-iframes ebenfalls mitlesen
       scanAccepted();    // Auftragsbuch mit „Angenommene Aufträge“ abgleichen (nur wenn sichtbar und geändert)
+      morgenScan().catch(() => {}); // einmal morgens ab 07:30
     }
     renderSync(now);
     if (busy || !onPublishedTab()) return;
