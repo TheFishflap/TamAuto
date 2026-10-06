@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.21.5 – 2026-10-06
+- **MA-Mail:** „Mail öffnen“ legt die Tabelle als echte Tabelle in die Zwischenablage; im Mailfenster steht an ihrer Stelle die Marke
+  „[Tabelle hier einfügen: Strg+V (Mac: Cmd+V)]“ (ein mailto-Link kann technisch kein HTML übergeben). Im Feld „SLA bis“ steht statt „(rot)“ die Flagge 🔴/🟡.
+
 ### 1.21.4 – 2026-10-06
 - **Zuständigkeit im Auftragsbuch:** neue Spalte „Zuständig“ – eindeutiges Marktgebiet zeigt das Kürzel, bei Mischgebieten wählst du per
   Dropdown (setzt das Zeichen „KÜRZEL neu“ still in TAM). Neue Einstellung (Erweiterte Einstellungen, Standard aus): bei eindeutigem

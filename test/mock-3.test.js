@@ -270,6 +270,15 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.match(calls[0][0], /^mailto:mk@example\.com\?/); assert.equal(calls[0][1], '_blank'); assert.match(calls[0][2], /popup=yes/);
   });
 
+  it('Mail: Tabelle mit SLA-Flagge; im Mailtext steht an ihrer Stelle ein Platzhalter (Tabelle liegt in der Zwischenablage)', async () => {
+    await setup();
+    const a = $('tamauto-ma-open');
+    assert.ok(a.dataset.tabelle.startsWith('<table'), 'HTML-Tabelle fehlt');
+    const href = decodeURIComponent(a.getAttribute('href'));
+    assert.match(href, /Tabelle hier einfügen/); assert.doesNotMatch(href, /PLZ \/ Ort/);
+    assert.doesNotMatch($('tamauto-ma-body').value, /\((rot|gelb)\)/);
+  });
+
   it('Backoffice-Kräfte sind automatisch Mitarbeiter (Kürzel aus den Initialen oder aus „Kürzel“)', async () => {
     await setup();
     const opts = [...$('tamauto-ma-sel').options].map((o) => o.textContent);

@@ -92,12 +92,12 @@ describe('Mail-Entwurf', () => {
     assert.match(lines[hi + 1], /^-+(-\+-)-*/);
     assert.equal(lines[hi + 5], ''); // Kopf + Trennlinie + 3 Aufträge (Kennzeichenversand liegt unter MW1), danach Leerzeile
     const r1 = lines.slice(hi + 2, hi + 5).find((l) => l.startsWith('MW1'));
-    assert.match(r1, /44141 Dortmund, Hauptstr\. 5\s+\| 06\.10\.2026 16:00 \(rot\)\s+\| Frau Muster, Tel\. 0171 1234567\s+\| \+ Kennzeichenversand MW2$/);
+    assert.match(r1, /44141 Dortmund, Hauptstr\. 5\s+\| 🔴 06\.10\.2026 16:00\s+\| Frau Muster, Tel\. 0171 1234567\s+\| \+ Kennzeichenversand MW2$/);
   });
   it('rot vor gelb vor Rest; Kennzeichenversand nur benannt', () => {
     const b = mail.body; assert.ok(b.indexOf('MW1') < b.indexOf('MW4') && b.indexOf('MW4') < b.indexOf('MW3'), b);
     assert.match(b, /\+ Kennzeichenversand MW2/); assert.equal((b.match(/MW2/g) || []).length, 1);
-    assert.match(b, /06\.10\.2026 16:00 \(rot\)/); assert.match(b, /\(gelb\)/);
+    assert.match(b, /🔴 06\.10\.2026 16:00/); assert.match(b, /🟡/);
   });
   it('Terminpflicht (Status oder ≥ 150 €) steht in der Mail', () => {
     const m = L.baueMail({ ma: MA[0], orders: [o('MW7', '44141', { preis: 150 }), o('MW8', '44141', { status: 'Terminvereinbarung' }), o('MW9', '44141', { preis: 69.35 })], baustein: 'neu', absender: '', cc: [], now: NOW });

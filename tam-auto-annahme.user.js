@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.21.4
+// @version      1.21.5
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -651,7 +651,7 @@
     // Aufträge als Tabelle (Text mit ausgerichteten Spalten für die Mail; zusätzlich HTML zum Einfügen)
     const rows = list.map((o) => {
       const amp = ampel(o.sla, now);
-      return [`${o.nr}${o.nurVersand ? ' (nur Versand)' : ''}`, `${o.plz} ${o.ort}${o.strasse ? `, ${o.strasse}` : ''}`, o.sla ? `${o.sla}${amp ? ` (${amp})` : ''}` : '', kontaktText(o),
+      return [`${o.nr}${o.nurVersand ? ' (nur Versand)' : ''}`, `${o.plz} ${o.ort}${o.strasse ? `, ${o.strasse}` : ''}`, o.sla ? `${{ rot: '🔴', gelb: '🟡' }[amp] || ''} ${o.sla}`.trim() : '', kontaktText(o),
         [terminPflicht(o) ? 'Termin erforderlich' : '', o.extra.length ? `+ Kennzeichenversand ${o.extra.map((e) => e.nr).join(', ')}` : ''].filter(Boolean).join('; ')];
     });
     const kopf = ['Auftrag', 'PLZ / Ort', 'SLA bis', 'Kontakt', 'Hinweis'];
@@ -669,7 +669,7 @@
     const kopfText = [`Hallo ${vor},`, '', b.text, ''], fussText = ['', b.schluss.replace('{bsp}', bsp).replace('{kz}', ma.k), '', ...(absender ? ['Liebe Grüße', absender] : ['Liebe Grüße'])];
     const body = [...kopfText, ...lines, ...fussText].join('\n');
     const html = `<div style="font-family:Arial,sans-serif;font-size:13px"><p>${esc(kopfText[0])}</p><p>${esc(b.text)}</p>${tabelle}${nah.length ? `<p>${esc(nahTitel)}<br>${nahZeilen.map(esc).join('<br>')}</p>` : ''}<p>${esc(b.schluss.replace('{bsp}', bsp).replace('{kz}', ma.k))}</p><p>${fussText.slice(3).map(esc).join('<br>')}</p></div>`;
-    return { to: ma.mail || '', cc: [...cc], subject: `${b.betreff} (${list.length})`, body, html };
+    return { to: ma.mail || '', cc: [...cc], subject: `${b.betreff} (${list.length})`, body, html, tabelle };
   }
   // Marktgebiete nach Ort: Zeile des Blatts „Marktgebiete“ (PLZ-Anfang | Ort mit Hinweisen | MA-Kürzel) in Regeln zerlegen.
   // Der Ort-Text darf Hinweise enthalten: Straßen („Dortmund, Preußische Straße“) werden ignoriert, „nur 42106“ beschränkt auf
@@ -2801,15 +2801,18 @@
     updateMaBadge();
     const mail = m ? baueMail({ ma: m, orders: mine, baustein, absender: ab.value, cc: ccList, nah, now: new Date() }) : { to: '', cc: [], subject: '', body: '' };
     $('tamauto-ma-subject').value = mail.subject; $('tamauto-ma-body').value = mail.body;
-    $('tamauto-ma-open').dataset.ma = m ? m.k : ''; $('tamauto-ma-open').dataset.to = mail.to; $('tamauto-ma-open').dataset.cc = mail.cc.join(','); $('tamauto-ma-open').dataset.html = mail.html || '';
+    $('tamauto-ma-open').dataset.ma = m ? m.k : ''; $('tamauto-ma-open').dataset.to = mail.to; $('tamauto-ma-open').dataset.cc = mail.cc.join(','); $('tamauto-ma-open').dataset.html = mail.html || ''; $('tamauto-ma-open').dataset.tabelle = mail.tabelle || '';
     updateMaLink();
   }
+  const TABELLE_PLATZHALTER = '[Tabelle hier einfügen: Strg+V (Mac: Cmd+V)]';
   function updateMaLink() {
     const $ = (id) => document.getElementById(id), a = $('tamauto-ma-open');
     if (!a) return;
     const q = (t) => encodeURIComponent(t);
     const base = `mailto:${a.dataset.to || ''}?${a.dataset.cc ? `cc=${a.dataset.cc}&` : ''}subject=${q($('tamauto-ma-subject').value)}`;
-    const full = `${base}&body=${q($('tamauto-ma-body').value)}`;
+    // mailto kann kein HTML: die Tabelle liegt beim Klick in der Zwischenablage, im Mailtext steht an ihrer Stelle ein Platzhalter
+    const body = a.dataset.tabelle ? $('tamauto-ma-body').value.replace(/^Auftrag +\| PLZ[^\n]*\n(?:[^\n]*(?:\||-\+-)[^\n]*\n?)*/m, `${TABELLE_PLATZHALTER}\n`) : $('tamauto-ma-body').value;
+    const full = `${base}&body=${q(body)}`;
     const zuLang = full.length > 1900; // Mailprogramme/Browser kürzen sehr lange Links
     a.href = zuLang ? base : full;
     $('tamauto-ma-mailstate').textContent = !a.dataset.to ? `Keine E-Mail-Adresse für ${a.dataset.ma || 'diesen MA'} (Blatt „MA“).` : zuLang ? '⚠ Text zu lang für den Link – „Text kopieren“ nutzen und in die Mail einfügen.' : '';
@@ -2826,6 +2829,13 @@
       const a = $('tamauto-ma-open'), n = ($('tamauto-ma-body').value.match(/^MW|^[A-Z0-9][\w-]+\s+\|/gm) || []).length;
       // Als Popup öffnen: ein Link würde TAM im selben Tab verlassen (Firefox öffnet mailto je nach Einstellung nicht im neuen Tab)
       ev.preventDefault();
+      if (a.dataset.tabelle) { // Tabelle (echtes HTML) in die Zwischenablage – im Mailfenster mit Strg+V / Cmd+V einfügen
+        try {
+          const t = $('tamauto-ma-body').value;
+          navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([a.dataset.tabelle], { type: 'text/html' }), 'text/plain': new Blob([t], { type: 'text/plain' }) })])
+            .then(() => { $('tamauto-ma-mailstate').textContent = 'Tabelle kopiert – im Mailfenster an der Marke einfügen (Strg+V / Cmd+V).'; }).catch(() => { $('tamauto-ma-mailstate').textContent = 'Tabelle nicht kopiert – „Als Tabelle kopieren“ nutzen.'; });
+        } catch (e) { $('tamauto-ma-mailstate').textContent = 'Tabelle nicht kopiert – „Als Tabelle kopieren“ nutzen.'; }
+      }
       try { window.open(a.href, '_blank', 'popup=yes,width=980,height=720,noopener,noreferrer'); } catch (e) { location.href = a.href; }
       log(`MA-Management: Mail geöffnet (Popup) – an ${a.dataset.to || '(keine Adresse)'}, Cc: ${a.dataset.cc || '–'}, Baustein ${$('tamauto-ma-baustein').value}, ${n} Aufträge, Absender ${$('tamauto-ma-absender').value || '–'}, Link ${a.href.length} Zeichen`, 'debug');
     });
