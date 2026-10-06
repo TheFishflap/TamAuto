@@ -48,6 +48,9 @@
     // Autohaus-Regeln: einzelne Adressen sperren (PLZ + Straße [+ Hausnr.]), nicht die ganze PLZ. Eigenes Blatt, damit
     // ältere Versionen (lesen nur „nicht annehmen“ und würden daraus die ganze PLZ sperren) unberührt bleiben.
     blockAddrSheet: 'nicht annehmen Adresse',
+    maSheet: 'MA',            // Mitarbeiter: Kürzel | Name | E-Mail | Marktgebiet (PLZ-Anfänge)
+    gebietSheet: 'Marktgebiete', // Zuständigkeit nach Ort: PLZ | Ort (mit Hinweisen) | MA-Kürzel
+    contactSheet: 'Kontakte', // Cc-/Absender-Kontakte für Mails: Bezeichnung | E-Mail | Cc (Pflicht/an/aus) | Rolle
     placesReloadMin: 30,          // Excel alle 30 min neu laden (Sperrliste zeitnah aktuell)
     intervalSec: 60,          // Auto-Refresh-Intervall (Sekunden), Standard 60
     enabled: false,
@@ -285,6 +288,36 @@
   }
   // Regel ohne Hausnummer sperrt die ganze Straße, mit Hausnummer nur diese (erste Nummer, z. B. 241 bei „241-251“)
   const streetMatch = (rule, street) => { const k = streetKey(street); return !!k.name && k.name === rule.key.name && (!rule.key.nr || rule.key.nr === k.nr); };
+  // Mitarbeiter (Blatt „MA“): Kürzel | Name | E-Mail | Marktgebiet – Gebiet = PLZ-Anfänge wie in der Ortsliste
+  function extractMa(rows) {
+    const hIdx = rows.findIndex((r) => r.some((c) => /^k(ü|ue)rzel$/i.test(String(c).trim())));
+    if (hIdx < 0) return [];
+    const head = rows[hIdx].map((c) => norm(c));
+    const col = (re) => head.findIndex((h) => re.test(h));
+    const ck = col(/^kuerzel$/), cn = col(/^name$/), cm = col(/^e-?mail$/), cg = col(/^marktgebiet$/);
+    if (ck < 0) return [];
+    return rows.slice(hIdx + 1).map((r) => ({
+      k: String(r[ck] || '').trim().toUpperCase(), name: cn >= 0 ? String(r[cn] || '').trim() : '', mail: cm >= 0 ? String(r[cm] || '').trim() : '',
+      gebiet: cg >= 0 ? [...new Set(String(r[cg] || '').split(/[\s,;]+/).map(normPlz).filter((x) => x.length >= 2))] : [] })).filter((x) => x.k);
+  }
+  // Marktgebiete (Blatt „Marktgebiete“): PLZ | Ort | MA – siehe parseGebiet (Hinweise im Ort-Text werden ausgewertet)
+  function extractGebiete(rows) {
+    const hIdx = rows.findIndex((r) => r.some((c) => /^plz$/i.test(String(c).trim())) && r.some((c) => /^ma$/i.test(String(c).trim())));
+    if (hIdx < 0) return [];
+    const head = rows[hIdx].map((c) => norm(c)), cp = head.indexOf('plz'), co = head.indexOf('ort'), cm = head.indexOf('ma');
+    return rows.slice(hIdx + 1).map((r) => parseGebiet({ plz: r[cp], ort: co >= 0 ? r[co] : '', ma: r[cm] })).filter((g) => g.orte.length && g.ma.length);
+  }
+  // Kontakte (Blatt „Kontakte“): Bezeichnung | E-Mail | Cc (Pflicht / an / aus) | Rolle
+  function extractKontakte(rows) {
+    const hIdx = rows.findIndex((r) => r.some((c) => /^bezeichnung$/i.test(String(c).trim())));
+    if (hIdx < 0) return [];
+    const head = rows[hIdx].map((c) => norm(c));
+    const col = (re) => head.findIndex((h) => re.test(h));
+    const cb = col(/^bezeichnung$/), cm = col(/^e-?mail$/), cc = col(/^cc$/), cr = col(/^rolle$/);
+    return rows.slice(hIdx + 1).map((r) => ({
+      name: String(r[cb] || '').trim(), mail: cm >= 0 ? String(r[cm] || '').trim() : '',
+      cc: /^pflicht$/i.test(String(r[cc] || '').trim()) ? 'Pflicht' : /^an$/i.test(String(r[cc] || '').trim()) ? 'an' : 'aus', rolle: cr >= 0 ? String(r[cr] || '').trim() : '' })).filter((x) => x.name);
+  }
   function extractAddr(rows) {
     const hIdx = rows.findIndex((r) => r.some((c) => /^(plz|postleitzahl)$/i.test(String(c).trim())));
     if (hIdx < 0) return [];
@@ -380,7 +413,10 @@
             p.block = { plz: b.plz, orte: b.orte };
             const ba = await readXlsxSheet(res.response, cfg.blockAddrSheet, true);
             p.blockAddr = ba ? extractAddr(ba.rows) : [];
-            const changed = JSON.stringify([p.plz, p.orte, p.block, p.blockAddr]) !== JSON.stringify([places.plz, places.orte, places.block, places.blockAddr]);
+            const ma = await readXlsxSheet(res.response, cfg.maSheet, true), ko = await readXlsxSheet(res.response, cfg.contactSheet, true);
+            p.ma = ma ? extractMa(ma.rows) : []; p.kontakte = ko ? extractKontakte(ko.rows) : [];
+            const mg = await readXlsxSheet(res.response, cfg.gebietSheet, true); p.gebiete = mg ? extractGebiete(mg.rows) : [];
+            const changed = JSON.stringify([p.plz, p.orte, p.block, p.blockAddr, p.ma, p.kontakte, p.gebiete]) !== JSON.stringify([places.plz, places.orte, places.block, places.blockAddr, places.ma, places.kontakte, places.gebiete]);
             places = p; GM_setValue('places', places);
             const summary = `Ortsliste "${name}": ${places.plz.length} PLZ, ${places.orte.length} Orte · ` +
               `Sperrliste "${cfg.blockSheet}": ${b.plz.length} PLZ, ${b.orte.length} Orte` + (bl ? '' : ' (Blatt nicht gefunden)') +
@@ -454,6 +490,196 @@
   // Das Fenster kann schon vor dem Eintrag ins Auftragsbuch kommen → vormerken und beim Eintragen setzen.
   const SLA_SOON_MS = 2 * 3600 * 1000;
   const slaMs = (s) => { const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})/.exec(String(s || '')); return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5]).getTime() : null; };
+  // <zeichen-parser>
+  // „Ihr Zeichen“ als Tour lesen: Kürzel, Datum und Uhrzeit in beliebiger Reihenfolge und Schreibweise
+  // (MK 12.10 10:00 · 12.10 MK 10 Uhr · mk 12/10. 9.30 · PM Okt 07 10 T). status: leer | tour | ohneDatum | ohneKuerzel | unklar.
+  // Kontaktstatus als einzelner Buchstabe (Groß-/Kleinschreibung zählt): T = telefonisch bestätigt, t = nur Telefonversuch,
+  // M = Mail bestätigt, m = nur Mailversuch.
+  function parseTourzeichen(raw, kuerzelListe = [], now = new Date()) {
+    const s = String(raw == null ? '' : raw).trim();
+    const out = { status: 'leer', raw: s, kuerzel: '', bekannt: false, datum: null, zeit: null, vergangen: false, kontakt: '', bestaetigt: false, versuch: false };
+    if (!s) return out;
+    const MONATE = { jan: 1, feb: 2, mär: 3, mar: 3, maer: 3, apr: 4, mai: 5, jun: 6, jul: 7, aug: 8, sep: 9, okt: 10, nov: 11, dez: 12 };
+    let rest = ` ${s} `, datum = null, zeit = null;
+    const dateOk = (d, m) => d >= 1 && d <= 31 && m >= 1 && m <= 12 && new Date(2000, m - 1, d).getDate() === d; // 2000 = Schaltjahr
+    const timeOk = (h, m) => h >= 0 && h <= 23 && m >= 0 && m <= 59;
+    const setDate = (d, m, y) => { if (datum || !dateOk(d, m)) return false; datum = { d, m, y: y ? (y < 100 ? 2000 + y : y) : 0 }; return true; };
+    const setTime = (h, m) => { if (zeit || !timeOk(h, m)) return false; zeit = { h, m }; return true; };
+    // 1) Uhrzeit mit Doppelpunkt (10:00, 10:00 Uhr) und „10 Uhr“ / „10h“
+    rest = rest.replace(/(?<![\d.:])(\d{1,2}):(\d{2})(?:\s*(?:uhr|h))?(?!\d)/gi, (all, h, m) => (setTime(+h, +m) ? ' ' : all));
+    rest = rest.replace(/(?<![\d.:])(\d{1,2})\s*(?:uhr|h)\b/gi, (all, h) => (setTime(+h, 0) ? ' ' : all));
+    // 2) Datum mit Monatsnamen: „12. Okt“, „12 Oktober“, „Okt 07“
+    const MON = 'jan|feb|mär|mar|maer|apr|mai|jun|jul|aug|sep|okt|nov|dez';
+    rest = rest.replace(new RegExp(`(?<![\\d.:])(\\d{1,2})\\.?\\s*(${MON})[a-zäöü]*\\.?(?![a-zäöü])`, 'gi'), (all, d, mo) => (setDate(+d, MONATE[mo.toLowerCase()]) ? ' ' : all));
+    rest = rest.replace(new RegExp(`(?<![a-zäöü])(${MON})[a-zäöü]*\\.?\\s*(\\d{1,2})(?![\\d:])`, 'gi'), (all, mo, d) => (setDate(+d, MONATE[mo.toLowerCase()]) ? ' ' : all));
+    // 3) Zahlen mit Trennzeichen: 12.10 / 12.10.26 / 12/10 / 12-10 – als Datum, wenn gültig; sonst (9.30, 10.00) als Uhrzeit
+    rest = rest.replace(/(?<![\d.:])(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\.?(?![\d:])/g, (all, a, b, y) =>
+      ((!y && setDate(+a, +b)) || (y && setDate(+a, +b, +y)) || (!y && setTime(+a, +b)) ? ' ' : all));
+    // 4) Kontaktstatus: einzelner Buchstabe T/t/M/m; danach eine einzelne Zahl neben gültigem Datum = volle Stunde
+    const kt = /(?<![A-Za-zÄÖÜäöüß])([TtMm])(?![A-Za-zÄÖÜäöüß])/.exec(rest);
+    if (kt) { out.kontakt = kt[1]; rest = rest.slice(0, kt.index) + ' ' + rest.slice(kt.index + 1); }
+    if (datum && !zeit) rest = rest.replace(/(?<![\d.:])(\d{1,2})(?![\d.:])/, (all, h) => (setTime(+h, 0) ? ' ' : all));
+    out.bestaetigt = out.kontakt === 'T' || out.kontakt === 'M'; out.versuch = out.kontakt === 't' || out.kontakt === 'm';
+    // 5) Kürzel: erstes bekanntes Wort, sonst das erste 2–4-stellige Wort (ohne Füllwörter wie „neu“, „erl“)
+    const SKIP = /^(neu|erl|uhr|tour|tel|ok|am|um)$/i;
+    const words = (rest.match(/[A-Za-zÄÖÜäöüß]{2,4}(?![A-Za-zÄÖÜäöüß])/g) || []).filter((w) => !SKIP.test(w));
+    const known = new Set((kuerzelListe || []).map((k) => String(k).toUpperCase()));
+    const hit = words.find((w) => known.has(w.toUpperCase())) || words[0] || '';
+    out.kuerzel = hit.toUpperCase(); out.bekannt = !!hit && known.has(out.kuerzel);
+    out.datum = datum; out.zeit = zeit;
+    if (datum) { // Jahr ergänzen: ohne Angabe das aktuelle, außer das Datum liegt weit zurück (Jahreswechsel)
+      const heute = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      let y = datum.y || now.getFullYear(), c = new Date(y, datum.m - 1, datum.d);
+      if (!datum.y && heute - c > 180 * 864e5) { y++; c = new Date(y, datum.m - 1, datum.d); }
+      datum.y = y; out.vergangen = c < heute;
+    }
+    out.zeit = zeit;
+    out.status = out.kuerzel && datum ? 'tour' : out.kuerzel ? 'ohneDatum' : (datum || zeit) ? 'ohneKuerzel' : 'unklar';
+    return out;
+  }
+  // </zeichen-parser>
+  // <liste-parser>
+  // TAMs Listenantwort (GWT-RPC loadTeilauftraege) lesen: je Auftragsnummer Ansprechpartner, Telefon und E-Mail.
+  // Aufbau: //OK[ Zahlenstrom ,["Stringtabelle"], 0, 7 ]. Jeder Auftrag (Teilauftrag) beginnt im Zahlenstrom mit dem
+  // Verweis auf seinen Typ; im Datensatz stehen Verweise auf Strings: AuftragsNr und Kontaktblock („Name\nTelefon\nE-Mail: …“).
+  function gwtUnescape(s) {
+    return s.replace(/\\(?:x([0-9a-fA-F]{2})|u([0-9a-fA-F]{4})|(.))/g, (all, h, u, c) =>
+      (h ? String.fromCharCode(parseInt(h, 16)) : u ? String.fromCharCode(parseInt(u, 16)) : ({ n: '\n', t: '\t', r: '\r' }[c] ?? c)));
+  }
+  function parseListeKontakte(txt) {
+    if (!/^\/\/OK\[/.test(txt)) throw new Error(`TAM meldet ${String(txt).slice(0, 40)}`);
+    const i = txt.indexOf(',["');
+    if (i < 0) return new Map();
+    const nums = txt.slice(5, i).split(',').map(Number);
+    const table = []; const re = /"((?:[^"\\]|\\.)*)"/g; const tail = txt.slice(i + 1); let m;
+    while ((m = re.exec(tail))) table.push(gwtUnescape(m[1]));
+    const typ = table.findIndex((t) => /\.model\.auftraege\.Teilauftrag\//.test(t)) + 1;
+    const out = new Map();
+    if (!typ) return out;
+    const isNr = (t) => /^(MW\d{6,9}|[A-Z]{2}\d{6}|\d{8,10})(-\d{1,3})?$/.test(t); // 12-stellige Vertragsnummern sind keine AuftragsNr
+    const phoneRe = /^\+?\d[\d\s/\-().]{5,}\d$/;
+    const kontakt = (t) => {
+      const lines = t.split('\n').map((l) => l.trim()).filter(Boolean);
+      const mail = (lines.find((l) => /^E-Mail:/i.test(l)) || '').replace(/^E-Mail:\s*/i, '');
+      const tel = lines.find((l) => phoneRe.test(l)) || '';
+      const name = lines.find((l) => !/^E-Mail:/i.test(l) && !phoneRe.test(l)) || '';
+      return { name, telefon: tel, mail };
+    };
+    const starts = []; nums.forEach((v, p) => { if (v === typ) starts.push(p); });
+    starts.forEach((p, k) => {
+      const seg = nums.slice(p, k + 1 < starts.length ? starts[k + 1] : nums.length);
+      const strs = [...new Set(seg.filter((v) => Number.isInteger(v) && v >= 1 && v <= table.length).map((v) => table[v - 1]))];
+      const kon = strs.find((t) => t.includes('\n') && (/E-Mail:/i.test(t) || t.split('\n').some((l) => phoneRe.test(l.trim()))));
+      strs.filter(isNr).forEach((nr) => {
+        const key = nr.toUpperCase(), info = Object.assign(kontakt(kon || ''), { eindeutig: true });
+        if (out.has(key)) out.get(key).eindeutig = false; else out.set(key, info);
+      });
+    });
+    return out;
+  }
+  // Seitengröße („limit“) der mitgeschnittenen Anfrage ändern: Zahl, die im Zahlenteil hinter dem Schlüssel „limit“
+  // und dem Typ-Verweis steht (… |limit-Index|Integer-Index|500| …). Bei unerwartetem Aufbau bleibt die Anfrage unverändert.
+  function mitLimit(body, limit) {
+    const p = String(body).split('|'), n = +p[2];
+    if (!(n > 0) || p.length < 4 + n) return body;
+    const strs = p.slice(3, 3 + n), li = strs.indexOf('limit') + 1, ti = strs.findIndex((t) => /^java\.lang\.Integer\//.test(t)) + 1;
+    if (!li || !ti) return body;
+    const nums = p.slice(3 + n);
+    for (let i = 0; i < nums.length - 2; i++) {
+      if (+nums[i] === li && +nums[i + 1] === ti && /^\d+$/.test(nums[i + 2])) { nums[i + 2] = String(limit); return [...p.slice(0, 3 + n), ...nums].join('|'); }
+    }
+    return body;
+  }
+  // </liste-parser>
+  // <ma-logik>
+  // MA-Management (reine Logik, ohne Oberfläche): Marktgebiet, SLA-Ampel, Kontaktzeile, Kennzeichenversand, Mail-Entwurf.
+  // Auftrag o: { nr, plz, ort, strasse, dienst, status, sla (Endtermin Agent), ref, kontakt: {name, telefon, mail} }
+  const maFuerPlz = (plz, maListe) => (maListe || []).filter((m) => (m.gebiet || []).some((g) => String(plz || '').startsWith(g)));
+  // Ampel nach Endtermin (Agent): rot = überfällig oder in ≤ 2 h, gelb = in ≤ 24 h
+  function ampel(slaStr, now = new Date()) {
+    const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})/.exec(String(slaStr || ''));
+    if (!m) return '';
+    const ms = new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5]).getTime() - now.getTime();
+    return ms <= 2 * 3600e3 ? 'rot' : ms <= 24 * 3600e3 ? 'gelb' : '';
+  }
+  const istKennzeichen = (d) => /kennzeichen(versand|handling)/i.test(d || '') && !/ohne\s+kennzeichen/i.test(d || '');
+  const istSixt = (d) => /sixt/i.test(d || '');
+  // Kontakt für die Mail: Telefon, wenn vorhanden. Sixt: Zeile „Tel.“ immer (ohne Nummer leer). Terminvereinbarung ohne Telefon: E-Mail.
+  function kontaktText(o) {
+    const k = o.kontakt || {};
+    const pre = k.name ? `${k.name}, ` : '';
+    if (k.telefon) return `${pre}Tel. ${k.telefon}`;
+    if (istSixt(o.dienst)) return 'Tel.';
+    if (/terminvereinbarung/i.test(o.status || '') && k.mail) return `${pre}${k.mail}`;
+    return '';
+  }
+  // Kennzeichenversand/-handling läuft parallel zum Hauptauftrag: unter diesen legen, nicht als eigener Stopp (keine Duplikate)
+  function gruppiere(orders) {
+    const haupt = orders.filter((o) => !istKennzeichen(o.dienst)).map((o) => Object.assign({}, o, { extra: [] }));
+    const solo = [];
+    orders.filter((o) => istKennzeichen(o.dienst)).forEach((kz) => {
+      const cand = haupt.filter((h) => h.plz === kz.plz && (h.ort || '') === (kz.ort || ''));
+      const byRef = kz.ref ? cand.filter((h) => h.ref === kz.ref) : [];
+      const h = byRef.length === 1 ? byRef[0] : cand.length === 1 ? cand[0] : null;
+      if (h) h.extra.push(kz); else solo.push(kz);
+    });
+    return { haupt, solo };
+  }
+  const BAUSTEINE = {
+    neu: { betreff: 'Neue Aufträge in deinem Gebiet', text: 'für dein Marktgebiet sind Aufträge angenommen worden:', schluss: 'Bitte trage deine Tour in TAM bei „Ihr Zeichen“ ein: Kürzel, Datum und Uhrzeit, z. B. {bsp}.' },
+    tour: { betreff: 'Tour in TAM ergänzen', text: 'bitte ergänze bei diesen Aufträgen deine Tour in TAM („Ihr Zeichen“):', schluss: 'Format: Kürzel, Datum, Uhrzeit – z. B. {bsp} (T = telefonisch bestätigt, t = nur Telefonversuch, M = Mail bestätigt, m = nur Mailversuch).' },
+    mahnung: { betreff: 'Erinnerung: Tour in TAM eintragen', text: 'zu diesen Aufträgen fehlt noch deine Tour in TAM:', schluss: 'Bitte heute noch bei „Ihr Zeichen“ eintragen, z. B. {bsp}.' },
+    pma: { betreff: 'Problem mit Auftrag melden', text: 'bei diesen Aufträgen gibt es ein Problem:', schluss: 'Bitte melde das Problem in TAM über „Problem mit Auftrag melden“ und gib uns kurz Bescheid.' },
+  };
+  function baueMail({ ma, orders, baustein = 'neu', absender = '', cc = [], now = new Date() }) {
+    const b = BAUSTEINE[baustein] || BAUSTEINE.neu;
+    const g = gruppiere(orders);
+    const rang = { rot: 0, gelb: 1, '': 2 };
+    const slaTs = (o) => { const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})/.exec(o.sla || ''); return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5]).getTime() : Infinity; };
+    const list = [...g.haupt, ...g.solo.map((o) => Object.assign({}, o, { extra: [], nurVersand: true }))]
+      .sort((x, y) => rang[ampel(x.sla, now)] - rang[ampel(y.sla, now)] || slaTs(x) - slaTs(y) || String(x.plz).localeCompare(String(y.plz)));
+    const lines = [];
+    list.forEach((o) => {
+      const amp = ampel(o.sla, now);
+      lines.push(`• ${o.nr}${o.nurVersand ? ' (nur Versand)' : ''} · ${o.plz} ${o.ort}${o.strasse ? `, ${o.strasse}` : ''}${o.sla ? ` · SLA bis ${o.sla}${amp ? ` (${amp})` : ''}` : ''}`);
+      const k = kontaktText(o); if (k) lines.push(`   ${k}`);
+      if (o.extra.length) lines.push(`   + Kennzeichenversand ${o.extra.map((e) => e.nr).join(', ')}`);
+    });
+    const morgen = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1), p2 = (n) => String(n).padStart(2, '0');
+    const bsp = `${ma.k} ${p2(morgen.getDate())}.${p2(morgen.getMonth() + 1)} 10:00`;
+    const vor = String(ma.name || '').split(/\s+/)[0] || ma.k;
+    const body = [`Hallo ${vor},`, '', b.text, '', ...lines, '', b.schluss.replace('{bsp}', bsp), '', ...(absender ? ['Liebe Grüße', absender] : ['Liebe Grüße'])].join('\n');
+    return { to: ma.mail || '', cc: [...cc], subject: `${b.betreff} (${list.length})`, body };
+  }
+  // Marktgebiete nach Ort: Zeile des Blatts „Marktgebiete“ (PLZ-Anfang | Ort mit Hinweisen | MA-Kürzel) in Regeln zerlegen.
+  // Der Ort-Text darf Hinweise enthalten: Straßen („Dortmund, Preußische Straße“) werden ignoriert, „nur 42106“ beschränkt auf
+  // diese PLZ, „nur Choice“ auf Aufträge dieser Dienstleistung, „SIXT …“ auf Sixt-Aufträge; mehrere Orte per Komma.
+  const normOrt = (s) => String(s || '').toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+    .replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  function parseGebiet(row) {
+    const raw = String(row.ort || '');
+    const nurPlz = (/\bnur\s+(\d{5})\b/i.exec(raw) || [])[1] || '';
+    const nurWort = nurPlz ? '' : ((/\bnur\s+([A-Za-zÄÖÜäöüß]+)/i.exec(raw) || [])[1] || '');
+    const orte = raw.split(/,|\s-\s|\bnur\b|\bmit\b/i).map(normOrt)
+      .filter((t) => t && !/\d/.test(t) && !/(str|strasse|weg|platz|allee|gasse)$/.test(t) && !/^(sixt|nicht|choice)$/.test(t)).map((t) => t.replace(/^sixt /, ''));
+    return { plz: String(row.plz || '').trim(), orte, nurPlz, nurWort: nurWort.toLowerCase(), sixt: /sixt/i.test(raw),
+      ma: String(row.ma || '').split(/[\s,;/]+/).map((k) => k.trim().toUpperCase()).filter(Boolean) };
+  }
+  const ortPasst = (o, t) => o === t || o.startsWith(`${t} `) || (t.length >= 6 && o.startsWith(t) && o.length <= t.length + 3);
+  // Kürzel aller zuständigen MA für einen Auftrag {plz, ort, dienst}; Regeln mit mehreren Orten prüfen die PLZ nicht
+  function maFuerAuftrag(o, gebiete) {
+    const plz = String(o.plz || ''), ort = normOrt(o.ort), dienst = String(o.dienst || ''), out = [];
+    (gebiete || []).forEach((g) => {
+      if (g.orte.length === 1 && g.plz && !plz.startsWith(g.plz)) return;
+      if (!g.orte.some((t) => ortPasst(ort, t))) return;
+      if (g.nurPlz && plz !== g.nurPlz) return;
+      if (g.sixt && !istSixt(dienst)) return;
+      if (g.nurWort && !new RegExp(g.nurWort, 'i').test(dienst)) return;
+      g.ma.forEach((k) => { if (!out.includes(k)) out.push(k); });
+    });
+    return out;
+  }
+  // </ma-logik>
   const terminRed = (e) => { const t = slaMs(e.sla); return !!e.terminWeg && !e.zeichen && t !== null && t - new Date(e.ts).getTime() <= SLA_SOON_MS; };
   const terminPending = new Set();
   function markTermin(nrs) {
@@ -524,7 +750,8 @@
       sla: text(r.querySelector('td.x-grid3-td-slaEndeAgent')), tid: text(r.querySelector('td.x-grid3-td-id')).replace(/\D/g, ''),
       zeichen: text(r.querySelector('td.x-grid3-td-zeichenAgent')), preis: parseEuro(text(r.querySelector('td.x-grid3-td-preis'))),
       plz: text(r.querySelector('td.x-grid3-td-besichtigungsPlz')), ort: text(r.querySelector('td.x-grid3-td-besichtigungsOrt')),
-      dienst: text(r.querySelector('td.x-grid3-td-cst_projekt_dienstleistung_name')) }]));
+      dienst: text(r.querySelector('td.x-grid3-td-cst_projekt_dienstleistung_name')), status: text(r.querySelector('td.x-grid3-td-status')),
+      ref: text(r.querySelector('td.x-grid3-td-referenz')), strasse: text(r.querySelector('td.x-grid3-td-besichtigungsStrasse')) }]));
     const book = GM_getValue('orderbook', []);
     let changed = 0; const red = [];
     book.forEach((e) => {
@@ -534,7 +761,8 @@
       if ((e.zeichen || '') !== a.zeichen) { e.zeichen = a.zeichen; changed++; }
       if (a.preis != null && e.preis !== a.preis) { e.preis = a.preis; changed++; }
       ['plz', 'ort', 'dienst'].forEach((k) => { if (!e[k] && a[k]) { e[k] = a[k]; changed++; } }); // z. B. Annahmen anderer Geräte
-      if (e.terminWeg && !e.sla && slaMs(a.sla) !== null) { e.sla = a.sla; changed++; if (terminRed(e)) red.push(e.nr); }
+      if (slaMs(a.sla) !== null && e.sla !== a.sla) { const was = terminRed(e); e.sla = a.sla; changed++; if (!was && terminRed(e)) red.push(e.nr); }
+      ['status', 'ref', 'strasse'].forEach((k) => { if (a[k] && e[k] !== a[k]) { e[k] = a[k]; changed++; } });
     });
     if (!changed) return;
     GM_setValue('orderbook', book);
@@ -546,11 +774,11 @@
     const ts = new Date().toISOString();
     const termin = (e) => { if (terminPending.delete(String(e.nr).toUpperCase())) e.terminWeg = 1; return e; };
     const tidOf = (r) => (r ? text(r.querySelector('td.x-grid3-td-id')).replace(/\D/g, '') : '');
-    book.push(termin({ ts, nr: o.nr, plz: o.plz, ort: o.ort, dienst: o.dienst, preis: parseEuro(o.preis), tid: tidOf(o.row) }));
+    book.push(termin({ ts, nr: o.nr, plz: o.plz, ort: o.ort, strasse: o.strasse || '', dienst: o.dienst, preis: parseEuro(o.preis), tid: tidOf(o.row) }));
     bulkOf(o).forEach((x) => {
       const row = rowsByNr.get(x);
       const art = (o.extra || []).includes(x) ? '0 km' : 'Warenkorb';
-      book.push(termin({ ts, nr: x, plz: row ? row.plz : o.plz, ort: row ? row.ort : o.ort, zu: o.nr, tid: row ? tidOf(row.row) : '',
+      book.push(termin({ ts, nr: x, plz: row ? row.plz : o.plz, ort: row ? row.ort : o.ort, strasse: row ? row.strasse || '' : '', zu: o.nr, tid: row ? tidOf(row.row) : '',
         dienst: `${art} – zusammen mit ${o.nr} angenommen${row && row.dienst ? ` · ${row.dienst}` : ''}`,
         preis: row ? parseEuro(row.preis) : null }));
     });
@@ -659,6 +887,7 @@
       `<b>${rows.length} Aufträge</b> · <b>${Object.keys(perPlz).length} PLZ</b> · Summe gesamt <b>${fmtEuro(sum)}</b>` +
       (noPrice ? ` <span style="color:#555">(${noPrice} ohne Preis)</span>` : '');
     renderHitRate(from);
+    renderMa(); // MA-Management zeigt dieselben Aufträge
   }
 
   // ------------------------------------------------------------------ Sperrliste (Excel)
@@ -1018,6 +1247,10 @@
 
   // ------------------------------------------------------------------ TAM-Oberfläche (GXT 2)
   // Ist der aktive Tab wirklich "Veröffentlichte Aufträge"?
+  function onAcceptedTab() {
+    const li = document.querySelector(`li[id$="__${cfg.acceptedTabId}"]`), panel = document.getElementById(cfg.acceptedTabId);
+    return !!li && li.classList.contains('x-tab-strip-active') && !!panel && !panel.closest('.x-hide-display');
+  }
   function onPublishedTab() {
     // Reiter des Tabs direkt über seine ID suchen (…__AgentVeroeffentlichteAuftraege)
     const li = document.querySelector(`li[id$="__${cfg.tabPanelId}"]`);
@@ -1209,6 +1442,7 @@
   // Aktualisieren im Reiter "Veröffentlichte Aufträge" mitschneiden. Das Script kann sie dann im Hintergrund
   // wiederholen, ohne die Tabelle neu zu zeichnen – neu geladen wird nur, wenn ein neuer Auftrag dabei ist.
   let tamLoadReq = null;       // { url, body, headers }
+  let tamAcceptedReq = null;   // dasselbe für „Angenommene Aufträge“ (für die Kontakte im MA-Management)
   let silentFetching = false;  // eigene Hintergrund-Abfrage läuft (nicht erneut mitschneiden)
   function hookXhr(w) {
     try {
@@ -1219,6 +1453,9 @@
       P.setRequestHeader = function (k, v) { if (this.__tamH) this.__tamH[k] = v; return setH.apply(this, arguments); };
       P.send = function (b) {
         try {
+          if (/\/gwt-rpc\/auftrag/i.test(this.__tamU || '') && typeof b === 'string' && /\|loadTeilauftraege\|/.test(b) && onAcceptedTab()) {
+            tamAcceptedReq = { url: new URL(this.__tamU, location.href).href, body: b, headers: Object.assign({}, this.__tamH) };
+          }
           if (!silentFetching && /\/gwt-rpc\/auftrag/i.test(this.__tamU || '') && typeof b === 'string' &&
             /\|loadTeilauftraege\|/.test(b) && onPublishedTab()) {
             const first = !tamLoadReq;
@@ -2345,6 +2582,118 @@
     updateTabStatus();
   }
 
+  // ---- MA-Management (Oberfläche): Mitarbeiter, ihre Aufträge, nicht zugeordnete PLZ, Mail-Entwurf
+  let maKontakte = { map: new Map(), at: 0 };
+  let maFehler = ''; // letzte Fehlermeldung beim Laden der Kontakte (bleibt sichtbar, bis es klappt)
+  // Kontakte/Telefon aller angenommenen Aufträge: dieselbe Anfrage wie TAM, aber mit Seitengröße 1500 (TAM zeigt 500)
+  async function ladeMaKontakte() {
+    if (!tamAcceptedReq) throw new Error('„Angenommene Aufträge“ öffnen und dort einmal aktualisieren (Refresh-Pfeil)');
+    const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    const res = await W.fetch(tamAcceptedReq.url, { method: 'POST', credentials: 'include', headers: tamAcceptedReq.headers, body: mitLimit(tamAcceptedReq.body, 1500) });
+    const txt = await res.text();
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    maKontakte = { map: parseListeKontakte(txt), at: Date.now() };
+    return maKontakte.map.size;
+  }
+  // Aufträge der letzten 7 Tage aus dem Auftragsbuch, ergänzt um Tourzeichen (erkannt) und Kontakt
+  // Kürzel der zuständigen MA: nach Ort (Blatt „Marktgebiete“); ohne dieses Blatt nach PLZ-Anfängen im Blatt „MA“ (Spalte „Marktgebiet“)
+  const zustaendig = (o) => ((places.gebiete || []).length ? maFuerAuftrag(o, places.gebiete) : maFuerPlz(o.plz, places.ma).map((m) => m.k));
+  function maOrders() {
+    const since = Date.now() - 7 * 864e5, seen = new Map();
+    GM_getValue('orderbook', []).filter((e) => e.nr && new Date(e.ts).getTime() >= since).forEach((e) => seen.set(String(e.nr).toUpperCase(), e));
+    const known = (places.ma || []).map((m) => m.k), now = new Date();
+    return [...seen.values()].map((e) => ({ nr: e.nr, plz: e.plz || '', ort: e.ort || '', strasse: e.strasse || '', dienst: e.dienst || '', status: e.status || '',
+      sla: e.sla || '', ref: e.ref || '', zeichen: e.zeichen || '', tour: parseTourzeichen(e.zeichen, known, now), kontakt: maKontakte.map.get(String(e.nr).toUpperCase()) || null }));
+  }
+  function tourLabel(t) {
+    const p2 = (n) => String(n).padStart(2, '0');
+    if (t.status === 'leer') return '–';
+    if (t.status === 'tour') return `${t.kuerzel} ${p2(t.datum.d)}.${p2(t.datum.m)}.${t.zeit ? ` ${p2(t.zeit.h)}:${p2(t.zeit.m)}` : ''}${t.kontakt ? ` ${t.kontakt}` : ''}${t.bestaetigt ? ' ✓' : t.versuch ? ' (Versuch)' : ''}${t.vergangen ? ' – vergangen' : ''}`;
+    if (t.status === 'ohneDatum') return `${t.kuerzel} – Datum fehlt`;
+    if (t.status === 'ohneKuerzel') return 'Kürzel fehlt';
+    return t.raw;
+  }
+  function renderMa() {
+    const $ = (id) => document.getElementById(id);
+    const page = $('tamauto-page-ma'), sel = $('tamauto-ma-sel');
+    if (!page || !sel || page.style.display === 'none') return;
+    const ma = places.ma || [];
+    const sigMa = ma.map((m) => m.k).join(',');
+    if (sel.dataset.sig !== sigMa) {
+      sel.dataset.sig = sigMa;
+      sel.innerHTML = ma.map((m) => `<option value="${escHtml(m.k)}">${escHtml(m.k)} – ${escHtml(m.name)}</option>`).join('') || '<option value="">(Blatt „MA“ fehlt)</option>';
+      const last = GM_getValue('maSel', ''); if (ma.some((m) => m.k === last)) sel.value = last;
+    }
+    const m = ma.find((x) => x.k === sel.value);
+    const all = maOrders(), nurOhne = $('tamauto-ma-nurohne').checked;
+    const mine = m ? all.filter((o) => zustaendig(o).includes(m.k) && (!nurOhne || o.tour.status !== 'tour')) : [];
+    $('tamauto-ma-hint').textContent = maFehler || (!ma.length ? 'Excel-Blatt „MA“ fehlt oder ist leer (Ortsliste.xlsx).'
+      : m && !(places.gebiete || []).length && !m.gebiet.length ? `${m.k} hat noch kein Marktgebiet (Blatt „Marktgebiete“).`
+        : m && !(places.gebiete || []).some((g) => g.ma.includes(m.k)) && (places.gebiete || []).length ? `${m.k} steht in keinem Marktgebiet (Blatt „Marktgebiete“).` : m && !m.mail ? `${m.k} hat keine E-Mail im Blatt „MA“.` : '');
+    $('tamauto-ma-rows').innerHTML = mine.length ? mine.map((o) => {
+      const amp = ampel(o.sla), k = o.kontakt && o.kontakt.telefon ? o.kontakt.telefon : '';
+      return `<tr><td>${{ rot: '🔴', gelb: '🟡' }[amp] || ''}</td><td>${escHtml(o.nr)}</td><td>${escHtml(`${o.plz} ${o.ort}`)}</td><td>${escHtml(tourLabel(o.tour))}</td><td>${escHtml(k)}</td></tr>`;
+    }).join('') : '<tr><td colspan="5" style="color:#555;padding:4px">Keine Aufträge im Zeitraum (letzte 7 Tage).</td></tr>';
+    // nicht zugeordnet: PLZ ohne Marktgebiet (Blatt „MA“ in der Excel ergänzen)
+    const unz = new Map();
+    all.filter((o) => o.plz && !zustaendig(o).length).forEach((o) => { const k = `${o.plz} ${o.ort}`; const e = unz.get(k) || { n: 0, ort: o.ort, plz: o.plz }; e.n++; unz.set(k, e); });
+    const box = $('tamauto-ma-unz'); box.innerHTML = '';
+    [...unz.entries()].sort().forEach(([key, e]) => {
+      const c = chipEl(`${key} (${e.n})`, '#6d4c41', '#efebe9'); c.style.cursor = 'pointer'; c.title = 'Klicken = „PLZ Ort“ in die Zwischenablage';
+      c.onclick = () => { try { navigator.clipboard.writeText(`${e.plz}\t${e.ort}`); log(`„${key}“ kopiert – im Blatt „Marktgebiete“ einem MA zuordnen.`); } catch (e2) { /* ignore */ } };
+      box.appendChild(c);
+    });
+    $('tamauto-ma-unzcount').textContent = `(${unz.size})`;
+    $('tamauto-ma-loadstate').textContent = maKontakte.at ? `Kontakte: ${maKontakte.map.size} · ${hhmm(new Date(maKontakte.at))}` : 'Kontakte: nicht geladen';
+    // Cc-Auswahl und Absender aus dem Blatt „Kontakte“
+    const kon = (places.kontakte || []), withMail = kon.filter((k) => k.mail);
+    const cc = $('tamauto-ma-cc'), sigC = withMail.map((k) => `${k.name}|${k.mail}|${k.cc}`).join(';');
+    if (cc.dataset.sig !== sigC) {
+      cc.dataset.sig = sigC;
+      cc.innerHTML = withMail.map((k) => `<label class="tamauto-chk" style="margin-right:6px"><input type="checkbox" data-mail="${escHtml(k.mail)}" ${k.cc !== 'aus' ? 'checked' : ''} ${k.cc === 'Pflicht' ? 'disabled' : ''}> ${escHtml(k.name)}</label>`).join('') || '<span style="color:#555">keine Kontakte mit E-Mail (Blatt „Kontakte“)</span>';
+      cc.querySelectorAll('input').forEach((i) => { i.onchange = renderMa; });
+    }
+    const ab = $('tamauto-ma-absender'), names = kon.filter((k) => /kraft/i.test(k.rolle)).map((k) => k.name), sigA = names.join('|');
+    if (ab.dataset.sig !== sigA) {
+      ab.dataset.sig = sigA;
+      ab.innerHTML = '<option value="">(ohne Name)</option>' + names.map((n) => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
+      const last = GM_getValue('maSender', ''); if (names.includes(last)) ab.value = last;
+    }
+    // Mail-Entwurf
+    const ccList = [...cc.querySelectorAll('input')].filter((i) => i.checked || i.disabled).map((i) => i.dataset.mail);
+    const mail = m ? baueMail({ ma: m, orders: mine, baustein: $('tamauto-ma-baustein').value, absender: ab.value, cc: ccList, now: new Date() }) : { to: '', cc: [], subject: '', body: '' };
+    $('tamauto-ma-subject').value = mail.subject; $('tamauto-ma-body').value = mail.body;
+    $('tamauto-ma-open').dataset.to = mail.to; $('tamauto-ma-open').dataset.cc = mail.cc.join(',');
+    updateMaLink();
+  }
+  function updateMaLink() {
+    const $ = (id) => document.getElementById(id), a = $('tamauto-ma-open');
+    if (!a) return;
+    const q = (t) => encodeURIComponent(t);
+    const base = `mailto:${a.dataset.to || ''}?${a.dataset.cc ? `cc=${a.dataset.cc}&` : ''}subject=${q($('tamauto-ma-subject').value)}`;
+    const full = `${base}&body=${q($('tamauto-ma-body').value)}`;
+    const zuLang = full.length > 1900; // Mailprogramme/Browser kürzen sehr lange Links
+    a.href = zuLang ? base : full;
+    $('tamauto-ma-mailstate').textContent = !a.dataset.to ? 'Keine Empfänger-Adresse.' : zuLang ? '⚠ Text zu lang für den Link – „Text kopieren“ nutzen und in die Mail einfügen.' : '';
+  }
+  function initMa() {
+    const $ = (id) => document.getElementById(id);
+    $('tamauto-ma-sel').onchange = (e) => { GM_setValue('maSel', e.target.value); renderMa(); };
+    $('tamauto-ma-nurohne').onchange = renderMa; $('tamauto-ma-baustein').onchange = renderMa;
+    $('tamauto-ma-absender').onchange = (e) => { GM_setValue('maSender', e.target.value); renderMa(); };
+    $('tamauto-ma-subject').oninput = updateMaLink; $('tamauto-ma-body').oninput = updateMaLink;
+    $('tamauto-ma-copy').onclick = () => { try { navigator.clipboard.writeText(`${$('tamauto-ma-subject').value}\n\n${$('tamauto-ma-body').value}`); log('Mailtext kopiert.'); } catch (e) { /* ignore */ } };
+    $('tamauto-ma-load').onclick = async () => {
+      $('tamauto-ma-loadstate').textContent = 'lädt …';
+      try { const n = await ladeMaKontakte(); maFehler = ''; log(`MA-Management: Kontakte zu ${n} Aufträgen geladen.`, 'ok'); }
+      catch (e) { maFehler = e.message; log(`MA-Management: Kontakte nicht geladen – ${e.message}`, 'err'); }
+      renderMa();
+    };
+  }
+  function maAutoLoad() { // beim Öffnen des Reiters, wenn die Anfrage bekannt und der Stand älter als 5 min ist
+    if (tamAcceptedReq && Date.now() - maKontakte.at > 5 * 60e3) ladeMaKontakte().then(renderMa).catch(() => {});
+  }
+
   function buildPanel() {
     const p = document.createElement('div');
     p.id = 'tamauto';
@@ -2366,6 +2715,7 @@
           <button class="tamauto-tabbtn" data-page="tamauto-page-main">Bedienung</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-adv">Erweiterte Einstellungen</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-book">Auftragsbuch</button>
+          <button class="tamauto-tabbtn" data-page="tamauto-page-ma">MA-Management</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-push">Push-Signal</button>
           <button class="tamauto-tabbtn" data-page="tamauto-page-info">Info</button>
         </div>
@@ -2596,6 +2946,31 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
           <div id="tamauto-ob-rate" style="margin-top:6px;padding:4px 6px;background:#f3f7fc;border:1px solid #c9d8ee;border-radius:3px"
             title="Passend = veröffentlichte Aufträge, deren PLZ in der Ortsliste steht. Tatsächlich verfügbar = davon versucht und beim Öffnen nicht schon an einen anderen Anbieter vergeben."></div>
         </div>
+        <div id="tamauto-page-ma" style="display:none;margin:6px 0">
+          <div class="tamauto-chk" style="gap:6px;flex-wrap:wrap">
+            <b>Mitarbeiter</b> <select id="tamauto-ma-sel" style="max-width:200px"></select>
+            <label class="tamauto-chk"><input type="checkbox" id="tamauto-ma-nurohne" checked> nur ohne Tour</label>
+            <button id="tamauto-ma-load" title="Kontakte und Telefonnummern aller angenommenen Aufträge bei TAM abfragen">Kontakte laden</button>
+            <span id="tamauto-ma-loadstate" style="color:#555"></span>
+            <span class="tamauto-help" title="Aufträge der letzten 7 Tage aus dem Auftragsbuch, nach Marktgebiet (Excel, Blatt „MA“) dem Mitarbeiter zugeordnet. Die Tour wird aus „Ihr Zeichen“ gelesen (Kürzel, Datum, Uhrzeit in beliebiger Reihenfolge; T/M = bestätigt, t/m = nur Versuch). 🔴 = SLA in ≤ 2 h oder überfällig, 🟡 = in ≤ 24 h. Telefon/Kontakt kommt aus TAMs Liste „Angenommene Aufträge“ – dort einmal aktualisieren, dann „Kontakte laden“.">?</span>
+          </div>
+          <div id="tamauto-ma-hint" style="color:#b36b00;margin-top:2px"></div>
+          <div style="max-height:150px;overflow:auto;margin-top:4px;border:1px solid #ddd">
+            <table style="border-collapse:collapse;width:100%;font-size:11px"><tbody id="tamauto-ma-rows"></tbody></table></div>
+          <div style="margin-top:6px"><b>Nicht zugeordnet <span id="tamauto-ma-unzcount"></span></b>
+            <span class="tamauto-help" title="Aufträge, deren PLZ und Ort in keiner Zeile des Blatts „Marktgebiete“ (Ortsliste.xlsx) vorkommen. Anklicken kopiert PLZ und Ort – dann in der Excel einem Mitarbeiter zuordnen.">?</span>
+            <div id="tamauto-ma-unz" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px"></div></div>
+          <div style="margin-top:8px;padding-top:6px;border-top:2px solid #1a4d8f"><b>Mail an den Mitarbeiter</b>
+            <div class="tamauto-chk" style="gap:6px;flex-wrap:wrap;margin:4px 0">Baustein
+              <select id="tamauto-ma-baustein"><option value="neu">Neue Aufträge</option><option value="tour">Tour ergänzen</option><option value="mahnung">Mahnung</option><option value="pma">Problem mit Auftrag (PMA)</option></select>
+              Absender <select id="tamauto-ma-absender"></select></div>
+            <div style="margin:2px 0">Cc: <span id="tamauto-ma-cc"></span></div>
+            <input id="tamauto-ma-subject" style="width:100%;margin:2px 0">
+            <textarea id="tamauto-ma-body" style="width:100%;height:150px;font:11px monospace"></textarea>
+            <div class="tamauto-chk" style="gap:6px;margin-top:4px"><a id="tamauto-ma-open" href="#" style="padding:3px 8px;border:1px solid #1a4d8f;border-radius:3px;background:#e8f0fb;color:#000;text-decoration:none">✉ Mail öffnen</a>
+              <button id="tamauto-ma-copy">Text kopieren</button><span id="tamauto-ma-mailstate" style="color:#b36b00"></span></div>
+          </div>
+        </div>
         <div id="tamauto-page-main" style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <span class="tamauto-chk">
             <label class="tamauto-chk"><input type="checkbox" id="tamauto-ar"> Auto-Refresh</label>
@@ -2699,12 +3074,14 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
       });
       if (id === 'tamauto-page-main') renderBlacklist();
       if (id === 'tamauto-page-book') renderOrderbook();
+      if (id === 'tamauto-page-ma') { renderMa(); maAutoLoad(); }
       if (id === 'tamauto-page-push') renderPushPage();
       if (id === 'tamauto-page-info' && !changelogLoaded) loadChangelog(); // erst beim Öffnen laden
     };
     $('tamauto-cl-reload').onclick = () => loadChangelog();
     p.querySelectorAll('.tamauto-tabbtn').forEach((b) => { b.onclick = () => showPage(b.dataset.page); });
     showPage('tamauto-page-main');
+    initMa();
     renderBlacklist();
 
     // Verzögerung: Checkbox + Slider 1,0–5,0 s (0,1-s-Schritte) + Randomizer (Streuung nicht angezeigt)
