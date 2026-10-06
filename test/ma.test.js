@@ -43,6 +43,12 @@ describe('Kontaktzeile', () => {
     assert.equal(L.kontaktText(o('MW1', '44141', { dienst: 'Sixt Rückgabe', kontakt: null })), 'Tel.');
     assert.equal(L.kontaktText(o('MW1', '44141', { dienst: 'Sixt Rückgabe', kontakt: k })), 'Frau Muster, Tel. 0171 1234567');
   });
+  it('ab 150 € ist eine Terminvereinbarung Pflicht: Telefon, sonst E-Mail', () => {
+    assert.equal(L.kontaktText(o('MW1', '44141', { preis: 150, kontakt: { ...k, telefon: '' } })), 'Frau Muster, m@x.de');
+    assert.equal(L.kontaktText(o('MW1', '44141', { preis: 199.9, kontakt: k })), 'Frau Muster, Tel. 0171 1234567');
+    assert.equal(L.kontaktText(o('MW1', '44141', { preis: 149.99, kontakt: { ...k, telefon: '' } })), '');
+    assert.equal(L.kontaktText(o('MW1', '44141', { preis: null, kontakt: { ...k, telefon: '' } })), '');
+  });
   it('kein Kontakt bekannt → keine Zeile', () => assert.equal(L.kontaktText(o('MW1', '44141')), ''));
 });
 
@@ -80,15 +86,39 @@ describe('Mail-Entwurf', () => {
     assert.equal(mail.to, 'mk@x.de'); assert.deepEqual(mail.cc, ['auftrag@x.de', 'silke@x.de']);
     assert.match(mail.subject, /Neue Aufträge/); assert.match(mail.subject, /\(3\)/); // MW2 ist Kennzeichenversand unter MW1
   });
+  it('Aufträge als Tabelle: Kopfzeile, Trennlinie, eine Zeile je Auftrag mit Kontakt', () => {
+    const lines = mail.body.split('\n'), hi = lines.findIndex((l) => /^Auftrag\s+\| PLZ \/ Ort\s+\| SLA bis\s+\| Kontakt\s+\| Hinweis$/.test(l));
+    assert.ok(hi >= 0, mail.body);
+    assert.match(lines[hi + 1], /^-+(-\+-)-*/);
+    assert.equal(lines[hi + 5], ''); // Kopf + Trennlinie + 3 Aufträge (Kennzeichenversand liegt unter MW1), danach Leerzeile
+    const r1 = lines.slice(hi + 2, hi + 5).find((l) => l.startsWith('MW1'));
+    assert.match(r1, /44141 Dortmund, Hauptstr\. 5\s+\| 06\.10\.2026 16:00 \(rot\)\s+\| Frau Muster, Tel\. 0171 1234567\s+\| \+ Kennzeichenversand MW2$/);
+  });
   it('rot vor gelb vor Rest; Kennzeichenversand nur benannt', () => {
     const b = mail.body; assert.ok(b.indexOf('MW1') < b.indexOf('MW4') && b.indexOf('MW4') < b.indexOf('MW3'), b);
     assert.match(b, /\+ Kennzeichenversand MW2/); assert.equal((b.match(/MW2/g) || []).length, 1);
-    assert.match(b, /SLA bis 06\.10\.2026 16:00 \(rot\)/); assert.match(b, /\(gelb\)/);
+    assert.match(b, /06\.10\.2026 16:00 \(rot\)/); assert.match(b, /\(gelb\)/);
   });
-  it('Telefon bzw. leere Sixt-Zeile', () => { assert.match(mail.body, /Frau Muster, Tel\. 0171 1234567/); assert.match(mail.body, /MW4[^\n]*\n\s+Tel\.\s*\n/); });
+  it('Terminpflicht (Status oder ≥ 150 €) steht in der Mail', () => {
+    const m = L.baueMail({ ma: MA[0], orders: [o('MW7', '44141', { preis: 150 }), o('MW8', '44141', { status: 'Terminvereinbarung' }), o('MW9', '44141', { preis: 69.35 })], baustein: 'neu', absender: '', cc: [], now: NOW });
+    assert.equal((m.body.match(/Termin erforderlich/g) || []).length, 2);
+  });
+  it('Telefon bzw. leere Sixt-Zeile', () => { assert.match(mail.body, /Frau Muster, Tel\. 0171 1234567/); assert.match(mail.body, /^MW4[^\n]*\| Tel\.\s*(\|[^\n]*)?$/m); });
+  it('Tabelle zusätzlich als HTML (zum Einfügen in die Mail), Inhalt maskiert', () => {
+    const m2 = L.baueMail({ ma: MA[0], orders: [o('MW5', '44141', { ort: 'A<b>&Co', kontakt: { name: 'X', telefon: '0171 1', mail: '' } })], baustein: 'neu', absender: '', cc: [], now: NOW });
+    assert.match(m2.html, /<table/); assert.match(m2.html, /<th[^>]*>Auftrag<\/th>/); assert.match(m2.html, /MW5/);
+    assert.match(m2.html, /A&lt;b&gt;&amp;Co/); assert.doesNotMatch(m2.html, /<b>&Co/);
+    assert.match(m2.html, /Hallo Markus/);
+  });
   it('Anrede, Tourhinweis mit Beispiel und Signatur', () => {
     assert.match(mail.body, /^Hallo Markus,/); assert.match(mail.body, /MK 07\.10 10:00/);
     assert.match(mail.body, /Liebe Grüße\nLeonie Struve$/);
+  });
+  it('Baustein „Termin vereinbaren und Kurzzeichen hinzufügen“ verbindet beides', () => {
+    const m = L.baueMail({ ma: MA[0], orders, baustein: 'termin', absender: '', cc: [], now: NOW });
+    assert.match(m.subject, /Termin vereinbaren und Kurzzeichen/);
+    assert.match(m.body, /vereinbare.*Termin/i); assert.match(m.body, /Kurzzeichen|Ihr Zeichen/); assert.match(m.body, /MK 07\.10 10:00/);
+    assert.match(m.body, /Frau Muster, Tel\. 0171 1234567/); // Kontakt wie bei den anderen Bausteinen
   });
   it('Bausteine Tour/Mahnung/PMA', () => {
     for (const [bs, re] of [['tour', /Tour/], ['mahnung', /Erinnerung/], ['pma', /Problem mit Auftrag/]]) assert.match(L.baueMail({ ma: MA[0], orders, baustein: bs, absender: '', cc: [], now: NOW }).subject + L.baueMail({ ma: MA[0], orders, baustein: bs, absender: '', cc: [], now: NOW }).body, re, bs);

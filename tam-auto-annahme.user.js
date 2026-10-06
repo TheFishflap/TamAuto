@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.21.1
+// @version      1.21.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -313,10 +313,10 @@
     if (hIdx < 0) return [];
     const head = rows[hIdx].map((c) => norm(c));
     const col = (re) => head.findIndex((h) => re.test(h));
-    const cb = col(/^bezeichnung$/), cm = col(/^e-?mail$/), cc = col(/^cc$/), cr = col(/^rolle$/);
+    const cb = col(/^bezeichnung$/), cm = col(/^e-?mail$/), cc = col(/^cc$/), cr = col(/^rolle$/), ck = col(/^kuerzel$/);
     return rows.slice(hIdx + 1).map((r) => ({
       name: String(r[cb] || '').trim(), mail: cm >= 0 ? String(r[cm] || '').trim() : '',
-      cc: /^pflicht$/i.test(String(r[cc] || '').trim()) ? 'Pflicht' : /^an$/i.test(String(r[cc] || '').trim()) ? 'an' : 'aus', rolle: cr >= 0 ? String(r[cr] || '').trim() : '' })).filter((x) => x.name);
+      cc: /^pflicht$/i.test(String(r[cc] || '').trim()) ? 'Pflicht' : /^an$/i.test(String(r[cc] || '').trim()) ? 'an' : 'aus', rolle: cr >= 0 ? String(r[cr] || '').trim() : '', k: ck >= 0 ? String(r[ck] || '').trim().toUpperCase() : '' })).filter((x) => x.name);
   }
   function extractAddr(rows) {
     const hIdx = rows.findIndex((r) => r.some((c) => /^(plz|postleitzahl)$/i.test(String(c).trim())));
@@ -607,12 +607,14 @@
   const istKennzeichen = (d) => /kennzeichen(versand|handling)/i.test(d || '') && !/ohne\s+kennzeichen/i.test(d || '');
   const istSixt = (d) => /sixt/i.test(d || '');
   // Kontakt für die Mail: Telefon, wenn vorhanden. Sixt: Zeile „Tel.“ immer (ohne Nummer leer). Terminvereinbarung ohne Telefon: E-Mail.
+  // Terminvereinbarung ist Pflicht: Status „Terminvereinbarung“ oder ab 150 € (angenommene Aufträge liegen nie unter 40 €)
+  const terminPflicht = (o) => /terminvereinbarung/i.test(o.status || '') || (typeof o.preis === 'number' && o.preis >= 150);
   function kontaktText(o) {
     const k = o.kontakt || {};
     const pre = k.name ? `${k.name}, ` : '';
     if (k.telefon) return `${pre}Tel. ${k.telefon}`;
     if (istSixt(o.dienst)) return 'Tel.';
-    if (/terminvereinbarung/i.test(o.status || '') && k.mail) return `${pre}${k.mail}`;
+    if (terminPflicht(o) && k.mail) return `${pre}${k.mail}`;
     return '';
   }
   // Kennzeichenversand/-handling läuft parallel zum Hauptauftrag: unter diesen legen, nicht als eigener Stopp (keine Duplikate)
@@ -630,6 +632,7 @@
   const BAUSTEINE = {
     neu: { betreff: 'Neue Aufträge in deinem Gebiet', text: 'für dein Marktgebiet sind Aufträge angenommen worden:', schluss: 'Bitte trage deine Tour in TAM bei „Ihr Zeichen“ ein: Kürzel, Datum und Uhrzeit, z. B. {bsp}.' },
     tour: { betreff: 'Tour in TAM ergänzen', text: 'bitte ergänze bei diesen Aufträgen deine Tour in TAM („Ihr Zeichen“):', schluss: 'Format: Kürzel, Datum, Uhrzeit – z. B. {bsp} (T = telefonisch bestätigt, t = nur Telefonversuch, M = Mail bestätigt, m = nur Mailversuch).' },
+    termin: { betreff: 'Termin vereinbaren und Kurzzeichen hinzufügen', text: 'bitte vereinbare bei diesen Aufträgen den Termin mit dem Kunden und trage danach dein Kurzzeichen in TAM ein:', schluss: 'Kurzzeichen bei „Ihr Zeichen“: Kürzel, Datum, Uhrzeit und Kontaktstatus – z. B. {bsp} T (T = telefonisch bestätigt, t = nur Telefonversuch, M = Mail bestätigt, m = nur Mailversuch).' },
     mahnung: { betreff: 'Erinnerung: Tour in TAM eintragen', text: 'zu diesen Aufträgen fehlt noch deine Tour in TAM:', schluss: 'Bitte heute noch bei „Ihr Zeichen“ eintragen, z. B. {bsp}.' },
     pma: { betreff: 'Problem mit Auftrag melden', text: 'bei diesen Aufträgen gibt es ein Problem:', schluss: 'Bitte melde das Problem in TAM über „Problem mit Auftrag melden“ und gib uns kurz Bescheid.' },
   };
@@ -640,18 +643,25 @@
     const slaTs = (o) => { const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})/.exec(o.sla || ''); return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5]).getTime() : Infinity; };
     const list = [...g.haupt, ...g.solo.map((o) => Object.assign({}, o, { extra: [], nurVersand: true }))]
       .sort((x, y) => rang[ampel(x.sla, now)] - rang[ampel(y.sla, now)] || slaTs(x) - slaTs(y) || String(x.plz).localeCompare(String(y.plz)));
-    const lines = [];
-    list.forEach((o) => {
+    // Aufträge als Tabelle (Text mit ausgerichteten Spalten für die Mail; zusätzlich HTML zum Einfügen)
+    const rows = list.map((o) => {
       const amp = ampel(o.sla, now);
-      lines.push(`• ${o.nr}${o.nurVersand ? ' (nur Versand)' : ''} · ${o.plz} ${o.ort}${o.strasse ? `, ${o.strasse}` : ''}${o.sla ? ` · SLA bis ${o.sla}${amp ? ` (${amp})` : ''}` : ''}`);
-      const k = kontaktText(o); if (k) lines.push(`   ${k}`);
-      if (o.extra.length) lines.push(`   + Kennzeichenversand ${o.extra.map((e) => e.nr).join(', ')}`);
+      return [`${o.nr}${o.nurVersand ? ' (nur Versand)' : ''}`, `${o.plz} ${o.ort}${o.strasse ? `, ${o.strasse}` : ''}`, o.sla ? `${o.sla}${amp ? ` (${amp})` : ''}` : '', kontaktText(o),
+        [terminPflicht(o) ? 'Termin erforderlich' : '', o.extra.length ? `+ Kennzeichenversand ${o.extra.map((e) => e.nr).join(', ')}` : ''].filter(Boolean).join('; ')];
     });
+    const kopf = ['Auftrag', 'PLZ / Ort', 'SLA bis', 'Kontakt', 'Hinweis'];
+    const breite = kopf.map((h, c) => Math.max(h.length, ...rows.map((r) => r[c].length)));
+    const zeile = (r) => r.map((x, c) => (c === r.length - 1 ? x : x.padEnd(breite[c]))).join(' | ').trimEnd();
+    const lines = list.length ? [zeile(kopf), breite.slice(0, -1).map((w) => '-'.repeat(w)).join('-+-') + '-+-' + '-'.repeat(Math.max(breite[breite.length - 1], 7)), ...rows.map(zeile)] : [];
+    const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const tabelle = list.length ? `<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><tr>${kopf.map((h) => `<th align="left" style="background:#e8f0fb">${esc(h)}</th>`).join('')}</tr>${rows.map((r) => `<tr>${r.map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</table>` : '';
     const morgen = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1), p2 = (n) => String(n).padStart(2, '0');
     const bsp = `${ma.k} ${p2(morgen.getDate())}.${p2(morgen.getMonth() + 1)} 10:00`;
     const vor = String(ma.name || '').split(/\s+/)[0] || ma.k;
-    const body = [`Hallo ${vor},`, '', b.text, '', ...lines, '', b.schluss.replace('{bsp}', bsp), '', ...(absender ? ['Liebe Grüße', absender] : ['Liebe Grüße'])].join('\n');
-    return { to: ma.mail || '', cc: [...cc], subject: `${b.betreff} (${list.length})`, body };
+    const kopfText = [`Hallo ${vor},`, '', b.text, ''], fussText = ['', b.schluss.replace('{bsp}', bsp), '', ...(absender ? ['Liebe Grüße', absender] : ['Liebe Grüße'])];
+    const body = [...kopfText, ...lines, ...fussText].join('\n');
+    const html = `<div style="font-family:Arial,sans-serif;font-size:13px"><p>${esc(kopfText[0])}</p><p>${esc(b.text)}</p>${tabelle}<p>${esc(b.schluss.replace('{bsp}', bsp))}</p><p>${fussText.slice(3).map(esc).join('<br>')}</p></div>`;
+    return { to: ma.mail || '', cc: [...cc], subject: `${b.betreff} (${list.length})`, body, html };
   }
   // Marktgebiete nach Ort: Zeile des Blatts „Marktgebiete“ (PLZ-Anfang | Ort mit Hinweisen | MA-Kürzel) in Regeln zerlegen.
   // Der Ort-Text darf Hinweise enthalten: Straßen („Dortmund, Preußische Straße“) werden ignoriert, „nur 42106“ beschränkt auf
@@ -2603,13 +2613,26 @@
     return maKontakte.map.size;
   }
   // Aufträge der letzten 7 Tage aus dem Auftragsbuch, ergänzt um Tourzeichen (erkannt) und Kontakt
+  // Mitarbeiterliste = Blatt „MA“ + Backoffice-Kräfte aus „Kontakte“ (Rolle „Backoffice-Kraft“): Kürzel aus der Spalte „Kürzel“,
+  // sonst ein vorangestelltes Kürzel im Namen („MB Maurice“), sonst die Initialen
+  const initialen = (n) => String(n || '').split(/\s+/).filter(Boolean).map((w) => w[0]).join('').toUpperCase().slice(0, 3);
+  function maListe() {
+    const out = (places.ma || []).map((m) => Object.assign({}, m));
+    (places.kontakte || []).filter((c) => /kraft/i.test(c.rolle)).forEach((c) => {
+      const pre = /^[A-ZÄÖÜ]{2,4}\s+\S/.test(c.name), kz = (c.k || (pre ? c.name.split(/\s+/)[0] : initialen(c.name))).toUpperCase(), nm = pre ? c.name.replace(/^\S+\s+/, '') : c.name;
+      const hit = out.find((m) => m.k === kz);
+      if (hit) { if (!hit.mail) hit.mail = c.mail; if (!hit.name) hit.name = nm; hit.backoffice = true; }
+      else out.push({ k: kz, name: nm, mail: c.mail || '', gebiet: [], backoffice: true });
+    });
+    return out;
+  }
   // Kürzel der zuständigen MA: nach Ort (Blatt „Marktgebiete“); ohne dieses Blatt nach PLZ-Anfängen im Blatt „MA“ (Spalte „Marktgebiet“)
-  const zustaendig = (o) => ((places.gebiete || []).length ? maFuerAuftrag(o, places.gebiete) : maFuerPlz(o.plz, places.ma).map((m) => m.k));
+  const zustaendig = (o) => ((places.gebiete || []).length ? maFuerAuftrag(o, places.gebiete) : maFuerPlz(o.plz, maListe()).map((m) => m.k));
   function maOrders() {
     const since = Date.now() - 7 * 864e5, seen = new Map();
     GM_getValue('orderbook', []).filter((e) => e.nr && new Date(e.ts).getTime() >= since).forEach((e) => seen.set(String(e.nr).toUpperCase(), e));
-    const known = (places.ma || []).map((m) => m.k), now = new Date();
-    return [...seen.values()].map((e) => ({ nr: e.nr, plz: e.plz || '', ort: e.ort || '', strasse: e.strasse || '', dienst: e.dienst || '', status: e.status || '',
+    const known = maListe().map((m) => m.k), now = new Date();
+    return [...seen.values()].map((e) => ({ nr: e.nr, preis: typeof e.preis === 'number' ? e.preis : null, plz: e.plz || '', ort: e.ort || '', strasse: e.strasse || '', dienst: e.dienst || '', status: e.status || '',
       sla: e.sla || '', ref: e.ref || '', zeichen: e.zeichen || '', tour: parseTourzeichen(e.zeichen, known, now), kontakt: maKontakte.map.get(String(e.nr).toUpperCase()) || null }));
   }
   function tourLabel(t) {
@@ -2624,11 +2647,11 @@
     const $ = (id) => document.getElementById(id);
     const page = $('tamauto-page-ma'), sel = $('tamauto-ma-sel');
     if (!page || !sel || page.style.display === 'none') return;
-    const ma = places.ma || [];
+    const ma = maListe();
     const sigMa = ma.map((m) => m.k).join(',');
     if (sel.dataset.sig !== sigMa) {
       sel.dataset.sig = sigMa;
-      sel.innerHTML = ma.map((m) => `<option value="${escHtml(m.k)}">${escHtml(m.k)} – ${escHtml(m.name)}</option>`).join('') || '<option value="">(Blatt „MA“ fehlt)</option>';
+      sel.innerHTML = ma.map((m) => `<option value="${escHtml(m.k)}">${escHtml(m.k)} – ${escHtml(m.name)}${m.backoffice ? ' (Backoffice)' : ''}</option>`).join('') || '<option value="">(Blatt „MA“ fehlt)</option>';
       const last = GM_getValue('maSel', ''); if (ma.some((m) => m.k === last)) sel.value = last;
     }
     const m = ma.find((x) => x.k === sel.value);
@@ -2641,6 +2664,8 @@
       const cnt = (st) => zeichen.filter((o) => o.tour.status === st).length;
       log(`MA-Management: ${(places.ma || []).length} MA, ${(places.gebiete || []).length} Marktgebiete, ${(places.kontakte || []).length} Kontakte · Auftragsbuch ${all.length} Aufträge (7 Tage), ${znt} zugeordnet, ${all.length - znt} nicht · ` +
         `${m ? `${m.k}: ${mine.length} Aufträge${nurOhne ? ' ohne Tour' : ''}` : 'kein MA gewählt'} · Zeichen gelesen: ${cnt('tour')} Tour, ${cnt('ohneDatum')} ohne Datum, ${cnt('ohneKuerzel')} ohne Kürzel, ${cnt('unklar')} unklar`, 'debug');
+      const rest = new Map(); zeichen.filter((o) => o.tour.status !== 'tour').forEach((o) => rest.set(o.zeichen, (rest.get(o.zeichen) || 0) + 1));
+      if (rest.size) log(`MA-Management: Zeichen ohne erkennbare Tour (häufigste): ${[...rest.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([z, n]) => `„${z}“ ×${n}`).join(', ')}`, 'debug');
     }
     $('tamauto-ma-hint').textContent = maFehler || (!ma.length ? 'Excel-Blatt „MA“ fehlt oder ist leer (Ortsliste.xlsx).'
       : m && !(places.gebiete || []).length && !m.gebiet.length ? `${m.k} hat noch kein Marktgebiet (Blatt „Marktgebiete“).`
@@ -2680,7 +2705,7 @@
     const ccList = [...cc.querySelectorAll('input')].filter((i) => i.checked || i.disabled).map((i) => i.dataset.mail);
     const mail = m ? baueMail({ ma: m, orders: mine, baustein: $('tamauto-ma-baustein').value, absender: ab.value, cc: ccList, now: new Date() }) : { to: '', cc: [], subject: '', body: '' };
     $('tamauto-ma-subject').value = mail.subject; $('tamauto-ma-body').value = mail.body;
-    $('tamauto-ma-open').dataset.to = mail.to; $('tamauto-ma-open').dataset.cc = mail.cc.join(',');
+    $('tamauto-ma-open').dataset.to = mail.to; $('tamauto-ma-open').dataset.cc = mail.cc.join(','); $('tamauto-ma-open').dataset.html = mail.html || '';
     updateMaLink();
   }
   function updateMaLink() {
@@ -2700,10 +2725,21 @@
     $('tamauto-ma-nurohne').onchange = renderMa; $('tamauto-ma-baustein').onchange = renderMa;
     $('tamauto-ma-absender').onchange = (e) => { GM_setValue('maSender', e.target.value); renderMa(); };
     $('tamauto-ma-subject').oninput = updateMaLink; $('tamauto-ma-body').oninput = updateMaLink;
-    $('tamauto-ma-open').addEventListener('click', () => {
-      const a = $('tamauto-ma-open'), n = ($('tamauto-ma-body').value.match(/^•/gm) || []).length;
-      log(`MA-Management: Mail geöffnet – an ${a.dataset.to || '(keine Adresse)'}, Cc: ${a.dataset.cc || '–'}, Baustein ${$('tamauto-ma-baustein').value}, ${n} Aufträge, Absender ${$('tamauto-ma-absender').value || '–'}, Link ${a.href.length} Zeichen`, 'debug');
+    $('tamauto-ma-open').addEventListener('click', (ev) => {
+      const a = $('tamauto-ma-open'), n = ($('tamauto-ma-body').value.match(/^MW|^[A-Z0-9][\w-]+\s+\|/gm) || []).length;
+      // Als Popup öffnen: ein Link würde TAM im selben Tab verlassen (Firefox öffnet mailto je nach Einstellung nicht im neuen Tab)
+      ev.preventDefault();
+      try { window.open(a.href, '_blank', 'popup=yes,width=980,height=720,noopener,noreferrer'); } catch (e) { location.href = a.href; }
+      log(`MA-Management: Mail geöffnet (Popup) – an ${a.dataset.to || '(keine Adresse)'}, Cc: ${a.dataset.cc || '–'}, Baustein ${$('tamauto-ma-baustein').value}, ${n} Aufträge, Absender ${$('tamauto-ma-absender').value || '–'}, Link ${a.href.length} Zeichen`, 'debug');
     });
+    $('tamauto-ma-copyhtml').onclick = async () => {
+      const a = $('tamauto-ma-open'), html = a.dataset.html || '', txt = `${$('tamauto-ma-subject').value}\n\n${$('tamauto-ma-body').value}`;
+      try {
+        if (typeof ClipboardItem !== 'undefined' && navigator.clipboard.write) await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([txt], { type: 'text/plain' }) })]);
+        else await navigator.clipboard.writeText(txt);
+        $('tamauto-ma-mailstate').textContent = 'Tabelle kopiert – in die Mail einfügen.'; log('MA-Management: Mail mit Tabelle kopiert.', 'debug');
+      } catch (e) { $('tamauto-ma-mailstate').textContent = 'Kopieren nicht möglich – „Text kopieren“ nutzen.'; }
+    };
     $('tamauto-ma-copy').onclick = () => { try { navigator.clipboard.writeText(`${$('tamauto-ma-subject').value}\n\n${$('tamauto-ma-body').value}`); log('Mailtext kopiert.'); } catch (e) { /* ignore */ } };
     $('tamauto-ma-load').onclick = async () => {
       $('tamauto-ma-loadstate').textContent = 'lädt …';
@@ -2986,13 +3022,13 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
             <div id="tamauto-ma-unz" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px"></div></div>
           <div style="margin-top:8px;padding-top:6px;border-top:2px solid #1a4d8f"><b>Mail an den Mitarbeiter</b>
             <div class="tamauto-chk" style="gap:6px;flex-wrap:wrap;margin:4px 0">Baustein
-              <select id="tamauto-ma-baustein"><option value="neu">Neue Aufträge</option><option value="tour">Tour ergänzen</option><option value="mahnung">Mahnung</option><option value="pma">Problem mit Auftrag (PMA)</option></select>
+              <select id="tamauto-ma-baustein"><option value="neu">Neue Aufträge</option><option value="termin">Termin vereinbaren + Kurzzeichen</option><option value="tour">Tour ergänzen</option><option value="mahnung">Mahnung</option><option value="pma">Problem mit Auftrag (PMA)</option></select>
               Absender <select id="tamauto-ma-absender"></select></div>
             <div style="margin:2px 0">Cc: <span id="tamauto-ma-cc"></span></div>
             <input id="tamauto-ma-subject" style="width:100%;margin:2px 0">
             <textarea id="tamauto-ma-body" style="width:100%;height:150px;font:11px monospace"></textarea>
             <div class="tamauto-chk" style="gap:6px;margin-top:4px"><a id="tamauto-ma-open" href="#" target="_blank" rel="noopener noreferrer" style="padding:3px 8px;border:1px solid #1a4d8f;border-radius:3px;background:#e8f0fb;color:#000;text-decoration:none">✉ Mail öffnen</a>
-              <button id="tamauto-ma-copy">Text kopieren</button><span id="tamauto-ma-mailstate" style="color:#b36b00"></span></div>
+              <button id="tamauto-ma-copy">Text kopieren</button><button id="tamauto-ma-copyhtml" title="Kopiert die Mail mit echter Tabelle – in die Mail einfügen (Strg+V / Cmd+V)">Als Tabelle kopieren</button><span id="tamauto-ma-mailstate" style="color:#b36b00"></span></div>
           </div>
         </div>
         <div id="tamauto-page-main" style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">

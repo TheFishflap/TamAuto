@@ -940,7 +940,7 @@ describe('Excel „MA“ und „Kontakte“', { skip }, () => {
     'nicht annehmen': [['PLZ', 'Ort']],
     MA: [['Kürzel', 'Name', 'E-Mail', 'Marktgebiet'], ['mk', 'Markus Kirschbaum', 'mk@example.com', '44, 45; 58*'], ['PM', 'Petra M.', 'pm@example.com', '45 46'], ['XX', 'Ohne Gebiet', '', '']],
     Marktgebiete: [['PLZ', 'Ort', 'MA'], ['40', 'Düsseldorf', 'MB PM'], ['42', 'Wuppertal - nur 42106', 'MK'], ['', 'ohne PLZ', '']],
-    Kontakte: [['Bezeichnung', 'E-Mail', 'Cc', 'Rolle'], ['Backoffice (Postfach)', 'auftrag@example.com', 'an', 'Postfach'], ['Leonie Struve', '', 'aus', 'Backoffice-Kraft'], ['Silke', 'silke@example.com', 'Pflicht', 'Backoffice-Kraft']],
+    Kontakte: [['Bezeichnung', 'E-Mail', 'Cc', 'Rolle', 'Kürzel'], ['Backoffice (Postfach)', 'auftrag@example.com', 'an', 'Postfach', ''], ['Leonie Struve', '', 'aus', 'Backoffice-Kraft', 'lst'], ['Silke', 'silke@example.com', 'Pflicht', 'Backoffice-Kraft', '']],
   });
   const xhr = (o) => o.url.includes('IQBmSNFRkXF5') ? { status: 200, responseText: revocationList() } : o.url.includes('IQDymsXIGo99') ? { status: 200, response: xlsx } : { error: true };
 
@@ -954,6 +954,7 @@ describe('Excel „MA“ und „Kontakte“', { skip }, () => {
     assert.deepEqual(p.ma[1].gebiet, ['45', '46']);
     assert.deepEqual(p.ma[2].gebiet, []);
     assert.deepEqual(p.gebiete.map((g) => [g.plz, g.orte[0], g.ma.join('+'), g.nurPlz]), [['40', 'duesseldorf', 'MB+PM', ''], ['42', 'wuppertal', 'MK', '42106']]);
+    assert.deepEqual(p.kontakte.map((x) => x.k), ['', 'LST', '']);
     assert.deepEqual(p.kontakte.map((x) => [x.name, x.mail, x.cc]), [['Backoffice (Postfach)', 'auftrag@example.com', 'an'], ['Leonie Struve', '', 'aus'], ['Silke', 'silke@example.com', 'Pflicht']]);
   });
   it('ohne diese Blätter (alte Excel) → leer, nichts kaputt', async () => {
@@ -1048,7 +1049,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
     $('tamauto-ma-load').click();
     assert.ok(await until(() => /Kontakte: 2/.test($('tamauto-ma-loadstate').textContent), 3000), $('tamauto-ma-hint').textContent);
     assert.match($('tamauto-ma-body').value, /Frau Muster, Tel\. 0171 1234567/);
-    assert.match($('tamauto-ma-body').value, /MW3190402[^\n]*\n\s+Tel\.\s*\n/);
+    assert.match($('tamauto-ma-body').value, /^MW3190402[^\n]*\| Tel\.\s*(\|[^\n]*)?$/m);
     assert.match($('tamauto-ma-rows').textContent, /0171 1234567/);
   });
 
@@ -1063,10 +1064,21 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.equal(box(), 'flex');
   });
 
-  it('„Mail öffnen“ öffnet in neuem Tab (TAM bleibt offen)', async () => {
+  it('„Mail öffnen“ öffnet als Popup, TAM bleibt im selben Tab', async () => {
     await setup();
-    assert.equal($('tamauto-ma-open').getAttribute('target'), '_blank');
-    assert.match($('tamauto-ma-open').getAttribute('rel'), /noopener/);
+    const calls = []; tam.window.open = (...x) => { calls.push(x); return null; };
+    const ev = new tam.window.MouseEvent('click', { bubbles: true, cancelable: true });
+    $('tamauto-ma-open').dispatchEvent(ev);
+    assert.equal(ev.defaultPrevented, true, 'Link würde den Tab verlassen');
+    assert.equal(calls.length, 1);
+    assert.match(calls[0][0], /^mailto:mk@example\.com\?/); assert.equal(calls[0][1], '_blank'); assert.match(calls[0][2], /popup=yes/);
+  });
+
+  it('Backoffice-Kräfte sind automatisch Mitarbeiter (Kürzel aus den Initialen oder aus „Kürzel“)', async () => {
+    await setup();
+    const opts = [...$('tamauto-ma-sel').options].map((o) => o.textContent);
+    assert.ok(opts.some((o) => /^LS – Leonie Struve \(Backoffice\)$/.test(o)), opts.join('|'));
+    assert.ok(opts.some((o) => /^SI – Silke \(Backoffice\)$/.test(o)) || opts.some((o) => /Silke \(Backoffice\)/.test(o)), opts.join('|'));
   });
 
   it('„Kontakte laden“ lädt auch die Excel einmal neu', async () => {

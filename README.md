@@ -396,6 +396,15 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.21.2 – 2026-10-06
+- **MA-Management – Mail:** Aufträge stehen als **Tabelle mit Kontakt** in der Mail (Auftrag · PLZ/Ort · SLA · Kontakt · Hinweis); neuer Knopf
+  „Als Tabelle kopieren“ legt eine echte Tabelle zum Einfügen in die Mail in die Zwischenablage. Neuer Baustein **„Termin vereinbaren + Kurzzeichen“**.
+  „Mail öffnen“ öffnet als **Popup** (TAM bleibt im Tab).
+- **Terminvereinbarung ist Pflicht** bei Status „Terminvereinbarung“ **und ab 150 €**: Kontakt (Telefon, sonst E-Mail) und Hinweis „Termin erforderlich“.
+- **Backoffice-Kräfte** (Blatt „Kontakte“, Rolle „Backoffice-Kraft“) sind automatisch Mitarbeiter im Reiter (Kürzel aus der optionalen Spalte
+  „Kürzel“, sonst ein vorangestelltes Kürzel im Namen oder die Initialen).
+- Protokoll: Zeichen ohne erkennbare Tour (häufigste) zum Debuggen.
+
 ### 1.21.1 – 2026-10-06
 - **MA-Management:** „Nicht zugeordnet“ ist **klappbar** (zu Beginn offen, Zustand wird gemerkt); „Mail öffnen“ öffnet in einem **neuen Tab**;
   die Kontakte werden **alle 30 min** automatisch neu geladen, der Knopf „Kontakte laden“ lädt zusätzlich die Excel (Listen, MA, Marktgebiete) neu.
