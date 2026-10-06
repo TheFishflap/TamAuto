@@ -22,7 +22,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Wächter-Modus** | Schließt störende TAM-Meldungen **in Millisekunden** – „bereits vergeben“, „nicht verfügbar“, „falscher Status“, Warenkorb-Hinweise, technische Fehlerfenster – und wertet sie trotzdem richtig aus |
 | **Neue-Zeilen-Wächter** | Erkennt neue Aufträge in „Veröffentlichte Aufträge“ sofort bei der Tabellenänderung – auch wenn TAM sie ohne Refresh einblendet |
 | **Silent Reload** | Optional (Erweiterte Einstellungen, Checkbox wie beim Auto-Refresh, Standard aus, nur in der Arbeitszeit): fragt TAM alle x s im Hintergrund nach neuen Aufträgen – ohne Tabelle neu zu zeichnen; nur bei einem neuen Auftrag wird aktualisiert |
-| **Arbeitszeit** | Standard **08:00–18:00** (einstellbar, an/aus): außerhalb pausieren Auto-Refresh und Silent Reload, danach laufen sie automatisch mit den zuletzt eingestellten Werten weiter |
+| **Arbeitszeit** | **fest 08:00–18:00** (nicht einstellbar): außerhalb pausieren Auto-Refresh und Silent Reload, danach laufen sie automatisch mit den zuletzt eingestellten Werten weiter |
 | **Push-Signal** | Die App **TAM-Signal** auf 1–2 Master-Handys leitet die Push-Benachrichtigungen der TAM-App als Startsignal über ntfy.sh weiter – das Script fragt TAM **innerhalb von ca. 1 s** ab (Standard an, gemeinsamer Kanal voreingestellt; verbindet sich nach Schlaf/Netzwechsel selbst neu; eigener Reiter „Push-Signal“) |
 | **Priorität** | Mehrere passende Aufträge gleichzeitig → Reihenfolge nach **Stufe 1, 2, 3** frei wählbar (Anzahl am Ort, Summe am Ort, Einzelpreis) mit automatischer Zuordnung; Standard: Anzahl → Summe → Preis |
 | **Fern-Lizenzierung** | „Lizenz anfragen“ direkt im Script → Freischaltung in der Lizenzverwaltung von IB Thomée → das Script **aktiviert sich selbst**; Verlängerung per Klick (Reiter Info); signierte **Sperrliste** zum Entziehen (7 Tage offline erlaubt) |
@@ -395,6 +395,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.21.9 – 2026-10-06
+- **Arbeitszeit fest 08:00–18:00** (nicht mehr einstellbar, kein Ein-/Ausschalter): außerhalb pausieren Auto-Refresh und Silent Reload. Die Annahme selbst läuft weiter.
 
 ### 1.21.8 – 2026-10-06
 - **Tages-Auftragsbuch für später eingeloggte Geräte:** Annahmen werden auf dem **geheimen Kanal** (Lizenz mit Kanal-Schlüssel) mit PLZ, Ort, Straße, Dienstleistung, Preis und Referenz gemeldet. Ein Gerät, das sich später einloggt, holt die Meldungen seit Mitternacht nach und hat das Auftragsbuch des Tages sofort vollständig – ohne „Angenommene Aufträge“ öffnen zu müssen. Auf dem öffentlichen Kanal (alte Lizenzen) bleibt es bei den Nummern. Empfangene Angaben werden geprüft und gekürzt; fehlende Angaben bereits vorhandener Einträge werden ergänzt.

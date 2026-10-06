@@ -267,6 +267,10 @@ function startTam(opts = {}) {
   // Live-Verbindungen schließen
   tam.close = () => { closed = true; timers.forEach((id) => { w.clearTimeout(id); w.clearInterval(id); }); sources.forEach((s) => s.close()); };
 
+  if (opts.fakeHour != null) { // Uhrzeit festlegen (Arbeitszeit 08:00–18:00 ist im Script fest): lokale Stunde = fakeHour, Uhr läuft weiter
+    const RD = w.Date, n = new RD(), off = new RD(n).setHours(opts.fakeHour, 30, 0, 0) - n.getTime();
+    w.Date = class extends RD { constructor(...a) { if (a.length) super(...a); else super(RD.now() + off); } static now() { return RD.now() + off; } };
+  }
   w.eval(fs.readFileSync(SCRIPT_PATH, 'utf8'));
   return tam;
 }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.21.8
+// @version      1.21.9
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -90,10 +90,10 @@
     // Silent Reload: an/aus per Checkbox (wie Auto-Refresh), Intervall 1–60 s. Früher hieß 0 s „aus“ → einmalig übernommen
     silentOn: GM_getValue('silentOn', GM_getValue('silentSec', 0) > 0),
     silentSec: GM_getValue('silentSec', 0) || 10,
-    // Arbeitszeit: außerhalb pausieren Auto-Refresh und Silent Reload (Einstellungen bleiben erhalten) – Standard an
-    schedOn: GM_getValue('schedOn', true),
-    schedFrom: GM_getValue('schedFrom', '08:00'),
-    schedTo: GM_getValue('schedTo', '18:00'),
+    // Arbeitszeit: außerhalb pausieren Auto-Refresh und Silent Reload (Einstellungen bleiben erhalten) – fest 08:00–18:00, nicht einstellbar
+    schedOn: true,
+    schedFrom: '08:00',
+    schedTo: '18:00',
     pushOn: GM_getValue('pushOnV3', true),          // Push-Signal (App „TAM-Signal“ über ntfy) – Standard an (V3: gilt einmal für alle)
     pushTopic: GM_getValue('pushTopic', 'tam-zrd6g634b4wej7aqhsycc9qm'), // gemeinsamer Kanal der IB Thomée // Silent Reload: Hintergrund-Abfrage alle x s (0 = aus, Standard)
   });
@@ -2923,11 +2923,8 @@
         </div>
         <div id="tamauto-page-adv" style="display:none;margin:6px 0">
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
-            <span class="tamauto-chk">
-              <label class="tamauto-chk"><input type="checkbox" id="tamauto-sched"> <b>Arbeitszeit</b></label>
-              von <input id="tamauto-sched-from" type="time" style="margin:0;width:78px">
-              bis <input id="tamauto-sched-to" type="time" style="margin:0;width:78px">
-              <span class="tamauto-help" title="Nur in dieser Zeit laufen Auto-Refresh und Silent Reload. Außerhalb werden beide pausiert – die Einstellungen (an/aus, Intervall) bleiben erhalten und gelten ab Beginn der Arbeitszeit automatisch wieder. Die Annahme selbst (Abgleich bei TAM-Aktualisierung, Push-Signal, manueller Refresh) läuft weiter. Standard: an, 07:30–18:15.">?</span>
+            <span class="tamauto-chk"><b>Arbeitszeit</b> fest 08:00–18:00
+              <span class="tamauto-help" title="Nur in dieser Zeit laufen Auto-Refresh und Silent Reload. Außerhalb werden beide pausiert – die Einstellungen (an/aus, Intervall) bleiben erhalten und gelten ab 08:00 automatisch wieder. Die Annahme selbst (Abgleich bei TAM-Aktualisierung, Push-Signal, manueller Refresh) läuft weiter. Die Zeit ist fest eingestellt.">?</span>
             </span>
             <div id="tamauto-sched-state" style="color:#555;font-size:11px;margin-top:2px"></div>
           </div>
@@ -3387,27 +3384,11 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     $('tamauto-hidetips').onchange = (e) => { cfg.hideTips = e.target.checked; GM_setValue('hideTips', cfg.hideTips); applyTips(); };
     applyTips();
 
-    // Arbeitszeit-Fenster
+    // Arbeitszeit-Fenster (fest): nur die Statuszeile
     const renderSched = () => {
-      $('tamauto-sched').checked = cfg.schedOn;
-      $('tamauto-sched-from').value = cfg.schedFrom; $('tamauto-sched-to').value = cfg.schedTo;
-      $('tamauto-sched-from').disabled = $('tamauto-sched-to').disabled = !cfg.schedOn;
-      $('tamauto-sched-state').textContent = !cfg.schedOn ? 'aus – Auto-Refresh und Silent Reload laufen rund um die Uhr'
-        : inSchedule() ? `jetzt in der Arbeitszeit – Auto-Refresh${cfg.silentOn ? ' und Silent Reload' : ''} aktiv`
-          : `jetzt außerhalb – pausiert bis ${cfg.schedFrom}`;
+      $('tamauto-sched-state').textContent = inSchedule() ? `jetzt in der Arbeitszeit – Auto-Refresh${cfg.silentOn ? ' und Silent Reload' : ''} aktiv`
+        : `jetzt außerhalb – pausiert bis ${cfg.schedFrom}`;
     };
-    const saveSched = () => {
-      GM_setValue('schedOn', cfg.schedOn); GM_setValue('schedFrom', cfg.schedFrom); GM_setValue('schedTo', cfg.schedTo);
-      renderSched(); renderSync(Date.now());
-      log(cfg.schedOn ? `Arbeitszeit ${cfg.schedFrom}–${cfg.schedTo}: außerhalb pausieren Auto-Refresh und Silent Reload.` : 'Arbeitszeit aus – Auto-Refresh/Silent Reload rund um die Uhr.');
-    };
-    $('tamauto-sched').onchange = (e) => { cfg.schedOn = e.target.checked; saveSched(); };
-    ['from', 'to'].forEach((k) => {
-      $(`tamauto-sched-${k}`).onchange = (e) => {
-        if (hm(e.target.value) === null) { renderSched(); return; }
-        cfg[k === 'from' ? 'schedFrom' : 'schedTo'] = e.target.value; saveSched();
-      };
-    });
     renderSched();
     setInterval(renderSched, 30000);
 

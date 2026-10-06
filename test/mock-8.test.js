@@ -62,9 +62,6 @@ describe('Gerätebindung der Lizenz (P1)', { skip }, () => {
 });
 
 describe('Silent Reload', { skip }, () => {
-  // Arbeitszeit so legen, dass „jetzt“ sicher außerhalb liegt
-  const now = new Date(), hh = (h) => `${String((now.getHours() + h + 24) % 24).padStart(2, '0')}:00`;
-  const OUTSIDE = { schedOn: true, schedFrom: hh(2), schedTo: hh(3) };
   const state = () => tam.document.getElementById('tamauto-silent-state').textContent;
 
   it('Checkbox schaltet an/aus und wird gespeichert', async () => {
@@ -78,7 +75,22 @@ describe('Silent Reload', { skip }, () => {
   });
 
   it('pausiert außerhalb der Arbeitszeit', async () => {
-    tam = startTam({ gm: { places: KOELN, silentOn: true, silentSec: 5, ...OUTSIDE } });
+    tam = startTam({ fakeHour: 19, gm: { places: KOELN, silentOn: true, silentSec: 5 } });
+    await tam.ready();
+    assert.ok(await until(() => /außerhalb der Arbeitszeit \(08:00–18:00\)/.test(state()), 2000), state());
+  });
+
+  it('Arbeitszeit ist fest 08:00–18:00: keine Eingabefelder, gespeicherte Werte wirken nicht, 10 Uhr = aktiv', async () => {
+    tam = startTam({ fakeHour: 10, gm: { places: KOELN, silentOn: true, silentSec: 5, schedOn: false, schedFrom: '03:00', schedTo: '04:00' } });
+    await tam.ready();
+    assert.equal(tam.document.getElementById('tamauto-sched-from'), null);
+    assert.equal(tam.document.getElementById('tamauto-sched'), null);
+    assert.match(tam.document.getElementById('tamauto-sched-state').textContent, /jetzt in der Arbeitszeit/);
+    assert.doesNotMatch(state(), /außerhalb/);
+  });
+
+  it('vor 08:00 pausiert', async () => {
+    tam = startTam({ fakeHour: 7, gm: { places: KOELN, silentOn: true, silentSec: 5 } });
     await tam.ready();
     assert.ok(await until(() => /außerhalb der Arbeitszeit/.test(state()), 2000), state());
   });
