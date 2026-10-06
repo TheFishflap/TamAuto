@@ -883,9 +883,10 @@
       const tr = document.createElement('tr');
       const d = new Date(e.ts);
       [`${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`,
-        e.zu ? `↳ ${e.nr}` : e.nr, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis), e.zeichen || '', e.by || '', ''].forEach((v, i) => {
+        `${{ rot: '🔴', gelb: '🟡' }[ampel(e.sla)] || ''}${e.zu ? `↳ ${e.nr}` : e.nr}`, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis), e.zeichen || '', e.by || '', ''].forEach((v, i) => {
         const td = document.createElement('td');
         td.textContent = v;
+        if (i === 1 && ampel(e.sla)) td.title = `SLA (Endtermin Agent) ${e.sla}: ${ampel(e.sla) === 'rot' ? 'überfällig oder in ≤ 2 h' : 'in ≤ 24 h'}`;
         if (i === 1 && terminRed(e)) { // rote 1: Terminvereinbarung weggeklickt, SLA endet in ≤ 2 h
           const t = document.createElement('span');
           t.className = 'tamauto-termin'; t.textContent = '1'; t.title = `Terminvereinbarung weggeklickt, SLA endet ${e.sla} – Termin noch vereinbaren`;

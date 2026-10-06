@@ -46,6 +46,14 @@ describe('Zuständigkeit und Zeichen aus dem Marktgebiet', { skip }, () => {
     assert.deepEqual([...sel.options].map((o) => o.value), ['', 'MB', 'PM']);
   });
 
+  it('Auftragsbuch zeigt die SLA-Flagge (🔴 überfällig/≤ 2 h, 🟡 ≤ 24 h)', async () => {
+    const f = (h) => { const d = new Date(Date.now() + h * 3600e3), z = (n) => String(n).padStart(2, '0'); return `${z(d.getDate())}.${z(d.getMonth() + 1)}.${d.getFullYear()} ${z(d.getHours())}:${z(d.getMinutes())}`; };
+    const b = BOOK(); b[0].sla = f(1); b[1].sla = f(10);
+    await setup({ orderbook: b });
+    assert.match(bookRow('MW3190601').textContent, /🔴/);
+    assert.match(bookRow('MW3190602').textContent, /🟡/);
+  });
+
   it('Dropdown wählen → Zeichen „PM neu“ wird still gesetzt', async () => {
     await setup();
     const sel = bookRow('MW3190602').querySelector('select');

@@ -409,6 +409,7 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 - **MA-Mails ohne Konkurrenz:** ein Auftrag geht nur an den MA, dessen Kürzel im Zeichen steht (oder an den eindeutig Zuständigen, solange noch kein Zeichen gesetzt ist).
   Neuer Baustein „Zugewiesen“ (Kürzel gesetzt – entfernen, „zurück“ dahinter schreiben oder Termin ausmachen) mit zweitem Block „Weitere Aufträge in der Nähe“.
 - **Automatische Mahnung:** Kürzel ohne Datum, Zeichen älter als 2 h → „Mahnung fällig“ (Zahl am Reiter „MA-Management (n)“ und je MA).
+- **Flaggen im Auftragsbuch:** 🔴 (SLA überfällig oder in ≤ 2 h) und 🟡 (≤ 24 h) wie im MA-Management. Das Kürzel wird nur im Auftragsbuch gesetzt; das MA-Management ist reine Verwaltung (lesen, Mails).
 - Die Statuszeile „Abgleich … in Tabelle … passend“ im Kopf entfällt (mehr Platz; die Angaben stehen weiter im Protokoll).
 
 ### 1.21.2 – 2026-10-06
