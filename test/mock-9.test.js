@@ -14,7 +14,7 @@ afterEach(() => { if (tam) tam.close(); tam = null; });
 
 // P1 Sixt: Auftrag passt, wird aber als „bereits bearbeitet“ übersprungen (done dauerhaft verunreinigt)
 
-// Auftragsbuch: ✓ statt Zeichentext, keine Spalte „Zuständig“, nichts mehr zum Schreiben
+// Auftragsbuch: keine Spalten zu Zeichen/Zuständig/PLZ, nichts mehr zum Schreiben
 describe('Auftragsbuch: Zeichen als Haken', { skip }, () => {
   const today = new Date().toISOString();
   const BOOK = () => [
@@ -23,20 +23,16 @@ describe('Auftragsbuch: Zeichen als Haken', { skip }, () => {
   ];
   const bookRow = (nr) => [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.textContent.includes(nr));
 
-  it('„Ihr Zeichen“ nur als ✓ (Text im Tooltip); sechs Spalten; kein Schreiben (kein Knopf, Dropdown, Haken, Automatik)', async () => {
+  it('keine Spalte „Ihr Zeichen“/„Zuständig“/„PLZ“ im Auftragsbuch (fünf Spalten), nichts zum Schreiben', async () => {
     tam = startTam({ gm: { places: KOELN, orderbook: BOOK() } });
     await tam.ready();
     tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-book"]').click();
-    assert.equal(bookRow('MW3190601').children[5].textContent, '');
-    assert.equal(bookRow('MW3190602').children[5].textContent, '✓');
-    assert.equal(bookRow('MW3190602').children[5].title, 'PM 12.10 10:00 T');
-    assert.equal(bookRow('MW3190602').children.length, 6);
+    assert.equal(bookRow('MW3190602').children.length, 5);
+    assert.deepEqual([...tam.document.querySelectorAll('#tamauto-page-book thead th')].map((th) => th.textContent), ['Datum', 'Von', 'AuftragsNr', 'Ort', 'Euro']);
+    assert.ok(!bookRow('MW3190602').textContent.includes('✓'));
     assert.equal(tam.document.querySelectorAll('#tamauto-ob-rows select, #tamauto-ob-rows input, #tamauto-zeichen-go').length, 0);
     assert.equal(tam.document.getElementById('tamauto-zeichenauto'), null);
-    assert.ok(![...tam.document.querySelectorAll('#tamauto-page-book th')].some((th) => /Zuständig|PLZ/.test(th.textContent)));
-    assert.deepEqual([...tam.document.querySelectorAll('#tamauto-page-book thead th')].map((th) => th.textContent), ['Datum', 'Von', 'AuftragsNr', 'Ort', 'Euro', 'Z.']);
   });
-
   it('Datum: bei einem einzelnen Tag nur die Uhrzeit, sonst Datum und Uhrzeit', async () => {
     tam = startTam({ gm: { places: KOELN, orderbook: BOOK() } });
     await tam.ready();
@@ -119,6 +115,15 @@ describe('„XX zurück“ und Morgenroutine', { skip }, () => {
     tam.selectTab('AgentVeroeffentlichteAuftraege');
     await tam.ready();
     assert.ok(await until(() => (book().find((e) => e.nr === 'MW3190820') || {}).zeichen === 'GS 12.10 10:00 T', 15000), tam.logs().slice(-5).join('\n'));
+    assert.ok(await until(() => tam.document.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active'), 5000));
+  });
+
+  it('Start aus dem Information Cockpit: Reiter werden trotzdem geöffnet, am Ende „Veröffentlichte Aufträge“', async () => {
+    tam = startTam({ gm: { startTabs: true, places: KOELN, orderbook: [{ ts: new Date().toISOString(), nr: 'MW3190821', plz: '44141', ort: 'Dortmund', tid: '3706821', zeichen: '' }] } });
+    tam.addAccepted('MW3190821', '', { id: '3706821', zeichen: 'LE' });
+    tam.selectTab('x-auto-36');
+    await tam.ready();
+    assert.ok(await until(() => (book().find((e) => e.nr === 'MW3190821') || {}).zeichen === 'LE', 20000), tam.logs().slice(-6).join('\n'));
     assert.ok(await until(() => tam.document.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active'), 5000));
   });
 });

@@ -75,3 +75,11 @@ Vorhandene Mitschnitte (Dateinamen in `test/fixtures/`): `veroeffentlicht-leer`,
 - Die Tests mit dem Script stehen in `test/mock-1.test.js` … `mock-8.test.js`, damit Node sie **parallel** ausführt. Eine einzelne große
   Datei läuft nacheinander und wird mit jedem Test langsamer. Neue Tests in die Datei mit der geringsten Laufzeit legen
   (Dauer je Datei: `npm test`, Zeile „duration_ms“ bzw. die Zeiten der obersten `describe`-Blöcke) – nicht in die längste.
+
+## 8. Reiter auslesen (wenn die Start-Routine „Reiter öffnen“ nicht klappt)
+Einzeiler in der Browser-Konsole (F12) auf tam.tuvsud.com; kopiert die Reiterleiste und den Zustand der Panels in die Zwischenablage:
+```js
+copy(JSON.stringify({tabs:[...document.querySelectorAll('li[id*="__"]')].map(li=>({id:li.id,aktiv:li.classList.contains('x-tab-strip-active'),text:li.textContent.trim().slice(0,40)})),panels:['AgentVeroeffentlichteAuftraege','AgentEigeneAuftraege'].map(id=>{const p=document.getElementById(id);return {id,da:!!p,verborgen:!!(p&&p.closest('.x-hide-display')),zeilen:p?p.querySelectorAll('.x-grid3-row').length:0}})},null,1))
+```
+Das Script-Protokoll nennt bei einem Fehlschlag dasselbe („Start: Reiter noch nicht bereit … Reiter: … · Panel Angenommene: …“).
+

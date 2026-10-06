@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.23.4
+// @version      1.23.5
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -790,7 +790,7 @@
       const d = new Date(e.ts);
       const uhr = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), einTag = range === 'today' || nTage > 0; // einzelner Tag: nur die Uhrzeit
       [einTag ? uhr : `${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${uhr}`, e.by || '',
-        `${{ rot: '🔴', gelb: '🟡' }[ampel(e.sla)] || ''}${e.zu ? `↳ ${e.nr}` : e.nr}`, e.ort, e.preis == null ? '–' : fmtEuro(e.preis), e.zeichen ? '✓' : ''].forEach((v, i) => {
+        `${{ rot: '🔴', gelb: '🟡' }[ampel(e.sla)] || ''}${e.zu ? `↳ ${e.nr}` : e.nr}`, e.ort, e.preis == null ? '–' : fmtEuro(e.preis)].forEach((v, i) => {
         const td = document.createElement('td');
         td.textContent = v;
         if (i === 2 && ampel(e.sla)) td.title = `SLA (Endtermin Agent) ${e.sla}: ${ampel(e.sla) === 'rot' ? 'überfällig oder in ≤ 2 h' : 'in ≤ 24 h'}`;
@@ -800,16 +800,14 @@
           Object.assign(t.style, { color: '#c62828', fontWeight: 'bold', marginLeft: '4px' });
           td.appendChild(t);
         }
-        if (i === 5 && e.zeichen) td.title = e.zeichen; // „Ihr Zeichen“: nur der Haken, der Text als Tooltip
         Object.assign(td.style, { padding: '1px 4px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap', textAlign: i === 4 ? 'right' : 'left' });
         tr.appendChild(td);
       });
       tr.title = e.dienst || ''; tr.dataset.nr = e.nr;
       if (terminRed(e)) tr.style.background = '#ffebee'; // Reservierung läuft in ≤ 2 h aus: Zeile markiert
-      else if (e.zeichen) tr.style.background = '#eeeeee'; // Ihr Zeichen eingetragen = grau
       tbody.appendChild(tr);
     });
-    if (!rows.length) tbody.innerHTML = '<tr><td colspan="6" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
+    if (!rows.length) tbody.innerHTML = '<tr><td colspan="5" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
     // Unten: Anzahl Aufträge, Anzahl PLZ (mit Aufträgen je PLZ), Summe Euro
     const perPlz = {};
     rows.forEach((e) => { perPlz[e.plz] = (perPlz[e.plz] || 0) + 1; });
@@ -1952,8 +1950,8 @@
   const MORGEN_AB = 7 * 60 + 58, MORGEN_BIS = 9 * 60; // einmal kurz vor 08:00 (letzter Stand der Zeichen); wer später kommt, holt es bis 09:00 nach
   let accSyncing = false;
   // „Angenommene Aufträge“ einmal lesen: Reiter kurz öffnen, Zeichen abgleichen, zurück. Nur im Ruhezustand.
-  async function syncAcceptedTab(grund) {
-    if (accSyncing || busy || !license || !onPublishedTab() || Date.now() - lastAcceptAt < 60e3) return false;
+  async function syncAcceptedTab(grund, force = false) {
+    if (accSyncing || busy || !license || (!force && (!onPublishedTab() || Date.now() - lastAcceptAt < 60e3))) return false;
     accSyncing = true;
     try {
       const li = document.querySelector(`li[id$="__${cfg.acceptedTabId}"]`);
@@ -1964,8 +1962,9 @@
       await sleep(800);
       scanAccepted();
       GM_setValue('accSyncAt', Date.now());
-      log(`${grund}: ${document.querySelectorAll(`#${cfg.acceptedTabId} .x-grid3-row`).length} Zeilen aus „Angenommene Aufträge“ abgeglichen.`, 'ok');
-      return true;
+      const n = document.querySelectorAll(`#${cfg.acceptedTabId} .x-grid3-row`).length;
+      log(`${grund}: ${n} Zeilen aus „Angenommene Aufträge“ abgeglichen.`, 'ok');
+      return n > 0;
     } finally {
       accSyncing = false;
       if (!onPublishedTab()) await switchToPublishedTab();
@@ -1985,15 +1984,25 @@
   }
   // Beim Start von TAM beide Reiter öffnen: „Veröffentlichte Aufträge“ (Liste laden, Silent Reload) und „Angenommene Aufträge“ (existiert erst,
   // wenn der Reiter einmal geöffnet wurde: Zeichen abgleichen, Kontakte). Danach bleibt „Veröffentlichte Aufträge“ aktiv. Einmal je Seitenaufruf.
-  let startTabsDone = false;
+  let startTabsDone = false, startTries = 0, startNextAt = 0;
+  const tabDiag = () => { // für das Protokoll: welche Reiter gibt es, welcher ist aktiv, ist das Panel „Angenommene Aufträge“ da?
+    const ids = [...document.querySelectorAll('li[id*="__"]')].map((li) => `${li.id.split('__').pop()}${li.classList.contains('x-tab-strip-active') ? '*' : ''}`);
+    const pa = document.getElementById(cfg.acceptedTabId);
+    return `Reiter: ${ids.join(', ') || 'keine'} · Panel Angenommene: ${pa ? `da, ${pa.querySelectorAll('.x-grid3-row').length} Zeilen${pa.closest('.x-hide-display') ? ', verborgen' : ''}` : 'fehlt'}`;
+  };
   async function openTabsOnStart() {
-    if (startTabsDone || !license || busy || accSyncing || !GM_getValue('startTabs', true)) return;
-    if (!document.querySelector(`li[id$="__${cfg.tabPanelId}"]`) || !document.querySelector(`li[id$="__${cfg.acceptedTabId}"]`)) return; // TAM noch nicht aufgebaut
-    startTabsDone = true;
-    log('Start: „Veröffentlichte“ und „Angenommene Aufträge“ werden geöffnet …', 'debug');
+    if (startTabsDone || !license || busy || accSyncing || !GM_getValue('startTabs', true) || Date.now() < startNextAt) return;
+    startNextAt = Date.now() + 15000;
+    if (!document.querySelector(`li[id$="__${cfg.tabPanelId}"]`) || !document.querySelector(`li[id$="__${cfg.acceptedTabId}"]`)) { // TAM noch nicht aufgebaut
+      if (++startTries > 12) { startTabsDone = true; log(`Start: Reiter nicht gefunden – aufgegeben (${tabDiag()}).`, 'err'); }
+      return;
+    }
+    if (++startTries > 6) { startTabsDone = true; log(`Start: Reiter öffnen hat nicht geklappt – aufgegeben (${tabDiag()}).`, 'err'); return; }
+    log(`Start: „Veröffentlichte“ und „Angenommene Aufträge“ werden geöffnet (Versuch ${startTries}) …`, 'debug');
     if (!onPublishedTab()) { clickPublishedTab(); await waitFor(onPublishedTab, 4000); }
     await sleep(1500); // Liste laden lassen
-    await syncAcceptedTab('Start');
+    if (await syncAcceptedTab('Start', true)) startTabsDone = true;
+    else log(`Start: Reiter noch nicht bereit, neuer Versuch in 15 s (${tabDiag()}).`, 'debug');
   }
   // Beim Öffnen des MA-Managements mit TAM abgleichen (TAM ist die Quelle – nicht nur der lokale Stand), höchstens alle 5 min
   function maAutoSync() { if (Date.now() - GM_getValue('accSyncAt', 0) > 5 * 60e3) syncAcceptedTab('MA-Management').then((ok) => { if (ok) renderMa(); }).catch(() => {}); }
@@ -2995,7 +3004,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
               <thead><tr style="background:#e8f0fb;position:sticky;top:0">
                 <th style="text-align:left;padding:2px 4px" title="Bei einem einzelnen Tag nur die Uhrzeit">Datum</th><th style="text-align:left;padding:2px 4px" title="Angenommen von einem anderen Gerät (Lizenzname); leer = dieses Gerät">Von</th>
                 <th style="text-align:left;padding:2px 4px">AuftragsNr</th><th style="text-align:left;padding:2px 4px">Ort</th>
-                <th style="text-align:right;padding:2px 4px">Euro</th><th style="text-align:left;padding:2px 4px" title="✓ = in TAM steht ein Zeichen (Text beim Darüberfahren)">Z.</th></tr></thead>
+                <th style="text-align:right;padding:2px 4px">Euro</th></tr></thead>
               <tbody id="tamauto-ob-rows"></tbody>
             </table>
           </div>

@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.23.5 – 2026-10-06
+- **Auftragsbuch:** die Spalte „Z.“ (Zeichen gesetzt ✓) entfällt komplett – fünf Spalten: Datum | Von | AuftragsNr | Ort | Euro.
+- **Start-Routine robuster:** bis zu 6 Versuche im Abstand von 15 s (auch wenn TAM mit einem anderen Reiter startet); das Protokoll nennt bei Misserfolg die vorhandenen Reiter und den Zustand des Panels „Angenommene Aufträge“.
+
 ### 1.23.4 – 2026-10-06
 Fasst die Entwicklung 1.21.0 bis 1.23.4 zusammen (zwischenzeitlich gebaute und wieder entfernte Funktionen wie Zeichen-Schreiben, Marktgebiete und mehrere Mail-Bausteine sind hier nicht aufgeführt).
 

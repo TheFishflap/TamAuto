@@ -149,13 +149,6 @@ describe('Ihr Zeichen still setzen (Auftragsbuch)', { skip }, () => {
     tam.selectTab('AgentEigeneAuftraege');
     assert.ok(await until(() => tam.store.get('orderbook')[0].preis === 77.5, 3000), JSON.stringify(tam.store.get('orderbook')));
   });
-
-  it('vorhandenes Zeichen aus „Angenommene Aufträge“ im Auftragsbuch: nur ✓ (Text als Tooltip), grau', async () => {
-    await setup();
-    assert.ok(await until(() => bookRow('MW3190202') && bookRow('MW3190202').textContent.includes('✓'), 2000));
-    assert.equal(bookRow('MW3190202').children[5].title, 'PM');
-    assert.equal(bookRow('MW3190202').style.background, 'rgb(238, 238, 238)');
-  });
 });
 
 // Stille Abfrage bei TAM (gemeinsam für Push-Signal und Nachfragen nach einem Refresh von Hand)
