@@ -201,9 +201,9 @@ describe('MA-Management (Reiter)', { skip }, () => {
   const KON = [{ name: 'Backoffice (Postfach)', mail: 'auftrag@example.com', cc: 'an', rolle: 'Postfach' }, { name: 'Silke', mail: 'silke@example.com', cc: 'an', rolle: 'Backoffice-Kraft' },
     { name: 'Louis', mail: 'louis@example.com', cc: 'aus', rolle: 'Backoffice-Kraft' }, { name: 'Leonie Struve', mail: '', cc: 'aus', rolle: 'Backoffice-Kraft' }];
   const BOOK = () => [
-    { ts: today, nr: 'MW3190401', plz: '44141', ort: 'Dortmund', dienst: 'Standard', strasse: 'Hauptstr. 5', sla: inH(1), zeichen: '' },
-    { ts: today, nr: 'MW3190402', plz: '45127', ort: 'Essen', dienst: 'Sixt Rückgabe', zeichen: 'MK 12.10 10:00 T' },
-    { ts: today, nr: 'MW3190403', plz: '99999', ort: 'Nirgendwo', dienst: 'Standard', zeichen: '' },
+    { ts: today, nr: 'MW3190401', plz: '44141', ort: 'Dortmund', dienst: 'Standard', strasse: 'Hauptstr. 5', sla: inH(1), preis: 200, zeichen: '' },
+    { ts: today, nr: 'MW3190402', plz: '45127', ort: 'Essen', dienst: 'Sixt Rückgabe', preis: 180, zeichen: 'MK 12.10 10:00 T' },
+    { ts: today, nr: 'MW3190403', plz: '99999', ort: 'Nirgendwo', dienst: 'Standard', preis: 200, zeichen: '' },
     { ts: today, nr: 'MW3190404', plz: '44141', ort: 'Dortmund', dienst: 'Kennzeichenversand', zeichen: '' },
   ];
   const $ = (id) => tam.document.getElementById(id);
@@ -233,12 +233,6 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.match($('tamauto-ma-rows').textContent, /🔴/); // SLA in 1 h
   });
 
-  it('andere Bausteine (z. B. „Tour ergänzen“) listen auch Aufträge mit Tour, Tour lesbar angezeigt', async () => {
-    await setup();
-    $('tamauto-ma-baustein').value = 'tour'; $('tamauto-ma-baustein').onchange();
-    assert.match($('tamauto-ma-rows').textContent, /MK 12\.10\. 10:00 T ✓/);
-  });
-
   it('Mail: Empfänger, Cc nach „an/aus“, Kennzeichenversand nur benannt', async () => {
     await setup();
     const m = mailto();
@@ -246,7 +240,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.doesNotMatch(m, /louis@example\.com/);
     assert.match($('tamauto-ma-body').value, /\+ Kennzeichenversand MW3190404/);
     assert.equal(($('tamauto-ma-body').value.match(/MW3190404/g) || []).length, 1);
-    assert.match($('tamauto-ma-subject').value, /Neue Aufträge .* \(1\)/);
+    assert.match($('tamauto-ma-subject').value, /Neue Terminvereinbarung \(1\)/);
   });
 
   it('Cc abwählbar, Absender wählbar und gemerkt (Signatur „Liebe Grüße“)', async () => {
@@ -267,23 +261,17 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.ok(st.previousElementSibling && /Mail an den Mitarbeiter/.test(st.previousElementSibling.textContent) || /Mail an den Mitarbeiter/.test(st.parentElement.firstElementChild.textContent), 'Hinweis nicht neben der Überschrift');
   });
 
-  it('Baustein wechseln ändert Betreff und Text', async () => {
-    await setup();
-    $('tamauto-ma-baustein').value = 'mahnung'; $('tamauto-ma-baustein').onchange();
-    assert.match($('tamauto-ma-subject').value, /Erinnerung/);
-  });
-
   it('Kontakte laden: Telefon in Liste und Mail; Sixt ohne Nummer → leere Zeile', async () => {
-    await setup();
+    tam = startTam({ gm: { places: { ...KOELN, ma: MAS, kontakte: KON }, orderbook: BOOK().map((e) => (e.nr === 'MW3190402' ? { ...e, zeichen: '' } : e)) } });
+    await tam.ready(); open();
     tam.selectTab('AgentEigeneAuftraege');
     const x = new tam.window.XMLHttpRequest(); x.open('POST', 'https://tam.tuvsud.com/tam/gwt-rpc/auftrag'); x.send('7|0|3|u|a|loadTeilauftraege|1|2|3|');
     tam.selectTab('AgentVeroeffentlichteAuftraege');
     tam.rpc = '//OK[1,2,3,1,4,5,' + JSON.stringify(['x.model.auftraege.Teilauftrag/1', 'MW3190401', 'Frau Muster\n0171 1234567\nE-Mail: m@x.de', 'MW3190402', 'Herr Sixt\nE-Mail: s@x.de']) + ',0,7]';
-    $('tamauto-ma-baustein').value = 'tour'; $('tamauto-ma-baustein').onchange(); // auch MW3190402 (Sixt, mit Tour)
     $('tamauto-ma-load').click();
     assert.ok(await until(() => /Kontakte: 2/.test($('tamauto-ma-loadstate').textContent), 3000), $('tamauto-ma-hint').textContent);
     assert.match($('tamauto-ma-body').value, /Frau Muster, Tel\. 0171 1234567/);
-    assert.match($('tamauto-ma-body').value, /^MW3190402[^\n]*\| Tel\.\s*(\|[^\n]*)?$/m);
+    assert.match($('tamauto-ma-body').value, /^MW3190402[^\n]*\| Tel\.\s*$/m);
     assert.match($('tamauto-ma-rows').textContent, /0171 1234567/);
   });
 
@@ -344,8 +332,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
 
   it('Zeichen „?“ wird als „ungeklärt“ angezeigt', async () => {
     await setup();
-        tam.addAccepted('MW3190403', '', { id: '3705403', zeichen: '?' });
-    tam.addAccepted('MW3190404', '', { id: '3705404', zeichen: '?' });
+    tam.addAccepted('MW3190401', '', { id: '3705401', zeichen: '?', preis: '200,00 €' });
     tam.selectTab('AgentEigeneAuftraege'); await sleep(500); tam.selectTab('AgentVeroeffentlichteAuftraege'); await sleep(300);
     $('tamauto-ma-sel').value = 'MK'; $('tamauto-ma-sel').onchange({ target: $('tamauto-ma-sel') });
     assert.match($('tamauto-ma-rows').textContent, /ungeklärt/);

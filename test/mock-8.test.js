@@ -132,6 +132,16 @@ describe('Ihr Zeichen still setzen (Auftragsbuch)', { skip }, () => {
     await sleep(500);
   }
 
+  it('Bildschirm anlassen ist standardmäßig an (ausdrücklich ausgeschaltet bleibt aus)', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    assert.equal(tam.document.getElementById('tamauto-wakelock').checked, true);
+    tam.close();
+    tam = startTam({ gm: { places: KOELN, wakeLock: false } });
+    await tam.ready();
+    assert.equal(tam.document.getElementById('tamauto-wakelock').checked, false);
+  });
+
   it('Preis aus „Angenommene Aufträge“ ins Auftragsbuch übernommen', async () => {
     tam = startTam({ gm: { places: KOELN, orderbook: [{ ts: today, nr: 'MW3190203', plz: '50825', ort: 'Köln', preis: null }] } });
     await tam.ready();
@@ -140,9 +150,10 @@ describe('Ihr Zeichen still setzen (Auftragsbuch)', { skip }, () => {
     assert.ok(await until(() => tam.store.get('orderbook')[0].preis === 77.5, 3000), JSON.stringify(tam.store.get('orderbook')));
   });
 
-  it('vorhandenes Zeichen aus „Angenommene Aufträge“ im Auftragsbuch, grau', async () => {
+  it('vorhandenes Zeichen aus „Angenommene Aufträge“ im Auftragsbuch: nur ✓ (Text als Tooltip), grau', async () => {
     await setup();
-    assert.ok(await until(() => bookRow('MW3190202') && bookRow('MW3190202').textContent.includes('PM'), 2000));
+    assert.ok(await until(() => bookRow('MW3190202') && bookRow('MW3190202').textContent.includes('✓'), 2000));
+    assert.equal(bookRow('MW3190202').children[5].title, 'PM');
     assert.equal(bookRow('MW3190202').style.background, 'rgb(238, 238, 238)');
   });
 });

@@ -396,6 +396,15 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.22.0 – 2026-10-06
+Aufgeräumt: **eine einheitliche Logik, weniger Code.**
+- **Kurzzeichen schreiben entfällt** (Knopf „Kurzzeichen setzen“, Dropdown „Zuständig“, Haken, Automatik und Einstellung). Zu viele Besonderheiten – das Zeichen wird nur noch in TAM gepflegt und vom Script **gelesen**.
+- **Auftragsbuch schmaler:** „Ihr Zeichen“ nur noch als **✓** (Text beim Darüberfahren), „Zuständig“ als reiner Text (Kürzel, bei Mischgebieten z. B. MB/PM).
+- **Rote 1:** Das Terminfenster nach der Annahme (z. B. Sixt) enthält „Ende: 02.10.2026 15:13“ – das Script liest es beim Wegklicken, markiert den Auftrag im Auftragsbuch (Zeile rosa) und setzt die **rote 1**; sie **bleibt stehen**, auch wenn später ein Zeichen eingetragen wird. Die Zeile wird grau, sobald ein Zeichen steht.
+- **MA-Management: ein Baustein „neue Terminvereinbarung“** (Bausteinauswahl, Mahnung, „Zugewiesen“, Tour, PMA entfallen): Aufträge mit Terminpflicht (ab 150 € bzw. Status „Terminvereinbarung“) ohne Tour mit Datum. Mail: „Für dich ist ein <Auftragsart> Auftrag angenommen worden … Die Reservierung läuft in x Stunden aus, bitte kümmere dich zeitig um eine Terminvereinbarung.“ (Tabelle mit Auftragsart und Reservierung bis, Flagge 🔴/🟡). Zuständig: der MA des Marktgebiets; steht ein Kürzel im Zeichen, dieser MA; bei Mischgebieten sehen alle Zuständigen den Auftrag.
+- Die Zahl in Klammern beim MA (und am Reiter, als Summe) zeigt die **offenen Terminvereinbarungen**.
+- **Bildschirm anlassen** ist standardmäßig an (auf allen Geräten; ausdrücklich ausgeschaltet bleibt aus).
+
 ### 1.21.11 – 2026-10-06
 - **Silent Reload ersetzt den Auto-Refresh:** Silent Reload ist jetzt standardmäßig **an, alle 30 s** (wer ihn ausdrücklich ausgeschaltet oder einen eigenen Wert eingestellt hatte, behält das). Der Auto-Refresh entfällt.
 - **MA-Management gleicht mit TAM ab:** Beim Öffnen des Reiters liest das Script (höchstens alle 5 min, nur im Ruhezustand) kurz „Angenommene Aufträge“ und übernimmt die Zeichen – die Zahlen (Mahnungen) beruhen so auf dem Stand in TAM, nicht auf dem, was dieses Gerät zuletzt gesehen hat.

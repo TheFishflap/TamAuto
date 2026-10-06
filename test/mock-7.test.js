@@ -77,13 +77,13 @@ describe('Gesperrte Aufträge in der Tabelle', { skip }, () => {
   });
 });
 
-// Terminvereinbarung nach der Annahme weggeklickt (z. B. Sixt) → im Auftragsbuch rote 1, wenn der Auftrag laut
-// „Angenommene Aufträge“ (Endtermin (Agent)) innerhalb von 2 h nach der Annahme aus der SLA fällt
-describe('Auftragsbuch: rote 1 (Terminvereinbarung weggeklickt, SLA ≤ 2 h)', { skip }, () => {
-  const terminWin = (t) => {
+// Terminfenster nach der Annahme weggeklickt (z. B. Sixt, „Ende: 02.10.2026 15:13“) → Auftrag im Auftragsbuch markiert, rote 1 (bleibt stehen)
+describe('Auftragsbuch: rote 1 (Terminfenster weggeklickt, Reservierungsende aus dem Fenster)', { skip }, () => {
+  const ENDE = '02.10.2099 15:13';
+  const terminWin = (t, ende = ENDE) => {
     const m = t.document.createElement('div'); m.className = 'x-window x-component';
     m.innerHTML = '<div class="x-window-header"><span class="x-window-header-text">Terminvereinbarung</span></div>' +
-      '<div class="x-window-body">Termin mit dem Kunden vereinbaren <input type="checkbox"></div>' +
+      `<div class="x-window-body">Termin mit dem Kunden vereinbaren${ende ? ` Ende: ${ende}` : ''} <input type="checkbox"></div>` +
       '<table class="x-btn"><tbody><tr><td><button>Speichern</button></td></tr></tbody></table>' +
       '<table class="x-btn"><tbody><tr><td><button>Abbrechen</button></td></tr></tbody></table>';
     m.querySelectorAll('button')[1].addEventListener('click', () => { t.closed.push('Terminvereinbarung'); m.remove(); });
@@ -101,29 +101,30 @@ describe('Auftragsbuch: rote 1 (Terminvereinbarung weggeklickt, SLA ≤ 2 h)', {
     await sleep(3000); // Nachkontrolle vorbei
   }
 
-  it('Endtermin in „Angenommene Aufträge“ in 1 h → rote 1 (auch beim Warenkorb-Auftrag)', async () => {
+  it('Fenster mit „Ende: …“ weggeklickt → sofort rote 1 (auch beim Warenkorb-Auftrag), Reservierungsende gemerkt', async () => {
     await acceptWithTermin({ nearby: [{ nr: 'MW3000001', km: 0 }] });
-    assert.equal(red().length, 0, 'rote 1 vor dem Lesen des Endtermins');
-    tam.addAccepted(ORDER.nr, inH(1), { zeichen: '' }); tam.addAccepted('MW3000001', inH(1.5), { zeichen: '' });
-    tam.selectTab('AgentEigeneAuftraege');
-    assert.ok(await until(() => red().length === 2, 3000), JSON.stringify(tam.store.get('orderbook')));
+    assert.equal(red().length, 2, JSON.stringify(tam.store.get('orderbook')));
     assert.equal(red()[0].textContent, '1');
+    assert.match(red()[0].title, /02\.10\.2099 15:13/);
+    assert.ok(tam.store.get('orderbook').every((e) => e.resEnde === ENDE));
+    const row = [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.textContent.includes(ORDER.nr));
+    assert.equal(row.style.background, 'rgb(255, 235, 238)'); // Zeile markiert
   });
 
-  it('Endtermin in 5 h → keine rote 1', async () => {
+  it('rote 1 bleibt stehen, auch wenn später ein Zeichen eingetragen wird (Zeile dann grau)', async () => {
     await acceptWithTermin();
-    tam.addAccepted(ORDER.nr, inH(5));
+    tam.addAccepted(ORDER.nr, '', { zeichen: 'GS 12.10 10:00 T' });
     tam.selectTab('AgentEigeneAuftraege');
-    await sleep(1500);
-    assert.equal(red().length, 0);
+    assert.ok(await until(() => (tam.store.get('orderbook')[0] || {}).zeichen === 'GS 12.10 10:00 T', 3000));
+    assert.equal(red().length, 1);
   });
 
-  it('Endtermin nicht lesbar → keine rote 1', async () => {
-    await acceptWithTermin();
-    tam.addAccepted(ORDER.nr, '');
-    tam.selectTab('AgentEigeneAuftraege');
-    await sleep(1500);
-    assert.equal(red().length, 0);
+  it('Fenster ohne lesbares Ende → trotzdem rote 1', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder({ ...ORDER, afterAccept: (t) => setTimeout(() => terminWin(t, ''), 200) });
+    assert.ok(await until(() => tam.closed.includes('Terminvereinbarung'), 5000));
+    assert.ok(await until(() => red().length === 1, 5000));
   });
 
   it('ohne weggeklickte Terminvereinbarung → keine rote 1, auch bei knapper SLA', async () => {
