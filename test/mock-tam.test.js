@@ -254,7 +254,7 @@ describe('Rückgaben (Tages-Blacklist über ntfy)', { skip }, () => {
     tam.addOrder(OTHER); // Abgleich: NR ist nicht in der Tabelle
     await sleep(1500);
     tam.addOrder({ nr: NR, plz: '50825', ort: 'Köln' });
-    assert.ok(await until(() => tam.logs().some((l) => l.includes(NR) && /zurückgegeben/.test(l)), 5000), tam.logs().join('\n'));
+    assert.ok(await until(() => tam.logs().some((l) => l.includes(NR) && /zurückgegeben/i.test(l)), 5000), tam.logs().join('\n'));
     await sleep(1000);
     assert.deepEqual(tam.dblclicks, []);
     assert.ok(tam.posts(RET).some((m) => m.t === 'ret' && m.nrs.includes(NR)));
@@ -865,5 +865,45 @@ describe('Tabelle über stille Abfrage aktuell halten', { skip }, () => {
     assert.ok(await until(() => tam.fetches.some((f) => /gwt-rpc/.test(f.url)), 4000));
     await sleep(800);
     assert.ok(!row('MW3180102').classList.contains('tamauto-vanished'));
+  });
+});
+
+// Annahmen anderer Geräte im Auftragsbuch (Spalte „Von“ = Lizenzname), nicht selbst annehmen
+describe('Geräteübergreifendes Auftragsbuch', { skip }, () => {
+  const RET = 'tamret-';
+  const book = () => tam.store.get('orderbook') || [];
+  const bookRow = (nr) => [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.textContent.includes(nr));
+
+  it('Annahme von „Handy_T1“ → im Auftragsbuch mit Name, Auftrag wird hier nicht angenommen', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.ntfy(RET, { v: 1, t: 'acc', nrs: ['MW3190301'], by: 'Handy_T1', at: Date.now() });
+    assert.ok(await until(() => book().some((e) => e.nr === 'MW3190301' && e.by === 'Handy_T1'), 2000), JSON.stringify(book()));
+    assert.ok(await until(() => bookRow('MW3190301') && bookRow('MW3190301').textContent.includes('Handy_T1'), 2000));
+    tam.addOrder({ nr: 'MW3190301', plz: '50825', ort: 'Köln' });
+    await sleep(1500);
+    assert.deepEqual(tam.dblclicks, []);
+  });
+
+  it('eigene Annahme: Meldung mit Lizenzname, Echo erzeugt keinen doppelten Eintrag', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder(ORDER);
+    assert.ok(await until(() => tam.posts(RET).some((m) => m.t === 'acc'), 8000));
+    const msg = tam.posts(RET).find((m) => m.t === 'acc');
+    assert.equal(msg.by, 'Test');
+    tam.ntfy(RET, msg); // eigene Meldung kommt zurück
+    await sleep(300);
+    assert.equal(book().filter((e) => e.nr === ORDER.nr).length, 1);
+  });
+
+  it('PLZ, Ort und Preis aus „Angenommene Aufträge“ ergänzt', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.ntfy(RET, { v: 1, t: 'acc', nrs: ['MW3190302'], by: 'Handy_T1', at: Date.now() });
+    await until(() => book().some((e) => e.nr === 'MW3190302'), 2000);
+    tam.addAccepted('MW3190302', '', { id: '3705302', zeichen: '', preis: '62,05 €', plz: '35579', ort: 'Wetzlar' });
+    tam.selectTab('AgentEigeneAuftraege');
+    assert.ok(await until(() => { const e = book().find((x) => x.nr === 'MW3190302'); return e && e.plz === '35579' && e.ort === 'Wetzlar' && e.preis === 62.05; }, 3000), JSON.stringify(book()));
   });
 });

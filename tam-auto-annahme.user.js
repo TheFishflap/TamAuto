@@ -522,7 +522,9 @@
     if (!panel || panel.closest('.x-hide-display')) return;
     const info = new Map([...panel.querySelectorAll('.x-grid3-row')].map((r) => [text(r.querySelector('td.x-grid3-td-teilAuftragNr')).toUpperCase(), {
       sla: text(r.querySelector('td.x-grid3-td-slaEndeAgent')), tid: text(r.querySelector('td.x-grid3-td-id')).replace(/\D/g, ''),
-      zeichen: text(r.querySelector('td.x-grid3-td-zeichenAgent')), preis: parseEuro(text(r.querySelector('td.x-grid3-td-preis'))) }]));
+      zeichen: text(r.querySelector('td.x-grid3-td-zeichenAgent')), preis: parseEuro(text(r.querySelector('td.x-grid3-td-preis'))),
+      plz: text(r.querySelector('td.x-grid3-td-besichtigungsPlz')), ort: text(r.querySelector('td.x-grid3-td-besichtigungsOrt')),
+      dienst: text(r.querySelector('td.x-grid3-td-cst_projekt_dienstleistung_name')) }]));
     const book = GM_getValue('orderbook', []);
     let changed = 0; const red = [];
     book.forEach((e) => {
@@ -531,6 +533,7 @@
       if (a.tid && e.tid !== a.tid) { e.tid = a.tid; changed++; }
       if ((e.zeichen || '') !== a.zeichen) { e.zeichen = a.zeichen; changed++; }
       if (a.preis != null && e.preis !== a.preis) { e.preis = a.preis; changed++; }
+      ['plz', 'ort', 'dienst'].forEach((k) => { if (!e[k] && a[k]) { e[k] = a[k]; changed++; } }); // z. B. Annahmen anderer Geräte
       if (e.terminWeg && !e.sla && slaMs(a.sla) !== null) { e.sla = a.sla; changed++; if (terminRed(e)) red.push(e.nr); }
     });
     if (!changed) return;
@@ -621,7 +624,7 @@
       const tr = document.createElement('tr');
       const d = new Date(e.ts);
       [`${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`,
-        e.zu ? `↳ ${e.nr}` : e.nr, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis), e.zeichen || ''].forEach((v, i) => {
+        e.zu ? `↳ ${e.nr}` : e.nr, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis), e.zeichen || '', e.by || ''].forEach((v, i) => {
         const td = document.createElement('td');
         td.textContent = v;
         if (i === 1 && terminRed(e)) { // rote 1: Terminvereinbarung weggeklickt, SLA endet in ≤ 2 h
@@ -644,7 +647,7 @@
       }
       tbody.appendChild(tr);
     });
-    if (!rows.length) tbody.innerHTML = '<tr><td colspan="6" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
+    if (!rows.length) tbody.innerHTML = '<tr><td colspan="7" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
     const go = document.getElementById('tamauto-zeichen-go');
     if (go) { go.disabled = !cfg.zeichenOn || !zeichenSel.size; go.textContent = `In TAM übernehmen (${zeichenSel.size})`; }
     // Unten: Anzahl Aufträge, Anzahl PLZ (mit Aufträgen je PLZ), Summe Euro
@@ -680,11 +683,32 @@
   let retChanP = Promise.resolve(null); // geheimer Rückgabe-Kanal (mit Kanal-Schlüssel) oder null
   function retPost(t, nrs) {
     if (!nrs.length) return;
-    const msg = { v: 1, t, nrs, at: Date.now() }; // nur Nummern, keine Namen/Adressen
+    // nur Nummern (keine Adressen); bei Annahmen der Lizenzname des Geräts fürs Auftragsbuch der anderen
+    const msg = Object.assign({ v: 1, t, nrs, at: Date.now() }, t === 'acc' && license ? { by: String(license.name || '').slice(0, 40) } : {});
     retChanP.then(async (ch) => {
       if (ch) await licFetch(`${LIC_NTFY}/${ch.topic}`, { method: 'POST', body: JSON.stringify(await sealMsg(ch, msg)) });
       else await licFetch(`${LIC_NTFY}/${RET_TOPIC}`, { method: 'POST', body: JSON.stringify(msg) });
     }).catch(() => {});
+  }
+  // Annahmen anderer Geräte ins Auftragsbuch (Spalte „Von“ = Lizenzname), hier nicht mehr annehmen, Zeile ausblenden.
+  // Die eigene Meldung kommt als Echo zurück – Aufträge, die heute schon im Auftragsbuch stehen, werden übersprungen.
+  // PLZ, Ort und Preis ergänzt der Abgleich mit „Angenommene Aufträge“.
+  function addRemoteAccepts(nrs, by, at) {
+    const book = GM_getValue('orderbook', []);
+    const since = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    const have = new Set(book.filter((e) => e.ts >= since).map((e) => nrKey(e.nr)));
+    const add = nrs.filter((x) => !have.has(x));
+    if (!add.length) return;
+    const who = by || 'anderes Gerät';
+    add.forEach((x) => {
+      book.push({ ts: new Date(at || Date.now()).toISOString(), nr: x, plz: '', ort: '', dienst: '', preis: null, by: who });
+      markDone(x, `angenommen von ${who}`);
+    });
+    GM_setValue('orderbook', book.slice(-5000));
+    saveDone();
+    hideAcceptedRows(add);
+    renderOrderbook();
+    log(`Von ${who} angenommen: ${add.join(', ')} – im Auftragsbuch eingetragen.`, 'hint');
   }
   // Der Kanal ist nicht geheim (Name steht im Script): Meldungen streng prüfen. Rückgaben nur für Nummern, deren
   // Annahme heute gemeldet wurde – sonst könnte jeder beliebige Aufträge auf allen Geräten sperren.
@@ -693,7 +717,7 @@
     if (!d || d.v !== 1 || !Array.isArray(d.nrs) || d.nrs.length > 20 || new Date(d.at || 0).toLocaleDateString('sv-SE') !== today()) return;
     const nrs = d.nrs.map(nrKey).filter((x) => RET_NR.test(x));
     const info = { at: +d.at };
-    if (d.t === 'acc') addToday('accToday', nrs, info);
+    if (d.t === 'acc') { addToday('accToday', nrs, info); addRemoteAccepts(nrs, String(d.by || '').slice(0, 40), +d.at); }
     const known = dayList('accToday').items;
     if (d.t === 'ret' && addToday('returnsToday', nrs.filter((x) => known[x]), info)) {
       log(`Rückgabe gemeldet: ${nrs.filter((x) => known[x]).join(', ')} – heute nicht annehmen.`, 'ok');
@@ -2270,6 +2294,7 @@
       if (!busy && cfg.enabled) dismissMessages();
       dismissTamErrors(); // technische TAM-Fehlerfenster (z. B. TypeError auf Android) schließen // liegengebliebene TAM-Meldungen (z. B. "bereits vergeben") wegklicken
       hookAllConsoles(); // später geladene TAM-iframes ebenfalls mitlesen
+      scanAccepted();    // Auftragsbuch mit „Angenommene Aufträge“ abgleichen (nur wenn sichtbar und geändert)
     }
     renderSync(now);
     if (busy || !onPublishedTab()) return;
@@ -2565,7 +2590,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
               <thead><tr style="background:#e8f0fb;position:sticky;top:0">
                 <th style="text-align:left;padding:2px 4px">Datum</th><th style="text-align:left;padding:2px 4px">AuftragsNr</th>
                 <th style="text-align:left;padding:2px 4px">PLZ</th><th style="text-align:left;padding:2px 4px">Ort</th>
-                <th style="text-align:right;padding:2px 4px">Euro</th><th style="text-align:left;padding:2px 4px">Ihr Zeichen</th></tr></thead>
+                <th style="text-align:right;padding:2px 4px">Euro</th><th style="text-align:left;padding:2px 4px">Ihr Zeichen</th><th style="text-align:left;padding:2px 4px" title="Angenommen von einem anderen Gerät (Lizenzname); leer = dieses Gerät">Von</th></tr></thead>
               <tbody id="tamauto-ob-rows"></tbody>
             </table>
           </div>
