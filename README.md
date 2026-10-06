@@ -395,12 +395,16 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.20.6 – 2026-10-06
+- **Auftragsbuch über alle Geräte:** Annahmen anderer Geräte erscheinen im Auftragsbuch mit dem Lizenznamen (neue Spalte
+  „Von“); der Auftrag wird hier nicht mehr versucht und in der Tabelle ausgeblendet. PLZ, Ort und Preis werden aus
+  „Angenommene Aufträge“ ergänzt.
+- Preis aus „Angenommene Aufträge“ wird jetzt auch übernommen, wenn der Reiter beim Start schon offen ist.
+
 ### 1.20.5 – 2026-10-06
 - Eingeklappte Ansicht kompakter (zwei Zeilen) und mit **nächstem Silent Reload**.
-- Auftragsbuch: Liste der PLZ mit Anzahl und Button „Liste leeren“ entfernt; **Preis** (und fehlende PLZ/Ort) wird aus
-  „Angenommene Aufträge“ übernommen – auch wenn der Reiter beim Start schon offen ist.
-- **Auftragsbuch über alle Geräte:** Annahmen anderer Geräte erscheinen im Auftragsbuch mit dem Lizenznamen (neue Spalte
-  „Von“); der Auftrag wird hier nicht mehr versucht und in der Tabelle ausgeblendet.
+- Auftragsbuch: Liste der PLZ mit Anzahl und Button „Liste leeren“ entfernt; **Preis** wird beim Öffnen von „Angenommene
+  Aufträge“ aus TAM übernommen (z. B. bei Warenkorb-Aufträgen ohne Preis).
 
 ### 1.20.4 – 2026-10-06
 - **Ihr Zeichen im Auftragsbuch** (statt Doppelklick über „Erweiterte Einstellungen“): Haken „Ihr Zeichen setzen“, Text
