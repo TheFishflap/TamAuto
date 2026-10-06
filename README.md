@@ -396,13 +396,7 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
-### 1.21.3 – 2026-10-06
-- **Kontaktstatus in „Ihr Zeichen“** auch als Kombination (z. B. `tm` = Telefon- und Mailversuch, `Tm` = telefonisch bestätigt, Mail nur versucht);
-  ein bekanntes Kürzel (z. B. MM) hat Vorrang vor den Kontaktbuchstaben.
-- Protokoll MA-Management: nicht zugeordnete Aufträge mit PLZ, Ort und Anzahl.
-- **„?“ im Zeichen = ungeklärt** (eigener Status). **„zurück LH“ = Rückgabe:** solche Aufträge werden bei den Rückgaben eingetragen
-  (heute nicht erneut annehmen, den anderen Geräten gemeldet) und tauchen bei den Mitarbeitern nicht mehr unter „neue Aufträge“ auf.
-- Mail-Hinweis „Keine E-Mail-Adresse für … “ steht neben der Überschrift „Mail an den Mitarbeiter“.
+### 1.21.4 – 2026-10-06
 - **Zuständigkeit im Auftragsbuch:** neue Spalte „Zuständig“ – eindeutiges Marktgebiet zeigt das Kürzel, bei Mischgebieten wählst du per
   Dropdown (setzt das Zeichen „KÜRZEL neu“ still in TAM). Neue Einstellung (Erweiterte Einstellungen, Standard aus): bei eindeutigem
   Marktgebiet das Zeichen „GS neu“ automatisch setzen – gebündelt, nur nach dem Schreiben ins Auftragsbuch, nie über ein vorhandenes Zeichen, höchstens 30 je Durchgang.
@@ -411,6 +405,14 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 - **Automatische Mahnung:** Kürzel ohne Datum, Zeichen älter als 2 h → „Mahnung fällig“ (Zahl am Reiter „MA-Management (n)“ und je MA).
 - **Flaggen im Auftragsbuch:** 🔴 (SLA überfällig oder in ≤ 2 h) und 🟡 (≤ 24 h) wie im MA-Management. Das Kürzel wird nur im Auftragsbuch gesetzt; das MA-Management ist reine Verwaltung (lesen, Mails).
 - Die Statuszeile „Abgleich … in Tabelle … passend“ im Kopf entfällt (mehr Platz; die Angaben stehen weiter im Protokoll).
+
+### 1.21.3 – 2026-10-06
+- **Kontaktstatus in „Ihr Zeichen“** auch als Kombination (z. B. `tm` = Telefon- und Mailversuch, `Tm` = telefonisch bestätigt, Mail nur versucht);
+  ein bekanntes Kürzel (z. B. MM) hat Vorrang vor den Kontaktbuchstaben.
+- Protokoll MA-Management: nicht zugeordnete Aufträge mit PLZ, Ort und Anzahl.
+- **„?“ im Zeichen = ungeklärt** (eigener Status). **„zurück LH“ = Rückgabe:** solche Aufträge werden bei den Rückgaben eingetragen
+  (heute nicht erneut annehmen, den anderen Geräten gemeldet) und tauchen bei den Mitarbeitern nicht mehr unter „neue Aufträge“ auf.
+- Mail-Hinweis „Keine E-Mail-Adresse für … “ steht neben der Überschrift „Mail an den Mitarbeiter“.
 
 ### 1.21.2 – 2026-10-06
 - **MA-Management – Mail:** Aufträge stehen als **Tabelle mit Kontakt** in der Mail (Auftrag · PLZ/Ort · SLA · Kontakt · Hinweis); neuer Knopf
