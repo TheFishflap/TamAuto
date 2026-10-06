@@ -177,7 +177,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
 
   it('mit Blatt „Marktgebiete“: Zuordnung nach Ort; nicht zugeordnet = „PLZ Ort“', async () => {
     const G = [{ plz: '44', orte: ['dortmund'], nurPlz: '', nurWort: '', sixt: false, ma: ['MK'] }, { plz: '45', orte: ['essen'], nurPlz: '', nurWort: '', sixt: false, ma: ['PM'] }];
-    tam = startTam({ gm: { places: { ...KOELN, ma: MAS, kontakte: KON, gebiete: G }, orderbook: BOOK() } });
+    tam = startTam({ gm: { places: { ...KOELN, ma: MAS, kontakte: KON, gebiete: G }, orderbook: BOOK().map((e) => (e.nr === 'MW3190402' ? { ...e, zeichen: '' } : e)) } });
     await tam.ready(); open();
     assert.match($('tamauto-ma-rows').textContent, /MW3190401/);
     $('tamauto-ma-nurohne').click();

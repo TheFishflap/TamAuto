@@ -403,6 +403,12 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 - **„?“ im Zeichen = ungeklärt** (eigener Status). **„zurück LH“ = Rückgabe:** solche Aufträge werden bei den Rückgaben eingetragen
   (heute nicht erneut annehmen, den anderen Geräten gemeldet) und tauchen bei den Mitarbeitern nicht mehr unter „neue Aufträge“ auf.
 - Mail-Hinweis „Keine E-Mail-Adresse für … “ steht neben der Überschrift „Mail an den Mitarbeiter“.
+- **Zuständigkeit im Auftragsbuch:** neue Spalte „Zuständig“ – eindeutiges Marktgebiet zeigt das Kürzel, bei Mischgebieten wählst du per
+  Dropdown (setzt das Zeichen „KÜRZEL neu“ still in TAM). Neue Einstellung (Erweiterte Einstellungen, Standard aus): bei eindeutigem
+  Marktgebiet das Zeichen „GS neu“ automatisch setzen – gebündelt, nur nach dem Schreiben ins Auftragsbuch, nie über ein vorhandenes Zeichen, höchstens 30 je Durchgang.
+- **MA-Mails ohne Konkurrenz:** ein Auftrag geht nur an den MA, dessen Kürzel im Zeichen steht (oder an den eindeutig Zuständigen, solange noch kein Zeichen gesetzt ist).
+  Neuer Baustein „Zugewiesen“ (Kürzel gesetzt – entfernen, „zurück“ dahinter schreiben oder Termin ausmachen) mit zweitem Block „Weitere Aufträge in der Nähe“.
+- **Automatische Mahnung:** Kürzel ohne Datum, Zeichen älter als 2 h → „Mahnung fällig“ (Zahl am Reiter „MA-Management (n)“ und je MA).
 
 ### 1.21.2 – 2026-10-06
 - **MA-Management – Mail:** Aufträge stehen als **Tabelle mit Kontakt** in der Mail (Auftrag · PLZ/Ort · SLA · Kontakt · Hinweis); neuer Knopf

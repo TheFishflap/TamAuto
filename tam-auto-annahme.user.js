@@ -81,6 +81,7 @@
     delayRandomMs: Math.min(500, GM_getValue('delayRandomMsV3', 80)), // Streuung 0 … x ms (0–500, Standard 80 ms; V3 = neuer Standard für alle)
     hideTips: GM_getValue('hideTips', false), // alle ?-Erklärungen ausblenden
     colorRows: GM_getValue('colorRows', true),   // Aufträge in der TAM-Tabelle einfärben (nur lokal in diesem Browser) – Standard an
+    zeichenAuto: GM_getValue('zeichenAuto', false), // Zeichen „KÜRZEL neu“ bei eindeutigem Marktgebiet automatisch setzen (gebündelt) – Standard aus
     zeichenOn: GM_getValue('zeichenOn', false),     // Auftragsbuch: „Ihr Zeichen“ setzen (Auswahl + „In TAM übernehmen“) – Standard aus
     zeichenText: GM_getValue('zeichenText', 'neu'), // Text für „Ihr Zeichen“ (TAM erlaubt höchstens 20 Zeichen)
     wakeLock: GM_getValue('wakeLock', /android/i.test(navigator.userAgent)), // Bildschirm anlassen – auf Android standardmäßig an
@@ -636,10 +637,11 @@
     neu: { betreff: 'Neue Aufträge in deinem Gebiet', text: 'für dein Marktgebiet sind Aufträge angenommen worden:', schluss: 'Bitte trage deine Tour in TAM bei „Ihr Zeichen“ ein: Kürzel, Datum und Uhrzeit, z. B. {bsp}.' },
     tour: { betreff: 'Tour in TAM ergänzen', text: 'bitte ergänze bei diesen Aufträgen deine Tour in TAM („Ihr Zeichen“):', schluss: 'Format: Kürzel, Datum, Uhrzeit – z. B. {bsp} (T = telefonisch bestätigt, t = nur Telefonversuch, M = Mail bestätigt, m = nur Mailversuch).' },
     termin: { betreff: 'Termin vereinbaren und Kurzzeichen hinzufügen', text: 'bitte vereinbare bei diesen Aufträgen den Termin mit dem Kunden und trage danach dein Kurzzeichen in TAM ein:', schluss: 'Kurzzeichen bei „Ihr Zeichen“: Kürzel, Datum, Uhrzeit und Kontaktstatus – z. B. {bsp} T (T = telefonisch bestätigt, t = nur Telefonversuch, M = Mail bestätigt, m = nur Mailversuch).' },
+    zugewiesen: { betreff: 'Kürzel bei neuen Aufträgen gesetzt', text: 'bei diesen Aufträgen wurde dein Kürzel gesetzt:', schluss: 'Wenn du sie nicht fahren möchtest, entferne bitte das Kürzel wieder oder schreibe „zurück“ dahinter (z. B. {kz} zurück) – oder vereinbare direkt einen Termin. Trage deine Tour in TAM ein, z. B. {bsp}.' },
     mahnung: { betreff: 'Erinnerung: Tour in TAM eintragen', text: 'zu diesen Aufträgen fehlt noch deine Tour in TAM:', schluss: 'Bitte heute noch bei „Ihr Zeichen“ eintragen, z. B. {bsp}.' },
     pma: { betreff: 'Problem mit Auftrag melden', text: 'bei diesen Aufträgen gibt es ein Problem:', schluss: 'Bitte melde das Problem in TAM über „Problem mit Auftrag melden“ und gib uns kurz Bescheid.' },
   };
-  function baueMail({ ma, orders, baustein = 'neu', absender = '', cc = [], now = new Date() }) {
+  function baueMail({ ma, orders, baustein = 'neu', absender = '', cc = [], nah = [], now = new Date() }) {
     const b = BAUSTEINE[baustein] || BAUSTEINE.neu;
     const g = gruppiere(orders);
     const rang = { rot: 0, gelb: 1, '': 2 };
@@ -661,9 +663,12 @@
     const morgen = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1), p2 = (n) => String(n).padStart(2, '0');
     const bsp = `${ma.k} ${p2(morgen.getDate())}.${p2(morgen.getMonth() + 1)} 10:00`;
     const vor = String(ma.name || '').split(/\s+/)[0] || ma.k;
-    const kopfText = [`Hallo ${vor},`, '', b.text, ''], fussText = ['', b.schluss.replace('{bsp}', bsp), '', ...(absender ? ['Liebe Grüße', absender] : ['Liebe Grüße'])];
+    const nahTitel = 'Weitere Aufträge in der Nähe (noch ohne Zeichen) – sollen wir dir diese auch zuweisen?';
+    const nahZeilen = nah.map((o) => `• ${o.nr} · ${o.plz} ${o.ort}${o.strasse ? `, ${o.strasse}` : ''}`);
+    if (nah.length) lines.push('', nahTitel, ...nahZeilen);
+    const kopfText = [`Hallo ${vor},`, '', b.text, ''], fussText = ['', b.schluss.replace('{bsp}', bsp).replace('{kz}', ma.k), '', ...(absender ? ['Liebe Grüße', absender] : ['Liebe Grüße'])];
     const body = [...kopfText, ...lines, ...fussText].join('\n');
-    const html = `<div style="font-family:Arial,sans-serif;font-size:13px"><p>${esc(kopfText[0])}</p><p>${esc(b.text)}</p>${tabelle}<p>${esc(b.schluss.replace('{bsp}', bsp))}</p><p>${fussText.slice(3).map(esc).join('<br>')}</p></div>`;
+    const html = `<div style="font-family:Arial,sans-serif;font-size:13px"><p>${esc(kopfText[0])}</p><p>${esc(b.text)}</p>${tabelle}${nah.length ? `<p>${esc(nahTitel)}<br>${nahZeilen.map(esc).join('<br>')}</p>` : ''}<p>${esc(b.schluss.replace('{bsp}', bsp).replace('{kz}', ma.k))}</p><p>${fussText.slice(3).map(esc).join('<br>')}</p></div>`;
     return { to: ma.mail || '', cc: [...cc], subject: `${b.betreff} (${list.length})`, body, html };
   }
   // Marktgebiete nach Ort: Zeile des Blatts „Marktgebiete“ (PLZ-Anfang | Ort mit Hinweisen | MA-Kürzel) in Regeln zerlegen.
@@ -809,6 +814,7 @@
     });
     GM_setValue('orderbook', book.slice(-5000));
     renderOrderbook();
+    scheduleAutoZeichen();
   }
 
   // Erfolgreiche Annahme verbuchen: Hauptauftrag + alle mit angenommenen Warenkorb-Einträge
@@ -877,7 +883,7 @@
       const tr = document.createElement('tr');
       const d = new Date(e.ts);
       [`${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`,
-        e.zu ? `↳ ${e.nr}` : e.nr, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis), e.zeichen || '', e.by || ''].forEach((v, i) => {
+        e.zu ? `↳ ${e.nr}` : e.nr, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis), e.zeichen || '', e.by || '', ''].forEach((v, i) => {
         const td = document.createElement('td');
         td.textContent = v;
         if (i === 1 && terminRed(e)) { // rote 1: Terminvereinbarung weggeklickt, SLA endet in ≤ 2 h
@@ -885,6 +891,16 @@
           t.className = 'tamauto-termin'; t.textContent = '1'; t.title = `Terminvereinbarung weggeklickt, SLA endet ${e.sla} – Termin noch vereinbaren`;
           Object.assign(t.style, { color: '#c62828', fontWeight: 'bold', marginLeft: '4px' });
           td.appendChild(t);
+        }
+        if (i === 7 && !e.zeichen && (places.gebiete || []).length) { // Zuständig: eindeutig = Kürzel, Mischgebiet = Auswahl der Kürzel
+          const zs = zustaendig(e);
+          if (zs.length === 1) { td.textContent = zs[0]; td.title = cfg.zeichenAuto ? `wird automatisch als „${zs[0]} neu“ gesetzt` : 'eindeutig zuständig'; td.style.color = '#555'; }
+          else if (zs.length > 1) {
+            const sel = document.createElement('select'); sel.style.fontSize = '11px'; sel.title = 'Mischgebiet – Mitarbeiter wählen, das Zeichen „KÜRZEL neu“ wird gesetzt';
+            sel.innerHTML = '<option value=""></option>' + zs.map((k) => `<option value="${escHtml(k)}">${escHtml(k)}</option>`).join('');
+            sel.onchange = () => { if (!sel.value) return; const k = sel.value; setzeZeichen(e.nr, `${k} neu`).then(() => { log(`${e.nr}: Zeichen „${k} neu“ gesetzt (Mischgebiet).`, 'ok'); renderOrderbook(); }).catch((err) => { log(`${e.nr}: Zeichen nicht gesetzt – ${err.message}`, 'err'); sel.value = ''; }); };
+            td.appendChild(sel);
+          }
         }
         Object.assign(td.style, { padding: '1px 4px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap', textAlign: i === 4 ? 'right' : 'left' });
         tr.appendChild(td);
@@ -900,7 +916,7 @@
       }
       tbody.appendChild(tr);
     });
-    if (!rows.length) tbody.innerHTML = '<tr><td colspan="7" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
+    if (!rows.length) tbody.innerHTML = '<tr><td colspan="8" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
     const go = document.getElementById('tamauto-zeichen-go');
     if (go) { go.disabled = !cfg.zeichenOn || !zeichenSel.size; go.textContent = `In TAM übernehmen (${zeichenSel.size})`; }
     // Unten: Anzahl Aufträge, Anzahl PLZ (mit Aufträgen je PLZ), Summe Euro
@@ -913,6 +929,7 @@
       (noPrice ? ` <span style="color:#555">(${noPrice} ohne Preis)</span>` : '');
     renderHitRate(from);
     renderMa(); // MA-Management zeigt dieselben Aufträge
+    updateMaBadge();
   }
 
   // ------------------------------------------------------------------ Sperrliste (Excel)
@@ -962,6 +979,7 @@
     saveDone();
     hideAcceptedRows(add);
     renderOrderbook();
+    scheduleAutoZeichen();
     log(`Von ${who} angenommen: ${add.join(', ')} – im Auftragsbuch eingetragen.`, 'hint');
   }
   // Der Kanal ist nicht geheim (Name steht im Script): Meldungen streng prüfen. Rückgaben nur für Nummern, deren
@@ -2646,7 +2664,63 @@
     GM_getValue('orderbook', []).filter((e) => e.nr && new Date(e.ts).getTime() >= since).forEach((e) => seen.set(String(e.nr).toUpperCase(), e));
     const known = maListe().map((m) => m.k), now = new Date();
     return [...seen.values()].map((e) => ({ nr: e.nr, preis: typeof e.preis === 'number' ? e.preis : null, plz: e.plz || '', ort: e.ort || '', strasse: e.strasse || '', dienst: e.dienst || '', status: e.status || '',
-      sla: e.sla || '', ref: e.ref || '', zeichen: e.zeichen || '', tour: parseTourzeichen(e.zeichen, known, now), kontakt: maKontakte.map.get(String(e.nr).toUpperCase()) || null }));
+      sla: e.sla || '', ref: e.ref || '', zeichen: e.zeichen || '', zeichenAt: e.zeichenAt || 0, tour: parseTourzeichen(e.zeichen, known, now), kontakt: maKontakte.map.get(String(e.nr).toUpperCase()) || null }));
+  }
+  // Aufträge eines MA: Sein Kürzel steht im Zeichen („zugewiesen“) oder er ist eindeutig zuständig und es steht noch kein Zeichen.
+  // Mischgebiete ohne Zeichen erscheinen bei niemandem (keine Konkurrenzmails) – dort wählt man im Auftragsbuch per Dropdown.
+  const maZugewiesen = (o, m) => o.tour.kuerzel === m.k;
+  function maMine(m, all, nurOhne, baustein) {
+    return all.filter((o) => {
+      if (o.tour.status === 'rueckgabe') return false;
+      const zuges = maZugewiesen(o, m), zs = zustaendig(o), frei = (!o.zeichen || o.tour.status === 'ungeklaert') && zs.length === 1 && zs[0] === m.k;
+      if (!zuges && !frei) return false;
+      if (baustein === 'mahnung') return zuges && o.tour.status === 'ohneDatum'; // Kürzel gesetzt, Datum fehlt
+      if (baustein === 'zugewiesen') return zuges; // freie Aufträge stehen im Block „in der Nähe“
+      return !nurOhne || o.tour.status !== 'tour';
+    });
+  }
+  // Mahnung fällig: Kürzel ohne Datum, Zeichen älter als 2 h (bzw. Zeitpunkt unbekannt)
+  const mahnungen = (all) => all.filter((o) => o.tour.status === 'ohneDatum' && o.tour.kuerzel && (!o.zeichenAt || Date.now() - o.zeichenAt > 2 * 3600e3));
+  function updateMaBadge() {
+    const b = document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-ma"]');
+    if (!b) return;
+    const n = mahnungen(maOrders()).length;
+    b.textContent = n ? `MA-Management (${n})` : 'MA-Management'; b.title = n ? `${n} Mahnungen fällig (Kürzel gesetzt, Datum fehlt)` : '';
+  }
+  // „Ihr Zeichen“ eines Auftrags still setzen (Dropdown, Automatik); nie ein vorhandenes überschreiben
+  async function setzeZeichen(nr, text, auto = false) {
+    const book = GM_getValue('orderbook', []), hits = book.filter((x) => sameNr(x.nr, nr));
+    if (!hits.length) throw new Error('Auftrag nicht im Auftragsbuch');
+    const a = acceptedInfo(nr), tid = ([...hits].reverse().find((x) => x.tid) || {}).tid || (a && a.tid);
+    if (hits.some((x) => x.zeichen) || (a && a.zeichen)) throw new Error('hat schon ein Zeichen');
+    if (!tid) throw new Error('interne ID unbekannt');
+    const val = String(text).slice(0, ZEICHEN_MAX);
+    await saveIhrZeichen(tid, val);
+    const fresh = GM_getValue('orderbook', []);
+    fresh.forEach((x) => { if (sameNr(x.nr, nr)) { x.zeichen = val; x.tid = tid; x.zeichenAt = Date.now(); if (auto) x.zeichenAuto = 1; } });
+    GM_setValue('orderbook', fresh);
+    return val;
+  }
+  // Automatik, gebündelt: nur nach dem Schreiben ins Auftragsbuch (Annahme), kurz nach der letzten Änderung
+  let autoZeichenTimer = 0;
+  function scheduleAutoZeichen() {
+    if (!cfg.zeichenAuto) return;
+    clearTimeout(autoZeichenTimer);
+    autoZeichenTimer = setTimeout(autoZeichen, GM_getValue('zeichenAutoSec', 90) * 1000);
+  }
+  async function autoZeichen() {
+    if (!cfg.zeichenAuto || !license) return;
+    if (!tamLoadReq) { log('Zeichen automatisch: wartet auf die TAM-Anfrage („Veröffentlichte Aufträge“ einmal aktualisieren).', 'debug'); return; }
+    const ret = dayList('returnsToday').items;
+    const cand = maOrders().filter((o) => !o.zeichen && o.tour.status !== 'rueckgabe' && !ret[nrKey(o.nr)] && zustaendig(o).length === 1).slice(0, 30);
+    if (!cand.length) return;
+    const ok = [], fail = [];
+    for (const o of cand) {
+      const k = zustaendig(o)[0];
+      try { await setzeZeichen(o.nr, `${k} neu`, true); ok.push(`${o.nr} → ${k} neu`); } catch (e) { fail.push(`${o.nr} (${e.message})`); }
+    }
+    log(`Zeichen automatisch gesetzt (${ok.length}): ${ok.join(', ') || '–'}${fail.length ? ` · nicht gesetzt: ${fail.join('; ')}` : ''}`, ok.length ? 'ok' : 'debug');
+    renderOrderbook();
   }
   function tourLabel(t) {
     const p2 = (n) => String(n).padStart(2, '0');
@@ -2671,7 +2745,8 @@
     }
     const m = ma.find((x) => x.k === sel.value);
     const all = maOrders(), nurOhne = $('tamauto-ma-nurohne').checked;
-    const mine = m ? all.filter((o) => o.tour.status !== 'rueckgabe' && zustaendig(o).includes(m.k) && (!nurOhne || o.tour.status !== 'tour')) : [];
+    const baustein = $('tamauto-ma-baustein').value;
+    const mine = m ? maMine(m, all, nurOhne, baustein) : [];
     const sumKey = `${m ? m.k : ''}|${all.length}|${mine.length}|${(places.ma || []).length}|${(places.gebiete || []).length}|${maKontakte.at}`;
     if (sumKey !== renderMa.last) {
       renderMa.last = sumKey;
@@ -2720,7 +2795,12 @@
     }
     // Mail-Entwurf
     const ccList = [...cc.querySelectorAll('input')].filter((i) => i.checked || i.disabled).map((i) => i.dataset.mail);
-    const mail = m ? baueMail({ ma: m, orders: mine, baustein: $('tamauto-ma-baustein').value, absender: ab.value, cc: ccList, now: new Date() }) : { to: '', cc: [], subject: '', body: '' };
+    const nah = m && baustein === 'zugewiesen' ? all.filter((o) => !o.zeichen && o.tour.status !== 'rueckgabe' && zustaendig(o).includes(m.k) && !mine.includes(o) &&
+      mine.some((x) => x.ort === o.ort || (x.plz && o.plz && x.plz.slice(0, 3) === o.plz.slice(0, 3)))) : [];
+    const mahn = m ? mahnungen(all.filter((o) => maZugewiesen(o, m))).length : 0;
+    $('tamauto-ma-mahn').textContent = mahn ? `Mahnung fällig: ${mahn}` : '';
+    updateMaBadge();
+    const mail = m ? baueMail({ ma: m, orders: mine, baustein, absender: ab.value, cc: ccList, nah, now: new Date() }) : { to: '', cc: [], subject: '', body: '' };
     $('tamauto-ma-subject').value = mail.subject; $('tamauto-ma-body').value = mail.body;
     $('tamauto-ma-open').dataset.ma = m ? m.k : ''; $('tamauto-ma-open').dataset.to = mail.to; $('tamauto-ma-open').dataset.cc = mail.cc.join(','); $('tamauto-ma-open').dataset.html = mail.html || '';
     updateMaLink();
@@ -2738,6 +2818,7 @@
   function initMa() {
     const $ = (id) => document.getElementById(id);
     $('tamauto-ma-sel').onchange = (e) => { GM_setValue('maSel', e.target.value); renderMa(); };
+    $('tamauto-ma-mahn').onclick = () => { $('tamauto-ma-baustein').value = 'mahnung'; renderMa(); };
     $('tamauto-ma-unzhead').onclick = () => { GM_setValue('maUnzOpen', !GM_getValue('maUnzOpen', true)); renderMa(); };
     $('tamauto-ma-nurohne').onchange = renderMa; $('tamauto-ma-baustein').onchange = renderMa;
     $('tamauto-ma-absender').onchange = (e) => { GM_setValue('maSender', e.target.value); renderMa(); };
@@ -2869,6 +2950,12 @@ Standard: 1 Anzahl am Ort · 2 Summe am Ort · 3 Einzelpreis.">?</span>
             <span class="tamauto-chk">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-hidetips"> <b>Tipps ausblenden</b></label>
               <span class="tamauto-help" title="Blendet alle ?-Erklärungen im Bedienfeld aus (auch dieses), für eine aufgeräumte Ansicht. Wieder einblenden: Haken entfernen.">?</span>
+            </span>
+          </div>
+          <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
+            <span class="tamauto-chk">
+              <label class="tamauto-chk"><input type="checkbox" id="tamauto-zeichenauto"> <b>Zeichen bei eindeutigem Marktgebiet automatisch setzen</b></label>
+              <span class="tamauto-help" title="Nach dem Schreiben ins Auftragsbuch (Annahme) setzt das Script gebündelt – kurz nach der letzten Änderung – bei Aufträgen ohne Zeichen und mit genau einem zuständigen Mitarbeiter (Blatt „Marktgebiete“) das Zeichen „KÜRZEL neu“, z. B. „GS neu“. Mischgebiete setzt man im Auftragsbuch per Dropdown. Vorhandene Zeichen werden nie überschrieben. Standard: aus.">?</span>
             </span>
           </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
@@ -3015,7 +3102,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
               <thead><tr style="background:#e8f0fb;position:sticky;top:0">
                 <th style="text-align:left;padding:2px 4px">Datum</th><th style="text-align:left;padding:2px 4px">AuftragsNr</th>
                 <th style="text-align:left;padding:2px 4px">PLZ</th><th style="text-align:left;padding:2px 4px">Ort</th>
-                <th style="text-align:right;padding:2px 4px">Euro</th><th style="text-align:left;padding:2px 4px">Ihr Zeichen</th><th style="text-align:left;padding:2px 4px" title="Angenommen von einem anderen Gerät (Lizenzname); leer = dieses Gerät">Von</th></tr></thead>
+                <th style="text-align:right;padding:2px 4px">Euro</th><th style="text-align:left;padding:2px 4px">Ihr Zeichen</th><th style="text-align:left;padding:2px 4px" title="Angenommen von einem anderen Gerät (Lizenzname); leer = dieses Gerät">Von</th><th style="text-align:left;padding:2px 4px" title="Zuständig nach Marktgebiet: Kürzel (eindeutig) oder Auswahl bei Mischgebieten">Zuständig</th></tr></thead>
               <tbody id="tamauto-ob-rows"></tbody>
             </table>
           </div>
@@ -3028,7 +3115,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
             <b>Mitarbeiter</b> <select id="tamauto-ma-sel" style="max-width:200px"></select>
             <label class="tamauto-chk"><input type="checkbox" id="tamauto-ma-nurohne" checked> nur ohne Tour</label>
             <button id="tamauto-ma-load" title="Kontakte und Telefonnummern aller angenommenen Aufträge bei TAM abfragen">Kontakte laden</button>
-            <span id="tamauto-ma-loadstate" style="color:#555"></span>
+            <span id="tamauto-ma-loadstate" style="color:#555"></span> <span id="tamauto-ma-mahn" style="color:#c62828;cursor:pointer" title="Klicken = Baustein Mahnung"></span>
             <span class="tamauto-help" title="Aufträge der letzten 7 Tage aus dem Auftragsbuch, nach Marktgebiet (Excel, Blatt „MA“) dem Mitarbeiter zugeordnet. Die Tour wird aus „Ihr Zeichen“ gelesen (Kürzel, Datum, Uhrzeit in beliebiger Reihenfolge; T/M = bestätigt, t/m = nur Versuch). 🔴 = SLA in ≤ 2 h oder überfällig, 🟡 = in ≤ 24 h. Telefon/Kontakt kommt aus TAMs Liste „Angenommene Aufträge“ – dort einmal aktualisieren, dann „Kontakte laden“.">?</span>
           </div>
           <div id="tamauto-ma-hint" style="color:#b36b00;margin-top:2px"></div>
@@ -3039,7 +3126,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
             <div id="tamauto-ma-unz" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px"></div></div>
           <div style="margin-top:8px;padding-top:6px;border-top:2px solid #1a4d8f"><b>Mail an den Mitarbeiter</b> <span id="tamauto-ma-mailstate" style="color:#b36b00;font-size:11px"></span>
             <div class="tamauto-chk" style="gap:6px;flex-wrap:wrap;margin:4px 0">Baustein
-              <select id="tamauto-ma-baustein"><option value="neu">Neue Aufträge</option><option value="termin">Termin vereinbaren + Kurzzeichen</option><option value="tour">Tour ergänzen</option><option value="mahnung">Mahnung</option><option value="pma">Problem mit Auftrag (PMA)</option></select>
+              <select id="tamauto-ma-baustein"><option value="neu">Neue Aufträge</option><option value="zugewiesen">Zugewiesen (Kürzel gesetzt)</option><option value="termin">Termin vereinbaren + Kurzzeichen</option><option value="tour">Tour ergänzen</option><option value="mahnung">Mahnung</option><option value="pma">Problem mit Auftrag (PMA)</option></select>
               Absender <select id="tamauto-ma-absender"></select></div>
             <div style="margin:2px 0">Cc: <span id="tamauto-ma-cc"></span></div>
             <input id="tamauto-ma-subject" style="width:100%;margin:2px 0">
@@ -3246,6 +3333,8 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
       p.querySelectorAll('.tamauto-help').forEach((h) => { h.style.display = cfg.hideTips ? 'none' : 'inline-flex'; });
       if (cfg.hideTips) $('tamauto-popup-helpbox').style.display = 'none';
     };
+    $('tamauto-zeichenauto').checked = cfg.zeichenAuto;
+    $('tamauto-zeichenauto').onchange = (e) => { cfg.zeichenAuto = e.target.checked; GM_setValue('zeichenAuto', cfg.zeichenAuto); log(`Zeichen automatisch setzen: ${cfg.zeichenAuto ? 'an' : 'aus'}.`); renderOrderbook(); };
     $('tamauto-colorrows').checked = cfg.colorRows;
     $('tamauto-colorrows').onchange = (e) => {
       cfg.colorRows = e.target.checked; GM_setValue('colorRows', cfg.colorRows);
