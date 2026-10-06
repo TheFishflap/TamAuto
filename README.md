@@ -397,6 +397,7 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 ## Changelog
 
 ### 1.21.5 – 2026-10-06
+- **Baustein „Zugewiesen“** listet nur Aufträge mit „KÜRZEL neu“ in TAM (erst Zeichen schreiben, dann Kollegen per Mail informieren).
 - **MA-Mail:** „Mail öffnen“ legt die Tabelle als echte Tabelle in die Zwischenablage; im Mailfenster steht an ihrer Stelle die Marke
   „[Tabelle hier einfügen: Strg+V (Mac: Cmd+V)]“ (ein mailto-Link kann technisch kein HTML übergeben). Im Feld „SLA bis“ steht statt „(rot)“ die Flagge 🔴/🟡.
 

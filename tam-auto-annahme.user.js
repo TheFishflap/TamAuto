@@ -637,7 +637,7 @@
     neu: { betreff: 'Neue Aufträge in deinem Gebiet', text: 'für dein Marktgebiet sind Aufträge angenommen worden:', schluss: 'Bitte trage deine Tour in TAM bei „Ihr Zeichen“ ein: Kürzel, Datum und Uhrzeit, z. B. {bsp}.' },
     tour: { betreff: 'Tour in TAM ergänzen', text: 'bitte ergänze bei diesen Aufträgen deine Tour in TAM („Ihr Zeichen“):', schluss: 'Format: Kürzel, Datum, Uhrzeit – z. B. {bsp} (T = telefonisch bestätigt, t = nur Telefonversuch, M = Mail bestätigt, m = nur Mailversuch).' },
     termin: { betreff: 'Termin vereinbaren und Kurzzeichen hinzufügen', text: 'bitte vereinbare bei diesen Aufträgen den Termin mit dem Kunden und trage danach dein Kurzzeichen in TAM ein:', schluss: 'Kurzzeichen bei „Ihr Zeichen“: Kürzel, Datum, Uhrzeit und Kontaktstatus – z. B. {bsp} T (T = telefonisch bestätigt, t = nur Telefonversuch, M = Mail bestätigt, m = nur Mailversuch).' },
-    zugewiesen: { betreff: 'Kürzel bei neuen Aufträgen gesetzt', text: 'bei diesen Aufträgen wurde dein Kürzel gesetzt:', schluss: 'Wenn du sie nicht fahren möchtest, entferne bitte das Kürzel wieder oder schreibe „zurück“ dahinter (z. B. {kz} zurück) – oder vereinbare direkt einen Termin. Trage deine Tour in TAM ein, z. B. {bsp}.' },
+    zugewiesen: { betreff: 'Kürzel bei neuen Aufträgen gesetzt', text: 'bei diesen Aufträgen steht in TAM jetzt dein Kürzel mit „neu“ unter „Ihr Zeichen“:', schluss: 'Wenn du sie nicht fahren möchtest, entferne bitte das Kürzel wieder oder schreibe „zurück“ dahinter (z. B. {kz} zurück) – oder vereinbare direkt einen Termin. Trage deine Tour in TAM ein, z. B. {bsp}.' },
     mahnung: { betreff: 'Erinnerung: Tour in TAM eintragen', text: 'zu diesen Aufträgen fehlt noch deine Tour in TAM:', schluss: 'Bitte heute noch bei „Ihr Zeichen“ eintragen, z. B. {bsp}.' },
     pma: { betreff: 'Problem mit Auftrag melden', text: 'bei diesen Aufträgen gibt es ein Problem:', schluss: 'Bitte melde das Problem in TAM über „Problem mit Auftrag melden“ und gib uns kurz Bescheid.' },
   };
@@ -2674,7 +2674,7 @@
       const zuges = maZugewiesen(o, m), zs = zustaendig(o), frei = (!o.zeichen || o.tour.status === 'ungeklaert') && zs.length === 1 && zs[0] === m.k;
       if (!zuges && !frei) return false;
       if (baustein === 'mahnung') return zuges && o.tour.status === 'ohneDatum'; // Kürzel gesetzt, Datum fehlt
-      if (baustein === 'zugewiesen') return zuges; // freie Aufträge stehen im Block „in der Nähe“
+      if (baustein === 'zugewiesen') return zuges && /(^|\s)neu(\s|$)/i.test(o.zeichen); // in TAM „KÜRZEL neu“ eingetragen; freie Aufträge stehen im Block „in der Nähe“
       return !nurOhne || o.tour.status !== 'tour';
     });
   }

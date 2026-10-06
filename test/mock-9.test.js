@@ -96,9 +96,11 @@ describe('Zuständigkeit und Zeichen aus dem Marktgebiet', { skip }, () => {
     await setup({ orderbook: b });
     openMa('GS'); $('tamauto-ma-baustein').value = 'zugewiesen'; $('tamauto-ma-baustein').onchange();
     const t = $('tamauto-ma-body').value;
-    assert.match(t, /Kürzel gesetzt/); assert.match(t, /Kürzel wieder/); assert.match(t, /Termin/);
+    assert.match(t, /Kürzel mit „neu“/); assert.match(t, /Kürzel wieder/); assert.match(t, /Termin/);
     assert.match(t, /Weitere Aufträge in der Nähe[\s\S]*MW3190604/);
     assert.match(t.split('Weitere Aufträge in der Nähe')[0], /MW3190601/);
+    b[0].zeichen = 'GS 12.10 10:00 T'; tam.store.set('orderbook', b); $('tamauto-ma-baustein').onchange();
+    assert.doesNotMatch($('tamauto-ma-body').value.split('Weitere Aufträge in der Nähe')[0], /MW3190601/, 'nur „KÜRZEL neu“ gehört in diese Mail');
   });
 
   it('Mahnung: Kürzel ohne Datum ist fällig – Zahl am Reiter, Baustein listet nur diese', async () => {
