@@ -69,5 +69,9 @@ Vorhandene Mitschnitte (Dateinamen in `test/fixtures/`): `veroeffentlicht-leer`,
 `angenommen-kontextmenue`, `angenommen-kurzzeichen`. Noch gesucht: Auftragskarte, Bestätigungsdialog, Terminvereinbarung.
 
 ## 7. Tests
-`npm test` – startet das echte Script in jsdom auf den Mitschnitten (`test/harness.js` bildet Reiterwechsel, Auftragskarte,
-Refresh, ntfy usw. nach). Ohne Mitschnitte werden die Tests übersprungen.
+- `npm run test:fast` – reine Logik (Zeichen, Listenantwort, Marktgebiete, Mail), unter 1 s; beim Entwickeln.
+- `npm test` – alles, ca. 25 s: das echte Script läuft in jsdom auf den Mitschnitten (`test/harness.js` bildet Reiterwechsel,
+  Auftragskarte, Refresh, ntfy usw. nach). Ohne Mitschnitte werden diese Tests übersprungen.
+- Die Tests mit dem Script stehen in `test/mock-1.test.js` … `mock-8.test.js`, damit Node sie **parallel** ausführt. Eine einzelne große
+  Datei läuft nacheinander und wird mit jedem Test langsamer. Neue Tests in die Datei mit der geringsten Laufzeit legen
+  (Dauer je Datei: `npm test`, Zeile „duration_ms“ bzw. die Zeiten der obersten `describe`-Blöcke) – nicht in die längste.

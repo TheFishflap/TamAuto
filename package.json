@@ -3,7 +3,8 @@
   "private": true,
   "description": "Tests für das Userscript TAM Auto-Annahme (jsdom)",
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:fast": "node --test test/zeichen.test.js test/liste.test.js test/ma.test.js"
   },
   "devDependencies": {
     "jsdom": "^24.1.3"
