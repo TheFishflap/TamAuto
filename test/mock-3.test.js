@@ -111,6 +111,45 @@ describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
     assert.doesNotMatch(chips(), /MW3190002|MW3190003/);
   });
 
+  it('Tages-Auftragsbuch: Annahme enthält Auftragsdaten (nur geheimer Kanal); später eingeloggtes Gerät baut daraus das Buch, chronologisch', async () => {
+    const { ck, ret } = await withChannelKey();
+    tam.addOrder(ORDER);
+    assert.ok(await until(() => tam.posts(ret).length, 8000));
+    const msg = await K.decryptMsg(ck, tam.posts(ret)[0]);
+    assert.equal(msg.det[ORDER.nr].p, ORDER.plz); assert.equal(msg.det[ORDER.nr].o, ORDER.ort);
+    // zweites Gerät loggt sich später ein: Meldungen kommen in falscher Reihenfolge, eine mit manipulierten Feldern
+    const t = Date.now();
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'acc', nrs: ['MW3190901'], by: 'Handy', at: t - 1000, det: { MW3190901: { p: '44141', o: 'Dortmund', s: 'Hauptstr. 1', d: 'Standard', e: 55.5, r: 'R1' } } }));
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'acc', nrs: ['MW3190900'], by: 'Handy', at: t - 5000, det: { MW3190900: { p: '<b>', o: 'x'.repeat(500), s: 5, d: 'Sixt', e: -3 } } }));
+    const book = () => tam.store.get('orderbook') || [];
+    assert.ok(await until(() => book().some((e) => e.nr === 'MW3190900') && book().some((e) => e.nr === 'MW3190901'), 3000));
+    const a = book().find((e) => e.nr === 'MW3190901'), b = book().find((e) => e.nr === 'MW3190900');
+    assert.deepEqual([a.plz, a.ort, a.strasse, a.dienst, a.preis, a.by], ['44141', 'Dortmund', 'Hauptstr. 1', 'Standard', 55.5, 'Handy']);
+    assert.equal(b.plz, ''); assert.ok(b.ort.length <= 60); assert.equal(b.strasse, ''); assert.equal(b.preis, null); assert.equal(b.dienst, 'Sixt');
+    tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-book"]').click();
+    const nrs = [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].map((r) => r.dataset.nr);
+    assert.ok(nrs.indexOf('MW3190901') < nrs.indexOf('MW3190900'), `neueste oben: ${nrs}`);
+  });
+
+  it('Details auf dem öffentlichen Kanal werden ignoriert (nur Nummern)', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.ntfy('tamret-', { v: 1, t: 'acc', nrs: ['MW3190902'], by: 'Alt', at: Date.now(), det: { MW3190902: { p: '44141', o: 'Dortmund' } } });
+    const book = () => tam.store.get('orderbook') || [];
+    assert.ok(await until(() => book().some((e) => e.nr === 'MW3190902'), 2000));
+    assert.equal(book().find((e) => e.nr === 'MW3190902').ort, '');
+  });
+
+  it('Auftragsbuch: 31 Tage Datenspeicherung', async () => {
+    const old = new Date(Date.now() - 32 * 864e5).toISOString(), ok = new Date(Date.now() - 30 * 864e5).toISOString();
+    tam = startTam({ gm: { places: KOELN, orderbook: [{ ts: old, nr: 'MW3190001', plz: '50825', ort: 'Köln' }, { ts: ok, nr: 'MW3190002', plz: '50825', ort: 'Köln' }] } });
+    await tam.ready();
+    tam.addOrder(ORDER);
+    assert.ok(await until(() => (tam.store.get('orderbook') || []).some((e) => e.nr === ORDER.nr), 15000));
+    const nrs = tam.store.get('orderbook').map((e) => e.nr);
+    assert.ok(nrs.includes('MW3190002') && !nrs.includes('MW3190001'), nrs.join());
+  });
+
   it('kaputter Kanal-Schlüssel in der Lizenz → läuft weiter wie bisher (öffentlicher Kanal)', async () => {
     await withChannelKey({ badCke: true });
     assert.ok(tam.mainPanel());

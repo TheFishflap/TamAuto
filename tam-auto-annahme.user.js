@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.21.7
+// @version      1.21.8
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -773,6 +773,9 @@
     if (red.length) log(`Termin offen und SLA endet in ≤ 2 h: ${red.join(', ')} – im Auftragsbuch rot markiert.`, 'err');
     renderOrderbook();
   }
+  // Auftragsbuch: 31 Tage Datenspeicherung (danach fallen Einträge heraus), harte Obergrenze gegen ein volles Tampermonkey-Archiv
+  const BOOK_DAYS = 31, BOOK_MAX = 20000;
+  const pruneBook = (book) => { const von = new Date(Date.now() - BOOK_DAYS * 864e5).toISOString(); return book.filter((e) => e.ts >= von).slice(-BOOK_MAX); };
   function recordOrder(o) {
     const book = GM_getValue('orderbook', []);
     const ts = new Date().toISOString();
@@ -786,7 +789,7 @@
         dienst: `${art} – zusammen mit ${o.nr} angenommen${row && row.dienst ? ` · ${row.dienst}` : ''}`,
         preis: row ? parseEuro(row.preis) : null }));
     });
-    GM_setValue('orderbook', book.slice(-5000));
+    GM_setValue('orderbook', pruneBook(book));
     renderOrderbook();
     scheduleAutoZeichen();
   }
@@ -854,7 +857,7 @@
     const from = nTage > 0 ? dayN(nTage) : { today: day0, week: new Date(Date.now() - 7 * 864e5),
       month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), all: new Date(0) }[range];
     const bis = nTage > 0 ? dayN(nTage - 1) : null;
-    const rows = GM_getValue('orderbook', []).filter((e) => new Date(e.ts) >= from && (!bis || new Date(e.ts) < bis)).reverse();
+    const rows = GM_getValue('orderbook', []).filter((e) => new Date(e.ts) >= from && (!bis || new Date(e.ts) < bis)).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0)).reverse(); // nach Annahmezeit, neueste oben (auch bei nachgeholten Meldungen)
     const kand = new Set(zeichenKandidaten(true).map((o) => String(o.nr).toUpperCase())); // Zeichen schreibbar: Kürzel eindeutig oder im Dropdown gewählt
     [...zeichenSel].forEach((k) => { if (!kand.has(k)) zeichenSel.delete(k); });
     tbody.innerHTML = '';
@@ -939,30 +942,52 @@
   }
   const goneSince = new Map(); // Nr → seit wann nicht in der Tabelle (diese Sitzung)
   let retChanP = Promise.resolve(null); // geheimer Rückgabe-Kanal (mit Kanal-Schlüssel) oder null
+  // Details einer Annahme für das Tages-Auftragsbuch anderer Geräte (nur auf dem geheimen Kanal, nie auf dem öffentlichen)
+  function detailsFor(nrs) {
+    const book = GM_getValue('orderbook', []), det = {};
+    nrs.forEach((x) => {
+      const e = [...book].reverse().find((b) => sameNr(b.nr, x));
+      if (e) det[nrKey(x)] = { p: e.plz || '', o: e.ort || '', s: e.strasse || '', d: String(e.dienst || '').slice(0, 80), e: typeof e.preis === 'number' ? e.preis : null, r: e.ref || '' };
+    });
+    return det;
+  }
+  const ACC_CHUNK = 8; // ntfy erlaubt höchstens 4 KB je Nachricht
   function retPost(t, nrs) {
     if (!nrs.length) return;
-    // nur Nummern (keine Adressen); bei Annahmen der Lizenzname des Geräts fürs Auftragsbuch der anderen
-    const msg = Object.assign({ v: 1, t, nrs, at: Date.now() }, t === 'acc' && license ? { by: String(license.name || '').slice(0, 40) } : {});
+    // Rückgaben: nur Nummern. Annahmen: Nummern + Lizenzname des Geräts; auf dem geheimen Kanal zusätzlich die Auftragsdaten
+    const base = () => Object.assign({ v: 1, t, at: Date.now() }, t === 'acc' && license ? { by: String(license.name || '').slice(0, 40) } : {});
     retChanP.then(async (ch) => {
-      if (ch) await licFetch(`${LIC_NTFY}/${ch.topic}`, { method: 'POST', body: JSON.stringify(await sealMsg(ch, msg)) });
-      else await licFetch(`${LIC_NTFY}/${RET_TOPIC}`, { method: 'POST', body: JSON.stringify(msg) });
+      if (ch) {
+        for (let i = 0; i < nrs.length; i += (t === 'acc' ? ACC_CHUNK : nrs.length)) {
+          const part = nrs.slice(i, i + (t === 'acc' ? ACC_CHUNK : nrs.length));
+          await licFetch(`${LIC_NTFY}/${ch.topic}`, { method: 'POST', body: JSON.stringify(await sealMsg(ch, Object.assign(base(), { nrs: part }, t === 'acc' ? { det: detailsFor(part) } : {}))) });
+        }
+      } else await licFetch(`${LIC_NTFY}/${RET_TOPIC}`, { method: 'POST', body: JSON.stringify(Object.assign(base(), { nrs })) });
     }).catch(() => {});
   }
   // Annahmen anderer Geräte ins Auftragsbuch (Spalte „Von“ = Lizenzname), hier nicht mehr annehmen, Zeile ausblenden.
   // Die eigene Meldung kommt als Echo zurück – Aufträge, die heute schon im Auftragsbuch stehen, werden übersprungen.
   // PLZ, Ort und Preis ergänzt der Abgleich mit „Angenommene Aufträge“.
-  function addRemoteAccepts(nrs, by, at) {
+  function addRemoteAccepts(nrs, by, at, det = {}) {
     const book = GM_getValue('orderbook', []);
     const since = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
     const have = new Set(book.filter((e) => e.ts >= since).map((e) => nrKey(e.nr)));
+    // fehlende Angaben bereits vorhandener Einträge ergänzen (z. B. Meldung ohne Details kam zuerst)
+    let filled = 0;
+    book.filter((e) => e.ts >= since && det[nrKey(e.nr)]).forEach((e) => {
+      const d = det[nrKey(e.nr)];
+      [['plz', 'plz'], ['ort', 'ort'], ['strasse', 'strasse'], ['dienst', 'dienst'], ['ref', 'ref']].forEach(([k, f]) => { if (!e[k] && d[f]) { e[k] = d[f]; filled++; } });
+      if (e.preis == null && d.preis != null) { e.preis = d.preis; filled++; }
+    });
     const add = nrs.filter((x) => !have.has(x));
-    if (!add.length) return;
+    if (!add.length) { if (filled) { GM_setValue('orderbook', book); renderOrderbook(); } return; }
     const who = by || 'anderes Gerät';
     add.forEach((x) => {
-      book.push({ ts: new Date(at || Date.now()).toISOString(), nr: x, plz: '', ort: '', dienst: '', preis: null, by: who });
+      const d = det[x] || {};
+      book.push({ ts: new Date(at || Date.now()).toISOString(), nr: x, plz: d.plz || '', ort: d.ort || '', strasse: d.strasse || '', dienst: d.dienst || '', ref: d.ref || '', preis: d.preis == null ? null : d.preis, by: who });
       markDone(x, `angenommen von ${who}`);
     });
-    GM_setValue('orderbook', book.slice(-5000));
+    GM_setValue('orderbook', pruneBook(book));
     saveDone();
     hideAcceptedRows(add);
     renderOrderbook();
@@ -972,11 +997,23 @@
   // Der Kanal ist nicht geheim (Name steht im Script): Meldungen streng prüfen. Rückgaben nur für Nummern, deren
   // Annahme heute gemeldet wurde – sonst könnte jeder beliebige Aufträge auf allen Geräten sperren.
   const RET_NR = /^[A-Z0-9][A-Z0-9-]{3,19}$/;
-  function onRetMessage(d) {
+  // Auftragsdaten aus einer Annahme-Meldung (nur vom geheimen Kanal) – streng geprüft und gekürzt
+  function cleanDetails(det, nrs) {
+    const out = {};
+    if (!det || typeof det !== 'object') return out;
+    nrs.forEach((x) => {
+      const d = det[x]; if (!d || typeof d !== 'object') return;
+      const str = (v, n) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n) : '');
+      const e = Number(d.e);
+      out[x] = { plz: /^\d{4,5}$/.test(String(d.p)) ? String(d.p) : '', ort: str(d.o, 60), strasse: str(d.s, 80), dienst: str(d.d, 80), ref: str(d.r, 40), preis: d.e != null && Number.isFinite(e) && e >= 0 && e < 100000 ? e : null };
+    });
+    return out;
+  }
+  function onRetMessage(d, secure = false) {
     if (!d || d.v !== 1 || !Array.isArray(d.nrs) || d.nrs.length > 20 || new Date(d.at || 0).toLocaleDateString('sv-SE') !== today()) return;
     const nrs = d.nrs.map(nrKey).filter((x) => RET_NR.test(x));
     const info = { at: +d.at };
-    if (d.t === 'acc') { addToday('accToday', nrs, info); addRemoteAccepts(nrs, String(d.by || '').slice(0, 40), +d.at); }
+    if (d.t === 'acc') { addToday('accToday', nrs, info); addRemoteAccepts(nrs, String(d.by || '').slice(0, 40), +d.at, secure ? cleanDetails(d.det, nrs) : {}); }
     const known = dayList('accToday').items;
     if (d.t === 'ret' && addToday('returnsToday', nrs.filter((x) => known[x]), info)) {
       log(`Rückgabe gemeldet: ${nrs.filter((x) => known[x]).join(', ')} – heute nicht annehmen.`, 'ok');
@@ -1006,7 +1043,7 @@
       if (!retLegacy) retLegacy = listenRet(RET_TOPIC, (raw) => onRetMessage(ntfyBody(raw)));
       if (ch && ch.topic !== retSecretTopic) {
         retSecretTopic = ch.topic;
-        listenRet(ch.topic, async (raw) => onRetMessage(await openMsg(ch, ntfyBody(raw))));
+        listenRet(ch.topic, async (raw) => onRetMessage(await openMsg(ch, ntfyBody(raw)), true));
         log('Rückgaben laufen über den geschützten Kanal.', 'debug');
       }
     });

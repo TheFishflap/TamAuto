@@ -396,6 +396,11 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.21.8 – 2026-10-06
+- **Tages-Auftragsbuch für später eingeloggte Geräte:** Annahmen werden auf dem **geheimen Kanal** (Lizenz mit Kanal-Schlüssel) mit PLZ, Ort, Straße, Dienstleistung, Preis und Referenz gemeldet. Ein Gerät, das sich später einloggt, holt die Meldungen seit Mitternacht nach und hat das Auftragsbuch des Tages sofort vollständig – ohne „Angenommene Aufträge“ öffnen zu müssen. Auf dem öffentlichen Kanal (alte Lizenzen) bleibt es bei den Nummern. Empfangene Angaben werden geprüft und gekürzt; fehlende Angaben bereits vorhandener Einträge werden ergänzt.
+- Auftragsbuch **chronologisch nach Annahmezeit** (neueste oben), auch bei nachgeholten Meldungen.
+- **31 Tage Datenspeicherung** im Auftragsbuch (statt der letzten 5000 Einträge). Grenze: ntfy hält Meldungen etwa 12 Stunden – wer sich später als 12 Stunden nach einer Annahme einloggt, bekommt sie über „Angenommene Aufträge“ nachgetragen.
+
 ### 1.21.7 – 2026-10-06
 - **MA-Management:** Im Mitarbeiter-Dropdown steht in Klammern die Zahl fälliger Mahnungen je MA (z. B. „PM – Name (2)“); die Summe ergibt die Zahl am Reiter „MA-Management (n)“.
 
