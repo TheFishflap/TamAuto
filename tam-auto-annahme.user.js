@@ -2071,9 +2071,7 @@
       const blockedHits = orders.filter((o) => matches(o) && blocked(o));
       hits.forEach((o) => trackHit(o, 'passend'));        // Trefferquote: jeder passende Auftrag einmal
       blockedHits.forEach((o) => trackHit(o, 'gesperrt'));
-      setStatus(`Abgleich ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} · ${all.length} in Tabelle · ${hits.length} passend` +
-        (orders.length ? ` · ${orders.length} offen` : '') + (blockedHits.length ? ` · ${blockedHits.length} gesperrt` : '') +
-        (old.length ? ` · ${old.length} bereits bearbeitet` : ''));
+      setStatus(''); // „Abgleich … in Tabelle … passend“ steht im Protokoll, die Zeile im Kopf entfällt (mehr Platz)
 
       // Protokoll: jeder Abgleich eine Zeile, jeden Auftrag einmalig mit Entscheidung
       log(`${reason} → Abgleich: ${all.length} Aufträge in Tabelle, ${orders.length} offen, ${hits.length} passend, ` +
@@ -2598,7 +2596,7 @@
   }
 
   // ------------------------------------------------------------------ Bedienfeld
-  function setStatus(s) { const el = document.getElementById('tamauto-status'); if (el) el.textContent = s; }
+  function setStatus(s) { const el = document.getElementById('tamauto-status'); if (el) { el.textContent = s; el.style.display = s ? '' : 'none'; } } // leer = Zeile ausgeblendet
   // Kurzstatus in der Titelzeile (sichtbar im minimierten Zustand)
   function renderHeadState() {
     const hs = document.getElementById('tamauto-head-state');
@@ -2866,7 +2864,7 @@
         <a id="tamauto-update" href="${UPDATE_URL}" target="_blank" style="display:none;font-weight:bold;color:#1a4d8f;margin:4px 0"></a>
         <div id="tamauto-tab" style="font-weight:bold;margin:4px 0"></div>
         <div id="tamauto-places"></div>
-        <div id="tamauto-status" style="color:#555">bereit</div>
+        <div id="tamauto-status" style="color:#555;display:none"></div>
         <div style="color:#555"><span id="tamauto-refresh"></span><span id="tamauto-sync"></span></div>
         <div id="tamauto-prio-info" style="color:#555" title="Ändern unter „Erweiterte Einstellungen“ → Priorität"></div>
         <div id="tamauto-tabbar" style="display:flex;flex-wrap:wrap;gap:0 2px;margin-top:6px">
