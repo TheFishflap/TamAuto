@@ -569,6 +569,67 @@
     return out;
   }
   // </liste-parser>
+  // <ma-logik>
+  // MA-Management (reine Logik, ohne Oberfläche): Marktgebiet, SLA-Ampel, Kontaktzeile, Kennzeichenversand, Mail-Entwurf.
+  // Auftrag o: { nr, plz, ort, strasse, dienst, status, sla (Endtermin Agent), ref, kontakt: {name, telefon, mail} }
+  const maFuerPlz = (plz, maListe) => (maListe || []).filter((m) => (m.gebiet || []).some((g) => String(plz || '').startsWith(g)));
+  // Ampel nach Endtermin (Agent): rot = überfällig oder in ≤ 2 h, gelb = in ≤ 24 h
+  function ampel(slaStr, now = new Date()) {
+    const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})/.exec(String(slaStr || ''));
+    if (!m) return '';
+    const ms = new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5]).getTime() - now.getTime();
+    return ms <= 2 * 3600e3 ? 'rot' : ms <= 24 * 3600e3 ? 'gelb' : '';
+  }
+  const istKennzeichen = (d) => /kennzeichen(versand|handling)/i.test(d || '') && !/ohne\s+kennzeichen/i.test(d || '');
+  const istSixt = (d) => /sixt/i.test(d || '');
+  // Kontakt für die Mail: Telefon, wenn vorhanden. Sixt: Zeile „Tel.“ immer (ohne Nummer leer). Terminvereinbarung ohne Telefon: E-Mail.
+  function kontaktText(o) {
+    const k = o.kontakt || {};
+    const pre = k.name ? `${k.name}, ` : '';
+    if (k.telefon) return `${pre}Tel. ${k.telefon}`;
+    if (istSixt(o.dienst)) return 'Tel.';
+    if (/terminvereinbarung/i.test(o.status || '') && k.mail) return `${pre}${k.mail}`;
+    return '';
+  }
+  // Kennzeichenversand/-handling läuft parallel zum Hauptauftrag: unter diesen legen, nicht als eigener Stopp (keine Duplikate)
+  function gruppiere(orders) {
+    const haupt = orders.filter((o) => !istKennzeichen(o.dienst)).map((o) => Object.assign({}, o, { extra: [] }));
+    const solo = [];
+    orders.filter((o) => istKennzeichen(o.dienst)).forEach((kz) => {
+      const cand = haupt.filter((h) => h.plz === kz.plz && (h.ort || '') === (kz.ort || ''));
+      const byRef = kz.ref ? cand.filter((h) => h.ref === kz.ref) : [];
+      const h = byRef.length === 1 ? byRef[0] : cand.length === 1 ? cand[0] : null;
+      if (h) h.extra.push(kz); else solo.push(kz);
+    });
+    return { haupt, solo };
+  }
+  const BAUSTEINE = {
+    neu: { betreff: 'Neue Aufträge in deinem Gebiet', text: 'für dein Marktgebiet sind Aufträge angenommen worden:', schluss: 'Bitte trage deine Tour in TAM bei „Ihr Zeichen“ ein: Kürzel, Datum und Uhrzeit, z. B. {bsp}.' },
+    tour: { betreff: 'Tour in TAM ergänzen', text: 'bitte ergänze bei diesen Aufträgen deine Tour in TAM („Ihr Zeichen“):', schluss: 'Format: Kürzel, Datum, Uhrzeit – z. B. {bsp} (T = telefonisch bestätigt, t = nur Telefonversuch, M = Mail bestätigt, m = nur Mailversuch).' },
+    mahnung: { betreff: 'Erinnerung: Tour in TAM eintragen', text: 'zu diesen Aufträgen fehlt noch deine Tour in TAM:', schluss: 'Bitte heute noch bei „Ihr Zeichen“ eintragen, z. B. {bsp}.' },
+    pma: { betreff: 'Problem mit Auftrag melden', text: 'bei diesen Aufträgen gibt es ein Problem:', schluss: 'Bitte melde das Problem in TAM über „Problem mit Auftrag melden“ und gib uns kurz Bescheid.' },
+  };
+  function baueMail({ ma, orders, baustein = 'neu', absender = '', cc = [], now = new Date() }) {
+    const b = BAUSTEINE[baustein] || BAUSTEINE.neu;
+    const g = gruppiere(orders);
+    const rang = { rot: 0, gelb: 1, '': 2 };
+    const slaTs = (o) => { const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})/.exec(o.sla || ''); return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5]).getTime() : Infinity; };
+    const list = [...g.haupt, ...g.solo.map((o) => Object.assign({}, o, { extra: [], nurVersand: true }))]
+      .sort((x, y) => rang[ampel(x.sla, now)] - rang[ampel(y.sla, now)] || slaTs(x) - slaTs(y) || String(x.plz).localeCompare(String(y.plz)));
+    const lines = [];
+    list.forEach((o) => {
+      const amp = ampel(o.sla, now);
+      lines.push(`• ${o.nr}${o.nurVersand ? ' (nur Versand)' : ''} · ${o.plz} ${o.ort}${o.strasse ? `, ${o.strasse}` : ''}${o.sla ? ` · SLA bis ${o.sla}${amp ? ` (${amp})` : ''}` : ''}`);
+      const k = kontaktText(o); if (k) lines.push(`   ${k}`);
+      if (o.extra.length) lines.push(`   + Kennzeichenversand ${o.extra.map((e) => e.nr).join(', ')}`);
+    });
+    const morgen = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1), p2 = (n) => String(n).padStart(2, '0');
+    const bsp = `${ma.k} ${p2(morgen.getDate())}.${p2(morgen.getMonth() + 1)} 10:00`;
+    const vor = String(ma.name || '').split(/\s+/)[0] || ma.k;
+    const body = [`Hallo ${vor},`, '', b.text, '', ...lines, '', b.schluss.replace('{bsp}', bsp), '', ...(absender ? ['Liebe Grüße', absender] : ['Liebe Grüße'])].join('\n');
+    return { to: ma.mail || '', cc: [...cc], subject: `${b.betreff} (${list.length})`, body };
+  }
+  // </ma-logik>
   const terminRed = (e) => { const t = slaMs(e.sla); return !!e.terminWeg && !e.zeichen && t !== null && t - new Date(e.ts).getTime() <= SLA_SOON_MS; };
   const terminPending = new Set();
   function markTermin(nrs) {
