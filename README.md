@@ -395,6 +395,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.20.7 – 2026-10-06
+- Statuszeilen im aufgeklappten Bedienfeld aufgeräumt (drei kurze Zeilen; Orte-Anzahl entfällt); Push-Signal zeigt
+  „Push-Signal ✓“ im Reiter, wenn eingeschaltet und verbunden.
+
 ### 1.20.6 – 2026-10-06
 - **Auftragsbuch über alle Geräte:** Annahmen anderer Geräte erscheinen im Auftragsbuch mit dem Lizenznamen (neue Spalte
   „Von“); der Auftrag wird hier nicht mehr versucht und in der Tabelle ausgeblendet. PLZ, Ort und Preis werden aus

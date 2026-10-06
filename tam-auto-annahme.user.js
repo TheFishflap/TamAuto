@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.20.6
+// @version      1.20.7
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1145,8 +1145,8 @@
     }, 10000, 100);
     const ok = maskSeen || Date.now() - t0 < 10000;
     if (ok) lastAnyRefreshAt = Date.now();
-    const stamp = new Date().toLocaleTimeString('de-DE');
-    setRefreshStatus(ok ? `Letzter Refresh: ${stamp} ✓ (Auto-Refresh)` : `Letzter Refresh: ${stamp} ✗ keine Wirkung`);
+    const stamp = hhmm();
+    setRefreshStatus(ok ? `Refresh ${stamp} ✓ (Auto-Refresh)` : `Refresh ${stamp} ✗ keine Wirkung`);
     if (ok !== lastRefreshOk) {
       log(ok ? 'Refresh funktioniert – Tabelle wurde neu geladen.' :
         'Refresh-Klick ohne Wirkung (Tabelle nicht neu geladen). Bitte melden.', ok ? 'ok' : 'err');
@@ -1156,7 +1156,8 @@
     return ok;
   }
 
-  function setRefreshStatus(t) { const el = document.getElementById('tamauto-refresh'); if (el) el.textContent = t; }
+  const hhmm = (d = new Date()) => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  function setRefreshStatus(t) { const el = document.getElementById('tamauto-refresh'); if (el) el.textContent = `${t} · `; }
 
   // Refresh von außen (Klick auf den Refresh-Pfeil der Website oder TAM-Autoaktualisierung) anzeigen
   let ownRefresh = false;   // true, solange das Script selbst refresht
@@ -1264,7 +1265,7 @@
       const now = Date.now();
       lastAnyRefreshAt = now;
       if (src === 'TAM') noteTamRefresh(now);
-      setRefreshStatus(`Letzter Refresh: ${new Date().toLocaleTimeString('de-DE')} ✓ (${src})`);
+      setRefreshStatus(`Refresh ${hhmm()} ✓ (${src})`);
       if (!cfg.enabled) log(`Refresh (${src}) – Tabelle neu geladen; Script gestoppt, kein Abgleich.`);
     }, 500);
     return src;
@@ -1790,8 +1791,9 @@
       const blockedHits = orders.filter((o) => matches(o) && blocked(o));
       hits.forEach((o) => trackHit(o, 'passend'));        // Trefferquote: jeder passende Auftrag einmal
       blockedHits.forEach((o) => trackHit(o, 'gesperrt'));
-      setStatus(`${new Date().toLocaleTimeString('de-DE')}: ${all.length} in Tabelle · ${orders.length} offen · ` +
-        `${hits.length} passend · ${blockedHits.length} gesperrt · ${old.length} bereits bearbeitet`);
+      setStatus(`Abgleich ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} · ${all.length} in Tabelle · ${hits.length} passend` +
+        (orders.length ? ` · ${orders.length} offen` : '') + (blockedHits.length ? ` · ${blockedHits.length} gesperrt` : '') +
+        (old.length ? ` · ${old.length} bereits bearbeitet` : ''));
 
       // Protokoll: jeder Abgleich eine Zeile, jeden Auftrag einmalig mit Entscheidung
       log(`${reason} → Abgleich: ${all.length} Aufträge in Tabelle, ${orders.length} offen, ${hits.length} passend, ` +
@@ -1921,22 +1923,17 @@
     const t = tamNext();
     let txt;
     if (arActive()) {
-      // Mit Auto-Refresh nur dessen Countdown: jeder Refresh setzt auch TAMs eigenen Timer zurück – der
-      // TAM-Timer (z. B. 60 s) läuft dann nie ab, ein zweiter Countdown wäre nur verwirrend
-      const nextOwn = Math.max(0, lastAnyRefreshAt + cfg.intervalSec * 1000 - now);
-      txt = `Auto-Refresh in ${fmtDur(nextOwn)} (alle ${cfg.intervalSec} s)`;
+      // Mit Auto-Refresh nur dessen Countdown: jeder Refresh setzt auch TAMs eigenen Timer zurück
+      txt = `Auto-Refresh in ${fmtDur(Math.max(0, lastAnyRefreshAt + cfg.intervalSec * 1000 - now))} (alle ${cfg.intervalSec} s)`;
     } else if (!t.enabled) {
-      txt = 'Auto-Refresh aus · TAM-Aktualisierung aus (Checkbox „Automatisch alle … Minuten“)';
+      txt = 'TAM-Aktualisierung aus';
     } else {
       const per = t.periodMs ? ` (alle ${fmtDur(t.periodMs)})` : '';
-      txt = t.at ? `Nächste TAM-Aktualisierung in ${fmtDur(t.at - now)}${per} – ${t.src}` : `TAM-Aktualisierung${per}: wartet auf ersten Refresh`;
+      txt = t.at ? `TAM in ${fmtDur(t.at - now)}${per}` : `TAM${per}: wartet auf ersten Refresh`;
     }
-    if (cfg.silentOn) txt += ` · Silent Reload alle ${cfg.silentSec} s`;
+    if (cfg.silentOn) txt += ` · Silent alle ${cfg.silentSec} s`;
     checkScheduleChange();
-    if (!inSchedule() && (cfg.autoRefresh || cfg.silentOn)) {
-      txt = `⏾ Außerhalb der Arbeitszeit (${cfg.schedFrom}–${cfg.schedTo}): Auto-Refresh und Silent Reload pausiert · ${txt}`;
-    }
-    if (cfg.pushOn) txt += /verbunden/.test(pushState) ? ' · Push-Signal ✓' : ' · Push-Signal getrennt';
+    if (!inSchedule() && (cfg.autoRefresh || cfg.silentOn)) txt = `⏾ außerhalb der Arbeitszeit – Auto-Refresh/Silent pausiert · ${txt}`;
     el.textContent = txt;
   }
 
@@ -2249,6 +2246,8 @@
   }
   function renderPush() {
     renderPushPage();
+    const tab = document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-push"]');
+    if (tab) tab.textContent = cfg.pushOn && /verbunden/.test(pushState) ? 'Push-Signal ✓' : 'Push-Signal';
     const el = document.getElementById('tamauto-push-state');
     if (el) {
       el.textContent = cfg.pushOn ? pushState : 'aus';
@@ -2331,9 +2330,9 @@
     renderHeadState();
     const el = document.getElementById('tamauto-places');
     const xb = places.block || { plz: [], orte: [] };
-    if (el) el.textContent = `Ortsliste: ${places.plz.length} PLZ / ${places.orte.length} Orte · ` +
-      `Sperrliste: ${xb.plz.length + xb.orte.length}` +
-      (places.loadedAt ? ` (geladen ${new Date(places.loadedAt).toLocaleString('de-DE')})` : ' – nicht geladen');
+    const at = places.loadedAt && new Date(places.loadedAt);
+    if (el) el.textContent = `Ortsliste ${places.plz.length} PLZ · Sperrliste ${xb.plz.length + xb.orte.length + (places.blockAddr || []).length} · ` +
+      (!at ? 'nicht geladen' : `geladen ${at.toDateString() === new Date().toDateString() ? at.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : at.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`);
     const upd = document.getElementById('tamauto-bl-updated');
     if (upd) {
       const at = places.loadedAt && new Date(places.loadedAt);
@@ -2361,8 +2360,7 @@
         <div id="tamauto-tab" style="font-weight:bold;margin:4px 0"></div>
         <div id="tamauto-places"></div>
         <div id="tamauto-status" style="color:#555">bereit</div>
-        <div id="tamauto-refresh" style="color:#555"></div>
-        <div id="tamauto-sync" style="color:#555"></div>
+        <div style="color:#555"><span id="tamauto-refresh"></span><span id="tamauto-sync"></span></div>
         <div id="tamauto-prio-info" style="color:#555" title="Ändern unter „Erweiterte Einstellungen“ → Priorität"></div>
         <div id="tamauto-tabbar" style="display:flex;flex-wrap:wrap;gap:0 2px;margin-top:6px">
           <button class="tamauto-tabbtn" data-page="tamauto-page-main">Bedienung</button>
