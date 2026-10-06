@@ -714,6 +714,14 @@ describe('Ihr Zeichen still setzen (Auftragsbuch)', { skip }, () => {
     assert.equal($('tamauto-zeichen-text').value, 'neu');
   });
 
+  it('Preis aus „Angenommene Aufträge“ ins Auftragsbuch übernommen', async () => {
+    tam = startTam({ gm: { places: KOELN, orderbook: [{ ts: today, nr: 'MW3190203', plz: '50825', ort: 'Köln', preis: null }] } });
+    await tam.ready();
+    tam.addAccepted('MW3190203', '', { id: '3705233', zeichen: '', preis: '77,50 €' });
+    tam.selectTab('AgentEigeneAuftraege');
+    assert.ok(await until(() => tam.store.get('orderbook')[0].preis === 77.5, 3000), JSON.stringify(tam.store.get('orderbook')));
+  });
+
   it('vorhandenes Zeichen aus „Angenommene Aufträge“ im Auftragsbuch, grau', async () => {
     await setup();
     assert.ok(await until(() => bookRow('MW3190202') && bookRow('MW3190202').textContent.includes('PM'), 2000));

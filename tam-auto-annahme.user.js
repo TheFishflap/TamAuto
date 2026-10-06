@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.20.4
+// @version      1.20.5
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -515,14 +515,14 @@
   }
 
   // Aus „Angenommene Aufträge“ ins Auftragsbuch übernehmen, sobald die Tabelle dort angezeigt wird: interne ID,
-  // Ihr Zeichen (so, wie es in TAM steht) und – für vorgemerkte Aufträge – den Endtermin (Agent). AuftragsNr und ID
+  // Ihr Zeichen und Preis (so, wie sie in TAM stehen) und – für vorgemerkte Aufträge – den Endtermin (Agent). AuftragsNr und ID
   // stehen dort in ausgeblendeten Spalten (Zuordnung über die Spalten-ID).
   function scanAccepted() {
     const panel = document.getElementById(cfg.acceptedTabId);
     if (!panel || panel.closest('.x-hide-display')) return;
     const info = new Map([...panel.querySelectorAll('.x-grid3-row')].map((r) => [text(r.querySelector('td.x-grid3-td-teilAuftragNr')).toUpperCase(), {
       sla: text(r.querySelector('td.x-grid3-td-slaEndeAgent')), tid: text(r.querySelector('td.x-grid3-td-id')).replace(/\D/g, ''),
-      zeichen: text(r.querySelector('td.x-grid3-td-zeichenAgent')) }]));
+      zeichen: text(r.querySelector('td.x-grid3-td-zeichenAgent')), preis: parseEuro(text(r.querySelector('td.x-grid3-td-preis'))) }]));
     const book = GM_getValue('orderbook', []);
     let changed = 0; const red = [];
     book.forEach((e) => {
@@ -530,6 +530,7 @@
       if (!a) return;
       if (a.tid && e.tid !== a.tid) { e.tid = a.tid; changed++; }
       if ((e.zeichen || '') !== a.zeichen) { e.zeichen = a.zeichen; changed++; }
+      if (a.preis != null && e.preis !== a.preis) { e.preis = a.preis; changed++; }
       if (e.terminWeg && !e.sla && slaMs(a.sla) !== null) { e.sla = a.sla; changed++; if (terminRed(e)) red.push(e.nr); }
     });
     if (!changed) return;
@@ -654,8 +655,6 @@
     document.getElementById('tamauto-ob-sum').innerHTML =
       `<b>${rows.length} Aufträge</b> · <b>${Object.keys(perPlz).length} PLZ</b> · Summe gesamt <b>${fmtEuro(sum)}</b>` +
       (noPrice ? ` <span style="color:#555">(${noPrice} ohne Preis)</span>` : '');
-    document.getElementById('tamauto-ob-plz').textContent = Object.entries(perPlz)
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([p, c]) => `${p} (${c})`).join(' · ');
     renderHitRate(from);
   }
 
@@ -1869,23 +1868,24 @@
     if (!box || box.style.display === 'none') return;
     const [st, col] = !cfg.enabled ? ['■ GESTOPPT', '#c62828'] : onPublishedTab() ? ['● AKTIV', '#2e7d32'] : ['⏸ PAUSIERT', '#b26a00'];
     const s = document.getElementById('tamauto-mini-state'); s.textContent = st; s.style.color = col;
-    // nächster Refresh: der frühere von eigenem Auto-Refresh und TAM-Aktualisierung
+    // nächste Aktualisierung: eigener Auto-Refresh bzw. TAM, dazu der nächste Silent Reload
     const t = tamNext();
-    let next = !t.enabled ? 'TAM-Aktualisierung aus' : 'nach der nächsten TAM-Aktualisierung';
-    // mit Auto-Refresh nur dessen Countdown (jeder Refresh setzt TAMs Timer zurück), sonst TAM
-    if (arActive()) next = `in ${fmtDur(Math.max(0, lastAnyRefreshAt + cfg.intervalSec * 1000 - now))} (Auto-Refresh)`;
-    else if (t.enabled && t.at) next = `in ${fmtDur(t.at - now)} (TAM)`;
+    let next = arActive() ? `Auto-Refresh in ${fmtDur(Math.max(0, lastAnyRefreshAt + cfg.intervalSec * 1000 - now))}`
+      : t.enabled && t.at ? `TAM in ${fmtDur(t.at - now)}` : t.enabled ? 'TAM: nächste Aktualisierung' : 'TAM-Aktualisierung aus';
+    if (cfg.silentOn) {
+      next += !inSchedule() ? ' · Silent pausiert' : !tamLoadReq ? ' · Silent wartet auf Refresh'
+        : ` · Silent in ${fmtDur(Math.max(0, lastSilentAt + cfg.silentSec * 1000 - now))}`;
+    }
     document.getElementById('tamauto-mini-next').textContent = next;
     const book = GM_getValue('orderbook', []);
     const last = [...book].reverse().find((e) => !e.zu) || book[book.length - 1];
     document.getElementById('tamauto-mini-last').textContent = last
-      ? `${last.nr} · ${last.plz} ${last.ort} · ${new Date(last.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
-      : 'noch keiner';
+      ? `Letzter: ${last.nr} · ${last.plz} ${last.ort} · ${new Date(last.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+      : 'Letzter: noch keiner';
     const from = new Date(new Date().setHours(0, 0, 0, 0));
     const rows = Object.values(hitStats()).filter((e) => new Date(e.ts) >= from && e.s !== 'gesperrt');
     const ang = rows.filter((e) => e.s === 'angenommen').length;
-    document.getElementById('tamauto-mini-rate').textContent = rows.length ? `${ang} von ${rows.length} passenden (${pct(ang, rows.length)})` : 'heute noch keine passenden';
-    document.getElementById('tamauto-mini-prio').textContent = prioText();
+    document.getElementById('tamauto-mini-rate').textContent = rows.length ? `heute ${ang}/${rows.length} (${pct(ang, rows.length)})` : 'heute noch keine passenden';
   }
 
   function renderSync(now) {
@@ -2327,14 +2327,9 @@
     p.innerHTML = `
       <div id="tamauto-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:move;white-space:nowrap">
         <b style="margin-right:auto">TAM Auto-Annahme v${VERSION}</b><span id="tamauto-head-state" style="display:none;font-weight:bold"></span><button id="tamauto-toggle" title="Automatische Annahme starten / stoppen"></button><span id="tamauto-min" style="cursor:pointer;padding:0 4px;font-weight:bold;font-size:22px;line-height:18px;min-width:18px;text-align:center;color:#1a4d8f">–</span></div>
-      <div id="tamauto-mini" style="display:none;margin-top:4px;line-height:1.5">
-        <div id="tamauto-mini-state" style="font-size:18px;font-weight:bold"></div>
-        <table style="border-collapse:collapse">
-          <tr><td style="color:#555;padding-right:8px">Nächster Refresh</td><td id="tamauto-mini-next" style="font-weight:bold"></td></tr>
-          <tr><td style="color:#555;padding-right:8px">Letzter Auftrag</td><td id="tamauto-mini-last"></td></tr>
-          <tr><td style="color:#555;padding-right:8px">Trefferquote heute</td><td id="tamauto-mini-rate"></td></tr>
-          <tr><td style="color:#555;padding-right:8px">Priorität</td><td id="tamauto-mini-prio"></td></tr>
-        </table>
+      <div id="tamauto-mini" style="display:none;margin-top:2px;line-height:1.4;font-size:11px">
+        <div><span id="tamauto-mini-state" style="font-weight:bold"></span> · <span id="tamauto-mini-next"></span></div>
+        <div style="color:#555"><span id="tamauto-mini-last"></span> · <span id="tamauto-mini-rate"></span></div>
       </div>
       <div id="tamauto-body">
         <a id="tamauto-update" href="${UPDATE_URL}" target="_blank" style="display:none;font-weight:bold;color:#1a4d8f;margin:4px 0"></a>
@@ -2558,7 +2553,6 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
             <span>Zeitraum <select id="tamauto-ob-range">
               <option value="today">Heute</option><option value="week">Letzte 7 Tage</option>
               <option value="month">Dieser Monat</option><option value="all">Alle</option></select></span>
-            <button id="tamauto-ob-clear" title="Auftragsbuch vollständig löschen">Liste leeren</button>
           </div>
           <div class="tamauto-chk" style="margin-top:4px;gap:6px">
             <label class="tamauto-chk"><input type="checkbox" id="tamauto-zeichen-on"> <b>Ihr Zeichen setzen</b></label>
@@ -2576,7 +2570,6 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
             </table>
           </div>
           <div id="tamauto-ob-sum" style="margin-top:4px;padding-top:4px;border-top:2px solid #1a4d8f"></div>
-          <div id="tamauto-ob-plz" style="color:#555;margin-top:2px"></div>
           <div id="tamauto-ob-rate" style="margin-top:6px;padding:4px 6px;background:#f3f7fc;border:1px solid #c9d8ee;border-radius:3px"
             title="Passend = veröffentlichte Aufträge, deren PLZ in der Ortsliste steht. Tatsächlich verfügbar = davon versucht und beim Öffnen nicht schon an einen anderen Anbieter vergeben."></div>
         </div>
@@ -2938,10 +2931,6 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
 
     // Auftragsbuch
     $('tamauto-ob-range').onchange = renderOrderbook;
-    $('tamauto-ob-clear').onclick = () => {
-      if (!confirm('Auftragsbuch vollständig löschen?')) return;
-      GM_setValue('orderbook', []); log('Auftragsbuch geleert.'); renderOrderbook();
-    };
 
     // Tages-Annahmeliste (nur exakt 5 Ziffern)
     const addAl = () => {

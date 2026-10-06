@@ -248,6 +248,7 @@ function startTam(opts = {}) {
     row.querySelector('td.x-grid3-td-slaEndeAgent').textContent = sla || '';
     if (extra.id !== undefined) row.querySelector('td.x-grid3-td-id').textContent = extra.id;
     if (extra.zeichen !== undefined) row.querySelector('td.x-grid3-td-zeichenAgent').textContent = extra.zeichen;
+    if (extra.preis !== undefined) row.querySelector('td.x-grid3-td-preis').textContent = extra.preis;
     if (!same) body.appendChild(row);
     return row;
   };
