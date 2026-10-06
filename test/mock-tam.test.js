@@ -921,3 +921,13 @@ describe('Lizenz anfragen auf der Anmeldeseite', { skip }, () => {
     assert.equal(tam.posts('-anfrage')[0].acct, '');
   });
 });
+
+describe('Kontoprüfung beim Start auf der Anmeldeseite', { skip }, () => {
+  it('Kopfzeile zeigt die Anmeldeseite → nicht als fremdes Konto sperren', async () => {
+    const html = fixture('veroeffentlicht-leer').replace(/IB Thomée GmbH/g, 'TAM - TÜV SÜD Auftragsmanagement | Anmeldung mit Single-Sign-On');
+    tam = startTam({ html, gm: { places: KOELN } });
+    await tam.ready();
+    assert.ok(tam.mainPanel(), 'Script hat sich als fremdes Konto gesperrt');
+    assert.equal(tam.posts('-status').filter((m) => m.t === 'fremdkonto').length, 0);
+  });
+});

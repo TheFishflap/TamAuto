@@ -3402,7 +3402,8 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     const ok = await waitFor(() => { seen = tamAccount(); return ACCOUNT_OK.test(seen) ? seen : null; }, 15000, 500);
     if (ok) { tamAcct = (ok.match(ACCOUNT_OK) || [''])[0]; return { ok: true, acct: tamAcct }; }
     tamAcct = seen.slice(0, 80);
-    if (!seen) { log('Kontoprüfung: Kontoname oben rechts nicht gefunden – übersprungen.', 'debug'); return { ok: true, acct: '' }; }
+    // Kein Kontoname oder noch die TAM-Anmeldeseite (Single-Sign-On) → nicht prüfbar, nicht sperren
+    if (!seen || /anmeld|single.?sign|login/i.test(seen)) { log(`Kontoprüfung: ${seen ? 'TAM-Anmeldeseite' : 'Kontoname oben rechts nicht gefunden'} – übersprungen.`, 'debug'); return { ok: true, acct: '' }; }
     return { ok: false, acct: tamAcct };
   }
 
