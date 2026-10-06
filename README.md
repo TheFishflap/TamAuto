@@ -396,6 +396,11 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.21.11 – 2026-10-06
+- **Silent Reload ersetzt den Auto-Refresh:** Silent Reload ist jetzt standardmäßig **an, alle 30 s** (wer ihn ausdrücklich ausgeschaltet oder einen eigenen Wert eingestellt hatte, behält das). Der Auto-Refresh entfällt.
+- **MA-Management gleicht mit TAM ab:** Beim Öffnen des Reiters liest das Script (höchstens alle 5 min, nur im Ruhezustand) kurz „Angenommene Aufträge“ und übernimmt die Zeichen – die Zahlen (Mahnungen) beruhen so auf dem Stand in TAM, nicht auf dem, was dieses Gerät zuletzt gesehen hat.
+- **Morgenroutine einmal um 07:58** (statt ab 07:30; wer später kommt, holt sie bis 09:00 nach). Hat ein anderes Gerät sie schon gemeldet, entfällt sie auf den übrigen Geräten.
+
 ### 1.21.10 – 2026-10-06
 - **„XX zurück“ im Zeichen** (auch bei Aufträgen von früheren Tagen) setzt den Auftrag auf die **Tagesblacklist** (Rückgaben von heute) und meldet ihn den anderen Geräten; er wird nicht erneut angenommen.
 - **Morgenroutine:** einmal je Tag zwischen 07:30 und 09:00 öffnet das Script kurz „Angenommene Aufträge“, gleicht die Zeichen ab und wechselt zurück – so stehen „zurück“-Aufträge **vor 08:00** auf der Blacklist, wenn TAM sie aus dem Account nimmt und neu veröffentlicht. Nur im Ruhezustand (nicht während einer Annahme). Hinweis: gelesen wird die angezeigte Seite der Liste (bis 500 Zeilen).

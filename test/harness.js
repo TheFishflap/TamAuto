@@ -60,6 +60,7 @@ function startTam(opts = {}) {
   // ---- Tampermonkey / Browser-APIs
   const store = new Map(Object.entries({
     installId: INSTALL_ID, licenseKey: licenseKey(), delayOnV2: false, running: true,
+    accSyncAt: Date.now(), // MA-Management gleicht beim Öffnen mit TAM ab – in den übrigen Tests nicht
     morgenScan: new Date().toLocaleDateString('sv-SE'), // Morgenroutine (07:30–09:00) stört die übrigen Tests nicht; eigene Tests setzen ''
     places: { v: 2, plz: [], orte: [], block: { plz: [], orte: [] }, loadedAt: new Date().toISOString(), source: 'Test' },
     ...(opts.gm || {}),
@@ -269,7 +270,7 @@ function startTam(opts = {}) {
   tam.close = () => { closed = true; timers.forEach((id) => { w.clearTimeout(id); w.clearInterval(id); }); sources.forEach((s) => s.close()); };
 
   if (opts.fakeHour != null) { const fakeHour = opts.fakeHour; // Uhrzeit festlegen (Arbeitszeit 08:00–18:00 ist im Script fest): lokale Stunde = fakeHour, Uhr läuft weiter
-    const RD = w.Date, n = new RD(), off = new RD(n).setHours(fakeHour, 30, 0, 0) - n.getTime();
+    const RD = w.Date, n = new RD(), off = new RD(n).setHours(fakeHour, opts.fakeMinute != null ? opts.fakeMinute : 30, 0, 0) - n.getTime();
     w.Date = class extends RD { constructor(...a) { if (a.length) super(...a); else super(RD.now() + off); } static now() { return RD.now() + off; } };
   }
   w.eval(fs.readFileSync(SCRIPT_PATH, 'utf8'));

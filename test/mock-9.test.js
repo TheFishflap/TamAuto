@@ -165,8 +165,8 @@ describe('„XX zurück“ und Morgenroutine', { skip }, () => {
     assert.ok(ret().MW3190801, JSON.stringify(ret()));
   });
 
-  it('Morgenroutine: ab 07:30 einmal „Angenommene Aufträge“ lesen und zurück zu „Veröffentlichte Aufträge“', async () => {
-    tam = startTam({ fakeHour: 7, gm: { morgenScan: '', places: KOELN, orderbook: [{ ts: old, nr: 'MW3190802', plz: '44141', ort: 'Dortmund', tid: '3706802', zeichen: '' }] } });
+  it('Morgenroutine: ab 07:58 einmal „Angenommene Aufträge“ lesen und zurück zu „Veröffentlichte Aufträge“', async () => {
+    tam = startTam({ fakeHour: 7, fakeMinute: 58, gm: { morgenScan: '', places: KOELN, orderbook: [{ ts: old, nr: 'MW3190802', plz: '44141', ort: 'Dortmund', tid: '3706802', zeichen: '' }] } });
     tam.addAccepted('MW3190802', '', { id: '3706802', zeichen: 'LE zurück' });
     tam.selectTab('AgentVeroeffentlichteAuftraege');
     await tam.ready();
@@ -176,10 +176,34 @@ describe('„XX zurück“ und Morgenroutine', { skip }, () => {
     assert.equal(book().find((e) => e.nr === 'MW3190802').zeichen, 'LE zurück');
   });
 
-  it('Morgenroutine läuft vor 07:30 nicht', async () => {
-    tam = startTam({ fakeHour: 6, gm: { morgenScan: '', places: KOELN } });
+  it('Morgenroutine läuft vor 07:58 nicht', async () => {
+    tam = startTam({ fakeHour: 7, fakeMinute: 30, gm: { morgenScan: '', places: KOELN } });
     await tam.ready();
     await sleep(6500);
     assert.equal(tam.store.get('morgenScan'), '');
+  });
+
+  it('hat ein anderes Gerät die Routine gemeldet, entfällt sie hier', async () => {
+    tam = startTam({ fakeHour: 7, fakeMinute: 58, gm: { morgenScan: '', places: KOELN } });
+    await tam.ready();
+    tam.ntfy('tamret-', { v: 1, t: 'scan', nrs: [], at: Date.now() });
+    assert.ok(await until(() => tam.store.get('morgenScan') === new Date().toLocaleDateString('sv-SE'), 2000));
+    await sleep(6500);
+    assert.ok(!tam.logs().some((l) => /Morgenroutine: \d+ Zeilen/.test(l)), 'Routine lief trotz Meldung');
+  });
+
+  it('Routine gemeldet: nach dem Lauf geht eine „scan“-Meldung an die anderen Geräte', async () => {
+    tam = startTam({ fakeHour: 7, fakeMinute: 58, gm: { morgenScan: '', places: KOELN } });
+    await tam.ready();
+    assert.ok(await until(() => tam.posts('tamret-').some((m) => m.t === 'scan'), 15000), tam.logs().slice(-5).join('\n'));
+  });
+
+  it('MA-Management gleicht beim Öffnen mit „Angenommene Aufträge“ (TAM) ab', async () => {
+    tam = startTam({ gm: { accSyncAt: 0, places: KOELN, orderbook: [{ ts: new Date().toISOString(), nr: 'MW3190803', plz: '44141', ort: 'Dortmund', tid: '3706803', zeichen: '' }] } });
+    tam.addAccepted('MW3190803', '', { id: '3706803', zeichen: 'GS 12.10 10:00 T' });
+    tam.selectTab('AgentVeroeffentlichteAuftraege');
+    await tam.ready();
+    tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-ma"]').click();
+    assert.ok(await until(() => (tam.store.get('orderbook').find((e) => e.nr === 'MW3190803') || {}).zeichen === 'GS 12.10 10:00 T', 15000), tam.logs().slice(-5).join('\n'));
   });
 });

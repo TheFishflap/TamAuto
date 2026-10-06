@@ -68,10 +68,19 @@ describe('Silent Reload', { skip }, () => {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();
     const cb = tam.document.getElementById('tamauto-silent-on');
-    assert.equal(cb.checked, false);
-    assert.equal(state(), 'aus');
+    assert.equal(cb.checked, true, 'Standard: an (ersetzt den Auto-Refresh)');
+    assert.equal(tam.document.getElementById('tamauto-silent').value, '30');
     cb.click();
-    assert.equal(tam.store.get('silentOn'), true);
+    assert.equal(tam.store.get('silentOn'), false);
+    assert.equal(state(), 'aus');
+  });
+
+  it('ausdrücklich ausgeschaltet oder eigener Wert bleibt erhalten; Auto-Refresh gibt es nicht mehr', async () => {
+    tam = startTam({ gm: { places: KOELN, silentOn: false, silentSec: 12 } });
+    await tam.ready();
+    assert.equal(tam.document.getElementById('tamauto-silent-on').checked, false);
+    assert.equal(tam.document.getElementById('tamauto-silent').value, '12');
+    assert.equal(tam.document.getElementById('tamauto-ar').parentElement.parentElement.style.display, 'none');
   });
 
   it('pausiert außerhalb der Arbeitszeit', async () => {

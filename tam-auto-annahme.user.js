@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.21.10
+// @version      1.21.11
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -68,7 +68,7 @@
     // eigener Schlüssel seit Wegfall des Testmodus: wer im Testmodus lief, startet nicht ungefragt live
     enabled: GM_getValue('running', DEFAULTS.enabled),
     maxPerCycle: GM_getValue('maxPerCycle', DEFAULTS.maxPerCycle),
-    autoRefresh: GM_getValue('autoRefreshV2', false), // Standard aus (neuer Schlüssel ab 1.11: gilt einmal für alle)
+    autoRefresh: false, // ab 1.21.11 ersetzt der Silent Reload den Auto-Refresh (Oberfläche entfällt, läuft nie mehr)
     // Protokoll im Bedienfeld ("Console Log"), Standard aus. Neuer Schlüssel ab 1.6.1, damit ein früher
     // eingeschaltetes Log nach dem Update bei allen aus ist.
     consoleLog: GM_getValue('consoleLogV2', false),
@@ -88,8 +88,8 @@
     prioOrder: GM_getValue('prioOrder', ({ ort: ['anzahl', 'summe', 'preis'], summe: ['summe', 'preis', 'keine'],
       preis: ['preis', 'keine', 'keine'], tabelle: ['keine', 'keine', 'keine'] })[GM_getValue('prioMode', 'ort')] || ['anzahl', 'summe', 'preis']),
     // Silent Reload: an/aus per Checkbox (wie Auto-Refresh), Intervall 1–60 s. Früher hieß 0 s „aus“ → einmalig übernommen
-    silentOn: GM_getValue('silentOn', GM_getValue('silentSec', 0) > 0),
-    silentSec: GM_getValue('silentSec', 0) || 10,
+    silentOn: GM_getValue('silentOn', true),            // Standard an (ersetzt den Auto-Refresh); wer ihn ausgeschaltet hat, behält das
+    silentSec: GM_getValue('silentSec', 0) || 30,       // Standard 30 s, sonst der eingestellte Wert
     // Arbeitszeit: außerhalb pausieren Auto-Refresh und Silent Reload (Einstellungen bleiben erhalten) – fest 08:00–18:00, nicht einstellbar
     schedOn: true,
     schedFrom: '08:00',
@@ -952,11 +952,13 @@
   }
   const ACC_CHUNK = 8; // ntfy erlaubt höchstens 4 KB je Nachricht
   function retPost(t, nrs) {
-    if (!nrs.length) return;
+    if (!nrs.length && t !== 'scan') return;
     // Rückgaben: nur Nummern. Annahmen: Nummern + Lizenzname des Geräts; auf dem geheimen Kanal zusätzlich die Auftragsdaten
     const base = () => Object.assign({ v: 1, t, at: Date.now() }, t === 'acc' && license ? { by: String(license.name || '').slice(0, 40) } : {});
     retChanP.then(async (ch) => {
-      if (ch) {
+      if (ch && t === 'scan') await licFetch(`${LIC_NTFY}/${ch.topic}`, { method: 'POST', body: JSON.stringify(await sealMsg(ch, Object.assign(base(), { nrs: [] }))) });
+      else if (!ch && t === 'scan') await licFetch(`${LIC_NTFY}/${RET_TOPIC}`, { method: 'POST', body: JSON.stringify(Object.assign(base(), { nrs: [] })) });
+      else if (ch) {
         for (let i = 0; i < nrs.length; i += (t === 'acc' ? ACC_CHUNK : nrs.length)) {
           const part = nrs.slice(i, i + (t === 'acc' ? ACC_CHUNK : nrs.length));
           await licFetch(`${LIC_NTFY}/${ch.topic}`, { method: 'POST', body: JSON.stringify(await sealMsg(ch, Object.assign(base(), { nrs: part }, t === 'acc' ? { det: detailsFor(part) } : {}))) });
@@ -1010,6 +1012,7 @@
   }
   function onRetMessage(d, secure = false) {
     if (!d || d.v !== 1 || !Array.isArray(d.nrs) || d.nrs.length > 20 || new Date(d.at || 0).toLocaleDateString('sv-SE') !== today()) return;
+    if (d.t === 'scan') { GM_setValue('morgenScan', today()); log('Morgenroutine: von einem anderen Gerät schon erledigt.', 'debug'); return; }
     const nrs = d.nrs.map(nrKey).filter((x) => RET_NR.test(x));
     const info = { at: +d.at };
     if (d.t === 'acc') { addToday('accToday', nrs, info); addRemoteAccepts(nrs, String(d.by || '').slice(0, 40), +d.at, secure ? cleanDetails(d.det, nrs) : {}); }
@@ -2036,31 +2039,42 @@
 
   // Morgenroutine: einmal je Tag ab 07:30 „Angenommene Aufträge“ lesen (Reiter kurz öffnen, Zeichen abgleichen, zurück). Aufträge mit
   // „XX zurück“ kommen so vor 08:00 – wenn TAM sie aus dem Account nimmt und neu veröffentlicht – auf die Tagesblacklist.
-  const MORGEN_AB = 7 * 60 + 30, MORGEN_BIS = 9 * 60;
-  let morgenRunning = false, morgenTry = 0;
-  async function morgenScan() {
-    const nowD = new Date(), heute = today();
-    if (morgenRunning || busy || !license || GM_getValue('morgenScan', '') === heute) return;
-    const min = nowD.getHours() * 60 + nowD.getMinutes();
-    if (min < MORGEN_AB || min >= MORGEN_BIS || Date.now() - morgenTry < 10 * 60e3) return; // nur morgens (07:30–09:00)
-    if (!onPublishedTab() || Date.now() - lastAcceptAt < 60e3) return; // nur im Ruhezustand, nie mitten in einer Annahme
-    morgenRunning = true; morgenTry = Date.now();
+  const MORGEN_AB = 7 * 60 + 58, MORGEN_BIS = 9 * 60; // einmal kurz vor 08:00 (letzter Stand der Zeichen); wer später kommt, holt es bis 09:00 nach
+  let accSyncing = false;
+  // „Angenommene Aufträge“ einmal lesen: Reiter kurz öffnen, Zeichen abgleichen, zurück. Nur im Ruhezustand.
+  async function syncAcceptedTab(grund) {
+    if (accSyncing || busy || !license || !onPublishedTab() || Date.now() - lastAcceptAt < 60e3) return false;
+    accSyncing = true;
     try {
       const li = document.querySelector(`li[id$="__${cfg.acceptedTabId}"]`);
-      if (!li) { log('Morgenroutine: Reiter „Angenommene Aufträge“ nicht gefunden.', 'err'); return; }
-      log('Morgenroutine: „Angenommene Aufträge“ werden einmal gelesen …', 'debug');
+      if (!li) { log(`${grund}: Reiter „Angenommene Aufträge“ nicht gefunden.`, 'err'); return false; }
       fire(li.querySelector('.x-tab-strip-text') || li, ['mouseover', 'mousedown', 'mouseup', 'click']);
-      if (!(await waitFor(onAcceptedTab, 3000))) { log('Morgenroutine: Reiterwechsel fehlgeschlagen – nächster Versuch in 10 min.', 'err'); return; }
+      if (!(await waitFor(onAcceptedTab, 3000))) { log(`${grund}: Reiterwechsel fehlgeschlagen.`, 'err'); return false; }
       await waitFor(() => document.querySelectorAll(`#${cfg.acceptedTabId} .x-grid3-row`).length > 0, 10000);
       await sleep(800);
       scanAccepted();
-      GM_setValue('morgenScan', heute);
-      log(`Morgenroutine: ${document.querySelectorAll(`#${cfg.acceptedTabId} .x-grid3-row`).length} Zeilen aus „Angenommene Aufträge“ abgeglichen.`, 'ok');
+      GM_setValue('accSyncAt', Date.now());
+      log(`${grund}: ${document.querySelectorAll(`#${cfg.acceptedTabId} .x-grid3-row`).length} Zeilen aus „Angenommene Aufträge“ abgeglichen.`, 'ok');
+      return true;
     } finally {
-      morgenRunning = false;
+      accSyncing = false;
       if (!onPublishedTab()) await switchToPublishedTab();
     }
   }
+  // Morgenroutine: einmal je Tag (ab 07:58, bis 09:00 nachholbar). „XX zurück“ kommt so VOR 08:00 – wenn TAM die Aufträge aus dem Account
+  // nimmt und neu veröffentlicht – auf die Tagesblacklist. Hat ein anderes Gerät die Routine schon gemeldet, entfällt sie hier.
+  let morgenTry = 0;
+  async function morgenScan() {
+    const nowD = new Date(), heute = today();
+    if (accSyncing || busy || !license || GM_getValue('morgenScan', '') === heute) return;
+    const min = nowD.getHours() * 60 + nowD.getMinutes();
+    if (min < MORGEN_AB || min >= MORGEN_BIS || Date.now() - morgenTry < 10 * 60e3) return;
+    if (!onPublishedTab()) return;
+    morgenTry = Date.now();
+    if (await syncAcceptedTab('Morgenroutine')) { GM_setValue('morgenScan', heute); retPost('scan', []); }
+  }
+  // Beim Öffnen des MA-Managements mit TAM abgleichen (TAM ist die Quelle – nicht nur der lokale Stand), höchstens alle 5 min
+  function maAutoSync() { if (Date.now() - GM_getValue('accSyncAt', 0) > 5 * 60e3) syncAcceptedTab('MA-Management').then((ok) => { if (ok) renderMa(); }).catch(() => {}); }
 
   // ------------------------------------------------------------------ Hauptzyklus
   // reason: Anlass für das Protokoll (Refresh, Tabelle aktualisiert, Reiterwechsel, Start …)
@@ -2921,6 +2935,7 @@
   }
   const MA_RELOAD_MS = 30 * 60e3; // Kontakte alle 30 min (wie die Excel)
   function maAutoLoad() { // beim Öffnen des Reiters, wenn die Anfrage bekannt und der Stand älter als 5 min ist
+    maAutoSync();
     if (tamAcceptedReq && Date.now() - maKontakte.at > MA_RELOAD_MS) ladeMaKontakte().then(renderMa).catch(() => {});
   }
 
@@ -3203,7 +3218,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
           </div>
         </div>
         <div id="tamauto-page-main" style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          <span class="tamauto-chk">
+          <span style="display:none">
             <label class="tamauto-chk"><input type="checkbox" id="tamauto-ar"> Auto-Refresh</label>
             alle <input id="tamauto-int" type="number" min="10" style="width:48px;margin:0" value="${cfg.intervalSec}"> s
             <span class="tamauto-help" title="Auto-Refresh lädt die Tabelle schneller neu, um neue Aufträge früher zu finden. Ein niedrigerer Wert bedeutet eine höhere Auslastung und sollte mit Bedacht gewählt werden, um Auffälligkeiten zu vermeiden. Standard: 60 s (aus), Minimum: 10 s. Am TAM-Takt ausgerichtet: Das Script liest mit, wann TAM selbst neu lädt (Einstellung „Automatisch alle … Minuten“), und lässt den eigenen Refresh aus, wenn TAM gleich ohnehin aktualisiert. Über 60 s schaltet sich der Auto-Refresh ab – der Abgleich läuft dann nur mit der TAM-eigenen Aktualisierung.">?</span>
@@ -3431,7 +3446,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     };
     $('tamauto-silent-on').onchange = (e) => { cfg.silentOn = e.target.checked; GM_setValue('silentOn', cfg.silentOn); silentChanged(); };
     $('tamauto-silent').onchange = (e) => {
-      cfg.silentSec = Math.round(Math.min(60, Math.max(1, +e.target.value || 10)));
+      cfg.silentSec = Math.round(Math.min(60, Math.max(1, +e.target.value || 30)));
       e.target.value = cfg.silentSec; GM_setValue('silentSec', cfg.silentSec); silentChanged();
     };
     $('tamauto-silent-test').onclick = () => silentTest();
