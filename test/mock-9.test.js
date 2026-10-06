@@ -64,7 +64,9 @@ describe('Zuständigkeit und Zeichen aus dem Marktgebiet', { skip }, () => {
     assert.equal(book().find((e) => e.nr === 'MW3190602').zustSel, 'PM');
     assert.equal(bookRow('MW3190602').querySelector('select').value, 'PM');
     const go = $('tamauto-zeichen-go');
-    assert.match(go.textContent, /Kurzzeichen setzen \(2\)/); // GS (eindeutig) + PM (gewählt)
+    assert.match(go.textContent, /Kurzzeichen setzen \(1\)/); // nur PM: gewählt = angehakt; GS ist nicht angehakt
+    bookRow('MW3190601').querySelector('.tamzcb, .tamauto-zcb').click();
+    assert.match(go.textContent, /Kurzzeichen setzen \(2\)/);
     go.click();
     assert.ok(await until(() => tam.saves.length === 2, 4000), tam.logs().slice(-4).join('\n'));
     assert.ok(tam.saves.some((x) => /\|PM neu\|1\|2\|3\|4\|2\|5\|6\|5\|OImP\|7\|$/.test(x)), tam.saves.join('\n'));
@@ -75,7 +77,9 @@ describe('Zuständigkeit und Zeichen aus dem Marktgebiet', { skip }, () => {
   it('Kurzzeichen setzen: Mischgebiet ohne Auswahl bleibt unberührt; Fehler von TAM → nichts übernommen', async () => {
     await setup();
     tam.rpcSave = '//EX[1,["com.google.gwt.user.client.rpc.SerializationException"]]';
-    assert.match($('tamauto-zeichen-go').textContent, /\(1\)/); // nur MW3190601 (eindeutig)
+    assert.match($('tamauto-zeichen-go').textContent, /\(0\)/); // nichts angehakt
+    $('tamauto-zeichen-all').click();
+    assert.match($('tamauto-zeichen-go').textContent, /\(1\)/); // nur MW3190601 (eindeutig); das Mischgebiet ohne Auswahl bleibt draußen
     $('tamauto-zeichen-go').click();
     assert.ok(await until(() => tam.saves.length, 3000));
     await sleep(300);

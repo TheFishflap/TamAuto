@@ -712,6 +712,7 @@
   // Speichern im Dialog sendet: IAuftragService.saveMerkmal(Long interne ID, String Text). Kopfzeilen, Modul und
   // Prüfsumme stammen aus der mitgeschnittenen Listenabfrage (tamLoadReq). Kein Reiterwechsel, kein Dialog.
   const ZEICHEN_MAX = 20;
+  const zeichenSel = new Set(); // im Auftragsbuch angehakte AuftragsNrn (großgeschrieben) – nur diese schreibt „Kurzzeichen setzen“
   const GWT64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_';
   const gwtLong = (n) => { let v = BigInt(n), out = ''; do { out = GWT64[Number(v & 63n)] + out; v >>= 6n; } while (v > 0n); return out; };
   const gwtStr = (v) => String(v).replace(/\\/g, '\\\\').replace(/\|/g, '\\!');
@@ -854,6 +855,8 @@
       month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), all: new Date(0) }[range];
     const bis = nTage > 0 ? dayN(nTage - 1) : null;
     const rows = GM_getValue('orderbook', []).filter((e) => new Date(e.ts) >= from && (!bis || new Date(e.ts) < bis)).reverse();
+    const kand = new Set(zeichenKandidaten(true).map((o) => String(o.nr).toUpperCase())); // Zeichen schreibbar: Kürzel eindeutig oder im Dropdown gewählt
+    [...zeichenSel].forEach((k) => { if (!kand.has(k)) zeichenSel.delete(k); });
     tbody.innerHTML = '';
     rows.forEach((e) => {
       const tr = document.createElement('tr');
@@ -878,10 +881,17 @@
             if (zs.includes(e.zustSel)) sel.value = e.zustSel;
             sel.onchange = () => { // nur merken – geschrieben wird erst mit „Kurzzeichen setzen“
               const book = GM_getValue('orderbook', []); book.forEach((x) => { if (sameNr(x.nr, e.nr)) x.zustSel = sel.value; });
+              if (sel.value) zeichenSel.add(String(e.nr).toUpperCase()); else zeichenSel.delete(String(e.nr).toUpperCase());
               GM_setValue('orderbook', book); renderOrderbook();
             };
             td.appendChild(sel);
           }
+        }
+        if (i === 7 && kand.has(String(e.nr).toUpperCase())) { // Haken: nur angehakte Aufträge schreibt „Kurzzeichen setzen“
+          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.className = 'tamauto-zcb'; cb.style.margin = '0 3px 0 0'; cb.title = 'Für „Kurzzeichen setzen“ auswählen';
+          cb.checked = zeichenSel.has(String(e.nr).toUpperCase());
+          cb.onchange = () => { const k = String(e.nr).toUpperCase(); if (cb.checked) zeichenSel.add(k); else zeichenSel.delete(k); renderOrderbook(); };
+          td.insertBefore(cb, td.firstChild);
         }
         Object.assign(td.style, { padding: '1px 4px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap', textAlign: i === 4 ? 'right' : 'left' });
         tr.appendChild(td);
@@ -892,7 +902,10 @@
     });
     if (!rows.length) tbody.innerHTML = '<tr><td colspan="8" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
     const go = document.getElementById('tamauto-zeichen-go');
-    if (go) { const n = zeichenKandidaten(true, new Set(rows.map((e) => String(e.nr).toUpperCase()))).length; go.disabled = !n; go.textContent = `Kurzzeichen setzen (${n})`; }
+    const sichtbar = rows.map((e) => String(e.nr).toUpperCase()).filter((k) => kand.has(k));
+    const all = document.getElementById('tamauto-zeichen-all');
+    if (all) { all.checked = !!sichtbar.length && sichtbar.every((k) => zeichenSel.has(k)); all.disabled = !sichtbar.length; all.onchange = () => { sichtbar.forEach((k) => (all.checked ? zeichenSel.add(k) : zeichenSel.delete(k))); renderOrderbook(); }; }
+    if (go) { const n = sichtbar.filter((k) => zeichenSel.has(k)).length; go.disabled = !n; go.textContent = `Kurzzeichen setzen (${n})`; }
     // Unten: Anzahl Aufträge, Anzahl PLZ (mit Aufträgen je PLZ), Summe Euro
     const perPlz = {};
     rows.forEach((e) => { perPlz[e.plz] = (perPlz[e.plz] || 0) + 1; });
@@ -2691,7 +2704,7 @@
     if ((!manuell && !cfg.zeichenAuto) || !license) return;
     if (!tamLoadReq) { log('Kurzzeichen setzen: wartet auf die TAM-Anfrage („Veröffentlichte Aufträge“ einmal aktualisieren).', manuell ? 'err' : 'debug'); return; }
     const rows = [...document.querySelectorAll('#tamauto-ob-rows tr')].map((r) => String(r.dataset.nr || '').toUpperCase());
-    const cand = zeichenKandidaten(manuell, manuell ? new Set(rows.filter(Boolean)) : null).slice(0, 30);
+    const cand = zeichenKandidaten(manuell, manuell ? new Set(rows.filter((k) => k && zeichenSel.has(k))) : null).slice(0, 30);
     if (!cand.length) return;
     const ok = [], fail = [];
     for (const o of cand) {
@@ -2699,6 +2712,7 @@
       try { await setzeZeichen(o.nr, `${k} neu`, true); ok.push(`${o.nr} → ${k} neu`); } catch (e) { fail.push(`${o.nr} (${e.message})`); }
     }
     log(`Zeichen ${manuell ? 'gesetzt' : 'automatisch gesetzt'} (${ok.length}): ${ok.join(', ') || '–'}${fail.length ? ` · nicht gesetzt: ${fail.join('; ')}` : ''}`, ok.length ? 'ok' : 'debug');
+    if (manuell) zeichenSel.clear();
     renderOrderbook();
   }
   function tourLabel(t) {
@@ -3082,14 +3096,14 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
           </div>
           <div class="tamauto-chk" style="margin-top:4px;gap:6px">
             <button id="tamauto-zeichen-go" disabled>Kurzzeichen setzen (0)</button>
-            <span class="tamauto-help" title="Schreibt bei den angezeigten Aufträgen ohne Zeichen das Zeichen „KÜRZEL neu“ in TAM – still, ohne Reiterwechsel: für eindeutig zugeordnete Aufträge das Kürzel des Mitarbeiters, bei Mischgebieten das im Dropdown der Spalte „Zuständig“ gewählte (das Dropdown wählt nur aus, geschrieben wird erst mit diesem Knopf). Vorhandene Zeichen (grau) werden nie überschrieben. Danach folgt die Mail „Zugewiesen“ im MA-Management.">?</span>
+            <span class="tamauto-help" title="Schreibt bei den angehakten Aufträgen (Haken in der Spalte „Zuständig“, Kopfhaken = alle) das Zeichen „KÜRZEL neu“ in TAM – still, ohne Reiterwechsel: für eindeutig zugeordnete Aufträge das Kürzel des Mitarbeiters, bei Mischgebieten das im Dropdown der Spalte „Zuständig“ gewählte (das Dropdown wählt nur aus, geschrieben wird erst mit diesem Knopf). Vorhandene Zeichen (grau) werden nie überschrieben. Danach folgt die Mail „Zugewiesen“ im MA-Management.">?</span>
           </div>
           <div style="max-height:180px;overflow:auto;margin-top:4px;border:1px solid #ddd">
             <table style="border-collapse:collapse;width:100%;font-size:11px">
               <thead><tr style="background:#e8f0fb;position:sticky;top:0">
                 <th style="text-align:left;padding:2px 4px">Datum</th><th style="text-align:left;padding:2px 4px">AuftragsNr</th>
                 <th style="text-align:left;padding:2px 4px">PLZ</th><th style="text-align:left;padding:2px 4px">Ort</th>
-                <th style="text-align:right;padding:2px 4px">Euro</th><th style="text-align:left;padding:2px 4px">Ihr Zeichen</th><th style="text-align:left;padding:2px 4px" title="Angenommen von einem anderen Gerät (Lizenzname); leer = dieses Gerät">Von</th><th style="text-align:left;padding:2px 4px" title="Zuständig nach Marktgebiet: Kürzel (eindeutig) oder Auswahl bei Mischgebieten">Zuständig</th></tr></thead>
+                <th style="text-align:right;padding:2px 4px">Euro</th><th style="text-align:left;padding:2px 4px">Ihr Zeichen</th><th style="text-align:left;padding:2px 4px" title="Angenommen von einem anderen Gerät (Lizenzname); leer = dieses Gerät">Von</th><th style="text-align:left;padding:2px 4px" title="Zuständig nach Marktgebiet: Kürzel (eindeutig) oder Auswahl bei Mischgebieten. Haken = für „Kurzzeichen setzen“ ausgewählt"><input type="checkbox" id="tamauto-zeichen-all" style="margin:0 3px 0 0" title="Alle auswählbaren Aufträge dieser Liste an-/abhaken">Zuständig</th></tr></thead>
               <tbody id="tamauto-ob-rows"></tbody>
             </table>
           </div>
