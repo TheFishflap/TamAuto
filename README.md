@@ -43,7 +43,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 |---|---|
 | **Ortsliste** | Excel in SharePoint (Blatt „annehmen“), ohne Anmeldung, alle 30 min neu geladen |
 | **Sperrliste** | Excel-Blatt „nicht annehmen“ – diese PLZ werden nie angenommen (in der TAM-Tabelle **braun**); Blatt „nicht annehmen Adresse“ sperrt einzelne Adressen (PLZ + Straße) |
-| **Farbige TAM-Einträge** | Optional, Standard an: grün = wird angenommen, grau = nicht auf der Annahmeliste, braun = gesperrt, orange = zurückgegeben; gerade angenommene Aufträge ausgeblendet – nur lokale Anzeige |
+| **Farbige TAM-Einträge** | Optional, Standard an: grün = wird angenommen, grau = nicht auf der Annahmeliste, braun = gesperrt, orange = zurückgegeben; angenommene und laut stiller Abfrage vergebene Aufträge ausgeblendet (Tabelle bleibt aktuell ohne Neuladen) – nur lokale Anzeige |
 | **Rückgaben** | Heute angenommene und wieder zurückgegebene Aufträge werden auf **allen Geräten** bis Mitternacht nicht angenommen (in der TAM-Tabelle **orange**) |
 | **Tages-Annahmeliste** | Einzelne 5-stellige PLZ heute zusätzlich annehmen |
 
@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 ## Changelog
 
 ### 1.20.3 – 2026-10-06
+- **Tabelle bleibt aktuell ohne Neuladen:** Jede stille Abfrage (Silent Reload, Push-Signal, Nachfragen) gleicht die Tabelle
+  ab – Aufträge, die TAM nicht mehr meldet (inzwischen vergeben), werden ausgeblendet und nicht mehr versucht; tauchen sie
+  wieder auf, erscheinen sie wieder (Teil von „Farbige TAM-Einträge“, nur lokale Anzeige).
 - **Burst-Refresh entfernt** (Button und Dauerfeld). Stattdessen fragt das Script nach einem Refresh von Hand nach 1 s und
   2 s je einmal still bei TAM nach und lädt nur bei neuen Aufträgen neu.
 - Farbige TAM-Einträge: gesperrte Aufträge (Excel „nicht annehmen“) **braun** wie die Sperrliste im Bedienfeld (statt rot);

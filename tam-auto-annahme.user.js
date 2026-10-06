@@ -741,7 +741,7 @@
   }
   // Aufträge in der TAM-Tabelle markieren: Excel „nicht annehmen“ braun, heute zurückgegeben orange, nicht auf der
   // Annahmeliste grau, auf der Annahmeliste grün; Grund als Tooltip
-  const ROW_MARKS = ['tamauto-blocked', 'tamauto-returned', 'tamauto-nomatch', 'tamauto-match', 'tamauto-gone'];
+  const ROW_MARKS = ['tamauto-blocked', 'tamauto-returned', 'tamauto-nomatch', 'tamauto-match', 'tamauto-gone', 'tamauto-vanished'];
   // Gerade angenommene Aufträge stehen bis zum nächsten TAM-Refresh noch in der Tabelle → lokal ausblenden
   // (nicht löschen – TAMs Zeilenverwaltung bleibt unberührt). show = wieder einblenden (Annahme doch fehlgeschlagen).
   function hideAcceptedRows(nrs, show = false) {
@@ -765,7 +765,7 @@
         '.x-grid3-row.tamauto-returned, .x-grid3-row.tamauto-returned td { background: #ffe0b2 !important; }' +
         '.x-grid3-row.tamauto-nomatch td, .x-grid3-row.tamauto-nomatch td * { color: #9e9e9e !important; }' +
         '.x-grid3-row.tamauto-match, .x-grid3-row.tamauto-match td { background: #e8f5e9 !important; }' +
-        '.x-grid3-row.tamauto-gone { display: none !important; }';
+        '.x-grid3-row.tamauto-gone, .x-grid3-row.tamauto-vanished { display: none !important; }';
       document.head.appendChild(st);
     }
     all.forEach((o) => {
@@ -1048,6 +1048,7 @@
 
     let rows = [...grid.querySelectorAll('.x-grid3-row')];
     if (!rows.length) rows = [...grid.querySelectorAll('.x-grid3-body > div')].filter((r) => r.querySelector('td'));
+    rows = rows.filter((r) => !r.classList.contains('tamauto-vanished')); // laut TAM schon vergeben (syncVanished)
     return rows.map((row) => {
       const g = (k) => {
         if (!col[k] || !col[k].id) return '';
@@ -1941,7 +1942,23 @@
       .filter((s) => s.length >= 3 && s.length <= 80 && !/^(COM|JAVA|JAVAX|DE|ORG)\.[\w.$]+(\/\d+)?$/i.test(s))
       .map((s) => { const u = s.toUpperCase(); if (!raw.has(u)) raw.set(u, s); return u; }));
     lastSilentRaw = raw;
+    syncVanished(tokens);
     return { tokens, raw, ms: Date.now() - t0, bytes: txt.length };
+  }
+  // Tabelle aktuell halten ohne Neuladen: Aufträge, die in TAMs aktueller Antwort fehlen (inzwischen vergeben), lokal
+  // ausblenden; tauchen sie wieder auf (z. B. Rückgabe), wieder einblenden. Ausgeblendete Zeilen gelten im Abgleich als
+  // nicht vorhanden. Nur lokale Anzeige („Farbige TAM-Einträge“).
+  function syncVanished(tokens) {
+    if (!cfg.colorRows) return;
+    document.querySelectorAll(`#${cfg.tabPanelId} .x-grid3-row`).forEach((r) => {
+      const nr = text(r.querySelector('td.x-grid3-td-teilAuftragNr')).toUpperCase();
+      if (!nr) return;
+      const gone = !tokens.has(nr);
+      if (gone !== r.classList.contains('tamauto-vanished')) {
+        r.classList.toggle('tamauto-vanished', gone);
+        log(`${nr}: ${gone ? 'nicht mehr veröffentlicht – ausgeblendet' : 'wieder veröffentlicht – eingeblendet'}.`, 'debug');
+      }
+    });
   }
   // Fürs Log (Entwicklung): neue Einträge ungekürzt und roh, getrennt durch " | " – so fallen auch
   // ungewöhnliche Zeichen/Formate auf (vgl. AuftragsNr "SA040647", "9601182381-10")
@@ -2402,7 +2419,7 @@ Standard: 1 Anzahl am Ort · 2 Summe am Ort · 3 Einzelpreis.">?</span>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-colorrows"> <b>Farbige TAM-Einträge</b></label>
-              <span class="tamauto-help" title="Färbt die Aufträge in der TAM-Tabelle „Veröffentlichte Aufträge“ ein: grün = steht auf der Annahmeliste (wird angenommen), grau = nicht auf der Annahmeliste, braun = gesperrt (Excel „nicht annehmen“), orange = heute zurückgegeben. Der Grund steht im Tooltip der Zeile. Gerade angenommene Aufträge werden ausgeblendet, bis TAM die Tabelle neu lädt.
+              <span class="tamauto-help" title="Färbt die Aufträge in der TAM-Tabelle „Veröffentlichte Aufträge“ ein: grün = steht auf der Annahmeliste (wird angenommen), grau = nicht auf der Annahmeliste, braun = gesperrt (Excel „nicht annehmen“), orange = heute zurückgegeben. Der Grund steht im Tooltip der Zeile. Gerade angenommene Aufträge und solche, die laut Silent Reload/Push-Abfrage inzwischen vergeben sind, werden ausgeblendet – die Tabelle bleibt so aktuell, ohne neu zu laden.
 
 Wichtig: Die Farben ändern nur die Anzeige der TAM-Oberfläche lokal in diesem Browser. In TAM selbst, bei TÜV SÜD und bei anderen Nutzern ändert sich nichts. Standard: an.">?</span>
             </span>
