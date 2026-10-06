@@ -3443,7 +3443,10 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     } catch (e) { /* ohne Live-Verbindung: nur Nachholen */ }
   }
   function requestLicense(name, note) {
-    const acct = tamAcct || ((tamAccount().match(ACCOUNT_OK) || [])[0]) || tamAccount().slice(0, 80);
+    // Kontoname aus der TAM-Kopfzeile; steht dort die Anmeldeseite (noch nicht angemeldet), keinen Namen senden –
+    // sonst zeigt die Lizenzverwaltung fälschlich „FREMDES KONTO“
+    const head = tamAccount();
+    const acct = tamAcct || (head.match(ACCOUNT_OK) || [])[0] || (/anmeld|single.?sign|login/i.test(head) ? '' : head.slice(0, 80));
     return deviceKey().then((k) => licPost(LIC_TOPIC_REQ, { v: 1, t: 'anfrage', id: installId(), name: String(name || '').trim().slice(0, 60),
       ver: VERSION, exp: license ? license.exp : '', note: note || '', acct, pk: k.pub, at: Date.now() }));
   }

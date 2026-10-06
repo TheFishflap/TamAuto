@@ -398,6 +398,8 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 ### 1.20.7 – 2026-10-06
 - Statuszeilen im aufgeklappten Bedienfeld aufgeräumt (drei kurze Zeilen; Orte-Anzahl entfällt); Push-Signal zeigt
   „Push-Signal ✓“ im Reiter, wenn eingeschaltet und verbunden.
+- Lizenz anfragen auf der TAM-Anmeldeseite: kein Kontoname mehr mitgeschickt (wurde in der Lizenzverwaltung fälschlich
+  als „FREMDES KONTO“ angezeigt).
 
 ### 1.20.6 – 2026-10-06
 - **Auftragsbuch über alle Geräte:** Annahmen anderer Geräte erscheinen im Auftragsbuch mit dem Lizenznamen (neue Spalte

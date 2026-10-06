@@ -907,3 +907,17 @@ describe('Geräteübergreifendes Auftragsbuch', { skip }, () => {
     assert.ok(await until(() => { const e = book().find((x) => x.nr === 'MW3190302'); return e && e.plz === '35579' && e.ort === 'Wetzlar' && e.preis === 62.05; }, 3000), JSON.stringify(book()));
   });
 });
+
+describe('Lizenz anfragen auf der Anmeldeseite', { skip }, () => {
+  it('TAM zeigt die Anmeldeseite → Anfrage ohne Kontonamen (kein „FREMDES KONTO“)', async () => {
+    tam = startTam({ gm: { licenseKey: licenseKey({ id: 'ZZZZ-ZZZZ-ZZZZ-ZZZZ' }) } }); // keine gültige Lizenz → Lizenzfeld
+    await tam.ready();
+    const d = tam.document;
+    [...d.querySelectorAll('body *')].filter((e) => [...e.childNodes].some((n) => n.nodeType === 3 && /thom/i.test(n.nodeValue))).forEach((e) => e.remove());
+    const h = d.createElement('div'); h.textContent = 'TAM - TÜV SÜD Auftragsmanagement | Anmeldung mit Single-Sign-On'; d.getElementById('mainview').prepend(h);
+    d.getElementById('tamauto-lic-name').value = 'Test Nutzer';
+    d.getElementById('tamauto-lic-req').click();
+    assert.ok(await until(() => tam.posts('-anfrage').length, 3000), 'keine Anfrage gesendet');
+    assert.equal(tam.posts('-anfrage')[0].acct, '');
+  });
+});
