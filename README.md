@@ -28,6 +28,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Fern-Lizenzierung** | „Lizenz anfragen“ direkt im Script → Freischaltung in der Lizenzverwaltung von IB Thomée → das Script **aktiviert sich selbst**; Verlängerung per Klick (Reiter Info); signierte **Sperrliste** zum Entziehen (7 Tage offline erlaubt) |
 | **Verzögerung** | Standard an: 0,12 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0–0,5 s |
 | **Termin offen** | Terminvereinbarung nach der Annahme weggeklickt und SLA-Ende (laut „Angenommene Aufträge“) in ≤ 2 h → **rote 1** im Auftragsbuch |
+| **MA-Management** | Eigener Reiter: Mitarbeiter wählen, ihre Aufträge nach Marktgebiet (Excel, Blatt „Marktgebiete“), Tour aus „Ihr Zeichen“ gelesen (Kürzel, Datum, Uhrzeit beliebig; T/t/M/m), SLA-Ampel, nicht zugeordnete Aufträge, Mail-Entwurf mit Bausteinen, Cc-Auswahl und Absender. Hat keinen Einfluss auf die Annahme |
 | **Ihr Zeichen** | Im Auftragsbuch: Haken „Ihr Zeichen setzen“, Text (max. 20 Zeichen wie in TAM), Aufträge anklicken, „In TAM übernehmen“ – still gespeichert, ohne Fenster; belegte Felder (grau) werden nicht überschrieben |
 
 ### 🔄 Aktualisierung – gezielt statt dauerhaft
@@ -394,6 +395,15 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.21.0 – 2026-10-06
+- **Neuer Reiter „MA-Management“:** Aufträge der letzten 7 Tage je Mitarbeiter nach **Marktgebiet** (Excel, Blatt
+  „Marktgebiete“: PLZ-Anfang + Ort, mit Hinweisen wie „nur 42106“, „nur Choice“, „SIXT …“), Tour aus „Ihr Zeichen“ gelesen
+  (Kürzel, Datum und Uhrzeit in beliebiger Reihenfolge; T = telefonisch bestätigt, t = nur Versuch, M/m = Mail), SLA-Ampel,
+  Liste der **nicht zugeordneten** Aufträge, **Mail-Entwurf** mit Bausteinen (Neue Aufträge, Tour ergänzen, Mahnung, PMA),
+  Cc-Auswahl und Absender (Blatt „Kontakte“, letzte Auswahl gemerkt), Telefon/Kontakt aus TAM („Kontakte laden“), Kennzeichenversand unter
+  dem Hauptauftrag. Die Marktgebiete beeinflussen die Annahme **nicht** – es gelten nur die Blätter „annehmen“ und „nicht annehmen“.
+- Das Auftragsbuch hält Endtermin, Status, Referenz und Straße aus „Angenommene Aufträge“ aktuell.
 
 ### 1.20.8 – 2026-10-06
 - Lizenz anfragen auf der TAM-Anmeldeseite: kein Kontoname mehr mitgeschickt (wurde in der Lizenzverwaltung fälschlich
