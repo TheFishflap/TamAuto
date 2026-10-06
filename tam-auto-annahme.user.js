@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.21.6
+// @version      1.21.7
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -2666,10 +2666,12 @@
   }
   // Mahnung fällig: Kürzel ohne Datum, Zeichen älter als 2 h (bzw. Zeitpunkt unbekannt)
   const mahnungen = (all) => all.filter((o) => o.tour.status === 'ohneDatum' && o.tour.kuerzel && (!o.zeichenAt || Date.now() - o.zeichenAt > 2 * 3600e3));
+  // Mahnungen je MA (Kürzel im Zeichen); Summe = Zahl am Reiter
+  const mahnProMa = (all, ma) => new Map(ma.map((m) => [m.k, mahnungen(all.filter((o) => maZugewiesen(o, m))).length]));
   function updateMaBadge() {
     const b = document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-ma"]');
     if (!b) return;
-    const n = mahnungen(maOrders()).length;
+    const n = [...mahnProMa(maOrders(), maListe()).values()].reduce((a, c) => a + c, 0);
     b.textContent = n ? `MA-Management (${n})` : 'MA-Management'; b.title = n ? `${n} Mahnungen fällig (Kürzel gesetzt, Datum fehlt)` : '';
   }
   // „Ihr Zeichen“ eines Auftrags still setzen (Dropdown, Automatik); nie ein vorhandenes überschreiben
@@ -2730,11 +2732,13 @@
     const page = $('tamauto-page-ma'), sel = $('tamauto-ma-sel');
     if (!page || !sel || page.style.display === 'none') return;
     const ma = maListe();
-    const sigMa = ma.map((m) => m.k).join(',');
+    const mahnMa = mahnProMa(maOrders(), ma);
+    const sigMa = ma.map((m) => `${m.k}:${mahnMa.get(m.k)}`).join(',');
     if (sel.dataset.sig !== sigMa) {
+      const cur = sel.value;
       sel.dataset.sig = sigMa;
-      sel.innerHTML = ma.map((m) => `<option value="${escHtml(m.k)}">${escHtml(m.k)} – ${escHtml(m.name)}${m.backoffice ? ' (Backoffice)' : ''}</option>`).join('') || '<option value="">(Blatt „MA“ fehlt)</option>';
-      const last = GM_getValue('maSel', ''); if (ma.some((m) => m.k === last)) sel.value = last;
+      sel.innerHTML = ma.map((m) => `<option value="${escHtml(m.k)}">${escHtml(m.k)} – ${escHtml(m.name)}${m.backoffice ? ' (Backoffice)' : ''}${mahnMa.get(m.k) ? ` (${mahnMa.get(m.k)})` : ''}</option>`).join('') || '<option value="">(Blatt „MA“ fehlt)</option>';
+      const last = ma.some((m) => m.k === cur) ? cur : GM_getValue('maSel', ''); if (ma.some((m) => m.k === last)) sel.value = last;
     }
     const m = ma.find((x) => x.k === sel.value);
     const all = maOrders();

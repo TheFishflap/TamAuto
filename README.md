@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.21.7 – 2026-10-06
+- **MA-Management:** Im Mitarbeiter-Dropdown steht in Klammern die Zahl fälliger Mahnungen je MA (z. B. „PM – Name (2)“); die Summe ergibt die Zahl am Reiter „MA-Management (n)“.
+
 ### 1.21.6 – 2026-10-06
 - **Auftragsbuch:** Knopf **„Kurzzeichen setzen (n)“** (statt „In TAM übernehmen“) schreibt „KÜRZEL neu“ **nur für die angehakten Aufträge** (Haken in der Spalte „Zuständig“, Kopfhaken = alle): eindeutig Zuständige und Mischgebiete mit gewähltem Dropdown (wird beim Wählen automatisch angehakt). Das **Dropdown wählt nur aus** (wird gemerkt), geschrieben wird erst mit dem Knopf. Textfeld („neu“/„?“), Haken „Ihr Zeichen setzen“ und Zeilenauswahl entfallen.
 - **Zeitraum** zusätzlich: Gestern, Vorgestern, Vor 3 … Vor 7 Tagen (genau dieser Tag).

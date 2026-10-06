@@ -142,6 +142,8 @@ describe('Zuständigkeit und Zeichen aus dem Marktgebiet', { skip }, () => {
     await setup({ orderbook: b });
     assert.match(tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-ma"]').textContent, /\(1\)/);
     openMa('GS'); $('tamauto-ma-baustein').value = 'mahnung'; $('tamauto-ma-baustein').onchange();
+    assert.ok([...$('tamauto-ma-sel').options].some((o) => /^GS – GS Name \(1\)$/.test(o.textContent)), [...$('tamauto-ma-sel').options].map((o) => o.textContent).join('|'));
+    assert.ok([...$('tamauto-ma-sel').options].some((o) => /^PM – PM Name$/.test(o.textContent)));
     assert.match($('tamauto-ma-subject').value, /Erinnerung/); assert.match($('tamauto-ma-body').value, /MW3190601/);
     assert.match($('tamauto-ma-mahn').textContent, /Mahnung fällig: 1/);
     openMa('PM'); $('tamauto-ma-baustein').value = 'mahnung'; $('tamauto-ma-baustein').onchange();
