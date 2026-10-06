@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.25.0 – 2026-10-06
+- **Auftragsbuch-Abgleich über den geheimen Kanal:** Ein neu gestartetes Gerät meldet sich mit „hi“; die anderen Geräte antworten (zeitversetzt, höchstens alle 10 min) mit den Aufträgen ihrer **letzten 7 Tage** samt Auftragsdaten (je 10 pro Meldung). Jedes Gerät kennt so dasselbe Auftragsbuch – auch über die 12 Stunden hinaus, die ntfy Meldungen vorhält – und das MA-Management zeigt auf allen Geräten dieselben Zahlen. Empfangene Angaben werden geprüft und gekürzt, ältere als 7 Tage verworfen; auf dem öffentlichen Kanal (Lizenzen ohne Kanal-Schlüssel) gibt es das nicht. **Voraussetzung: Kanal-Schlüssel in der Lizenz-App verteilt.**
+
 ### 1.24.1 – 2026-10-06
 - **Start:** Der Reiter „Angenommene Aufträge“ wird ebenfalls geöffnet (sofort anklickbar), das Script bleibt aber in „Veröffentlichte Aufträge“; die Daten werden still geladen.
 - **Still geladene Liste wie in TAMs Reiter sortiert** (Endtermin aufsteigend, rote SLA zuerst), Seitengröße unverändert bei 500 – die Erhöhung auf 1500 entfällt.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.24.1
+// @version      1.25.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -967,8 +967,49 @@
     });
     return out;
   }
+  // Auftragsbuch-Abgleich über den geheimen Kanal: ein neu gestartetes Gerät meldet sich mit „hi“; die anderen Geräte antworten (zeitversetzt) mit den
+  // Aufträgen ihrer letzten 7 Tage („bk“, je 10 mit Auftragsdaten). So kennt jedes Gerät dasselbe Auftragsbuch – auch über die 12 Stunden hinaus, die ntfy
+  // Meldungen vorhält. Nur auf dem geheimen Kanal (dort stehen Auftragsdaten); empfangene Angaben werden geprüft und gekürzt.
+  const RUN_ID = Math.random().toString(36).slice(2, 10), BK_CHUNK = 10, BK_DAYS = 7;
+  let lastBkAt = 0;
+  function retPostSecure(msg) { return retChanP.then(async (ch) => { if (ch) await licFetch(`${LIC_NTFY}/${ch.topic}`, { method: 'POST', body: JSON.stringify(await sealMsg(ch, msg)) }); return !!ch; }).catch(() => false); }
+  async function sendeBuch() {
+    if (!license || Date.now() - lastBkAt < 10 * 60e3) return;
+    const von = Date.now() - BK_DAYS * 864e5, me = String((license && license.name) || '').slice(0, 40);
+    const items = GM_getValue('orderbook', []).filter((e) => e.nr && RET_NR.test(nrKey(e.nr)) && new Date(e.ts).getTime() >= von).slice(-150)
+      .map((e) => ({ n: nrKey(e.nr), t: new Date(e.ts).getTime(), b: e.by || me, p: e.plz || '', o: e.ort || '', s: e.strasse || '', d: String(e.dienst || '').slice(0, 80), e: typeof e.preis === 'number' ? e.preis : null, r: e.ref || '' }));
+    if (!items.length) return;
+    lastBkAt = Date.now();
+    for (let i = 0; i < items.length; i += BK_CHUNK) {
+      const part = items.slice(i, i + BK_CHUNK);
+      if (!(await retPostSecure({ v: 1, t: 'bk', nrs: part.map((x) => x.n), at: Date.now(), items: part }))) return;
+      await sleep(1100); // ntfy nicht überfluten
+    }
+    log(`Auftragsbuch an die anderen Geräte gesendet (${items.length} Aufträge).`, 'debug');
+  }
+  function addBookItems(raw) {
+    if (!Array.isArray(raw)) return 0;
+    const book = GM_getValue('orderbook', []), von = Date.now() - BK_DAYS * 864e5, byNr = new Map(book.map((e) => [nrKey(e.nr), e]));
+    let added = 0;
+    const str = (v, n) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n) : '');
+    raw.slice(0, BK_CHUNK).forEach((x) => {
+      if (!x || typeof x !== 'object') return;
+      const nr = nrKey(x.n), t = Number(x.t);
+      if (!RET_NR.test(nr) || !(t >= von && t <= Date.now() + 60e3)) return;
+      const p = /^\d{4,5}$/.test(String(x.p)) ? String(x.p) : '', pr = Number(x.e);
+      const d = { plz: p, ort: str(x.o, 60), strasse: str(x.s, 80), dienst: str(x.d, 80), ref: str(x.r, 40), preis: x.e != null && Number.isFinite(pr) && pr >= 0 && pr < 100000 ? pr : null };
+      const hit = byNr.get(nr);
+      if (hit) { ['plz', 'ort', 'strasse', 'dienst', 'ref'].forEach((k) => { if (!hit[k] && d[k]) { hit[k] = d[k]; added += 0.001; } }); if (hit.preis == null && d.preis != null) hit.preis = d.preis; return; }
+      const e = Object.assign({ ts: new Date(t).toISOString(), nr, by: str(x.b, 40) || 'anderes Gerät' }, d);
+      book.push(e); byNr.set(nr, e); added++;
+    });
+    if (added) { GM_setValue('orderbook', pruneBook(book)); renderOrderbook(); }
+    return Math.floor(added);
+  }
   function onRetMessage(d, secure = false) {
     if (!d || d.v !== 1 || !Array.isArray(d.nrs) || d.nrs.length > 20) return;
+    if (secure && d.t === 'hi' && d.src !== RUN_ID && new Date(d.at || 0).toLocaleDateString('sv-SE') === today()) { setTimeout(() => sendeBuch().catch(() => {}), 1500 + Math.random() * 9000); return; }
+    if (secure && d.t === 'bk') { const n = addBookItems(d.items); if (n) log(`Auftragsbuch abgeglichen: ${n} Aufträge von anderen Geräten ergänzt.`, 'debug'); return; }
     if (d.t === 'ret' ? !(Date.now() - d.at <= RET_KEEP_MS && d.at <= Date.now() + 60e3) : new Date(d.at || 0).toLocaleDateString('sv-SE') !== today()) return; // Rückgaben 48 h, übrige Meldungen nur von heute
     const nrs = d.nrs.map(nrKey).filter((x) => RET_NR.test(x));
     const info = { at: +d.at };
@@ -1004,6 +1045,7 @@
         retSecretTopic = ch.topic;
         listenRet(ch.topic, async (raw) => onRetMessage(await openMsg(ch, ntfyBody(raw)), true));
         log('Rückgaben laufen über den geschützten Kanal.', 'debug');
+        setTimeout(() => retPostSecure({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID }), 4000); // „ich bin neu da“ – die anderen Geräte senden ihr Auftragsbuch
       }
     });
   }

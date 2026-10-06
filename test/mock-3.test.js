@@ -131,6 +131,38 @@ describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
     assert.ok(nrs.indexOf('MW3190901') < nrs.indexOf('MW3190900'), `neueste oben: ${nrs}`);
   });
 
+  it('Auftragsbuch-Abgleich: neues Gerät meldet sich mit „hi“; andere Geräte antworten mit ihrem Auftragsbuch (nur geheimer Kanal, Auftragsdaten)', async () => {
+    const { ck, ret } = await withChannelKey();
+    const t = Date.now();
+    tam.store.set('orderbook', [{ ts: new Date(t - 2 * 864e5).toISOString(), nr: 'MW3191001', plz: '44141', ort: 'Dortmund', strasse: 'Hauptstr. 1', dienst: 'Sixt Rückgabe', preis: 180, ref: 'WVWZ1' }]);
+    const untilA = async (fn, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(50); } return null; };
+    const posted = async () => Promise.all(tam.posts(ret).map((m) => K.decryptMsg(ck, m)));
+    assert.ok(await untilA(async () => (await posted()).some((m) => m.t === 'hi'), 9000), 'kein „hi“ nach dem Start');
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'hi', nrs: [], at: Date.now(), src: 'anderes-gerät' }));
+    let bk;
+    assert.ok(await untilA(async () => { bk = (await posted()).find((m) => m.t === 'bk'); return bk; }, 16000), 'keine Antwort mit dem Auftragsbuch');
+    assert.deepEqual(bk.items[0], { n: 'MW3191001', t: t - 2 * 864e5, b: 'Test', p: '44141', o: 'Dortmund', s: 'Hauptstr. 1', d: 'Sixt Rückgabe', e: 180, r: 'WVWZ1' });
+    assert.deepEqual(bk.nrs, ['MW3191001']);
+  });
+
+  it('Auftragsbuch-Abgleich: empfangene Aufträge werden geprüft und ergänzt; ältere als 7 Tage und Fremdes auf dem öffentlichen Kanal ignoriert', async () => {
+    const { ck, ret } = await withChannelKey();
+    const t = Date.now(), book = () => tam.store.get('orderbook') || [];
+    await until(() => tam.live(ret).length, 2000);
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'bk', nrs: ['MW3191101', 'MW3191102', 'MW3191103'], at: t, items: [
+      { n: 'MW3191101', t: t - 3 * 864e5, b: 'Handy', p: '44141', o: 'Dortmund', s: 'Weg 1', d: 'Standard', e: 99.5, r: 'FIN1' },
+      { n: 'MW3191102', t: t - 9 * 864e5, b: 'Handy', p: '44141', o: 'Alt' },                      // älter als 7 Tage
+      { n: 'MW3191103', t: t - 1000, b: 'x'.repeat(200), p: '<b>', o: 'y'.repeat(300), e: -5 }] }));  // manipulierte Felder
+    assert.ok(await until(() => book().some((e) => e.nr === 'MW3191101') && book().some((e) => e.nr === 'MW3191103'), 4000));
+    const a = book().find((e) => e.nr === 'MW3191101'), c = book().find((e) => e.nr === 'MW3191103');
+    assert.deepEqual([a.plz, a.ort, a.strasse, a.dienst, a.preis, a.ref, a.by], ['44141', 'Dortmund', 'Weg 1', 'Standard', 99.5, 'FIN1', 'Handy']);
+    assert.ok(!book().some((e) => e.nr === 'MW3191102'));
+    assert.equal(c.plz, ''); assert.ok(c.ort.length <= 60); assert.equal(c.preis, null); assert.ok(c.by.length <= 40);
+    tam.ntfy('tamret-', { v: 1, t: 'bk', nrs: ['MW3191199'], at: t, items: [{ n: 'MW3191199', t: t - 1000, p: '44141', o: 'Dortmund' }] }); // öffentlicher Kanal
+    await sleep(500);
+    assert.ok(!book().some((e) => e.nr === 'MW3191199'));
+  });
+
   it('Details auf dem öffentlichen Kanal werden ignoriert (nur Nummern)', async () => {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();
