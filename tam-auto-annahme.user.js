@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.20.1
+// @version      1.20.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -78,6 +78,7 @@
     delayRandomMs: Math.min(500, GM_getValue('delayRandomMsV3', 80)), // Streuung 0 … x ms (0–500, Standard 80 ms; V3 = neuer Standard für alle)
     burstOn: true, // Burst-Refresh nach manuellem Refresh immer aktiv (ohne Checkbox)
     hideTips: GM_getValue('hideTips', false), // alle ?-Erklärungen ausblenden
+    colorRows: GM_getValue('colorRows', true),   // Aufträge in der TAM-Tabelle einfärben (nur lokal in diesem Browser) – Standard an
     zeichenOn: GM_getValue('zeichenOn', false), // Doppelklick im Auftragsbuch: „Ihr Zeichen“ um „neu“ ergänzen – Standard aus
     wakeLock: GM_getValue('wakeLock', /android/i.test(navigator.userAgent)), // Bildschirm anlassen – auf Android standardmäßig an
     // Priorität bei mehreren Treffern: Stufe 1–3 mit je einem Kriterium (siehe PRIO_CRIT), aus dem alten
@@ -778,12 +779,23 @@
     retPost('ret', ret.map((o) => o.nr));
     renderReturns();
   }
-  // Gesperrte Aufträge in der TAM-Tabelle markieren: Excel „nicht annehmen“ rot, heute zurückgegeben orange; Grund als Tooltip
+  // Aufträge in der TAM-Tabelle markieren: Excel „nicht annehmen“ rot, heute zurückgegeben orange, nicht auf der
+  // Annahmeliste grau, auf der Annahmeliste grün; Grund als Tooltip
+  const ROW_MARKS = ['tamauto-blocked', 'tamauto-returned', 'tamauto-nomatch', 'tamauto-match'];
+  function clearRowMarks() {
+    document.querySelectorAll(ROW_MARKS.map((c) => `.x-grid3-row.${c}`).join(', ')).forEach((r) => {
+      r.classList.remove(...ROW_MARKS);
+      if (/^TAM Auto-Annahme/.test(r.title)) r.removeAttribute('title');
+    });
+  }
   function markBlockedRows(all) {
+    if (!cfg.colorRows) { clearRowMarks(); return; }
     if (!document.getElementById('tamauto-blocked-style')) {
       const st = document.createElement('style'); st.id = 'tamauto-blocked-style';
       st.textContent = '.x-grid3-row.tamauto-blocked, .x-grid3-row.tamauto-blocked td { background: #ffcdd2 !important; }' +
-        '.x-grid3-row.tamauto-returned, .x-grid3-row.tamauto-returned td { background: #ffe0b2 !important; }';
+        '.x-grid3-row.tamauto-returned, .x-grid3-row.tamauto-returned td { background: #ffe0b2 !important; }' +
+        '.x-grid3-row.tamauto-nomatch td, .x-grid3-row.tamauto-nomatch td * { color: #9e9e9e !important; }' +
+        '.x-grid3-row.tamauto-match, .x-grid3-row.tamauto-match td { background: #e8f5e9 !important; }';
       document.head.appendChild(st);
     }
     all.forEach((o) => {
@@ -791,7 +803,12 @@
       const ret = !!dayList('returnsToday').items[nrKey(o.nr)];
       o.row.classList.toggle('tamauto-returned', !!why && ret);  // heute zurückgegeben → orange
       o.row.classList.toggle('tamauto-blocked', !!why && !ret);  // Excel „nicht annehmen“ → rot
-      if (why) o.row.title = `TAM Auto-Annahme: gesperrt – ${why}`; else if (/^TAM Auto-Annahme/.test(o.row.title)) o.row.removeAttribute('title');
+      const no = !why && !(o.valid && matches(o));                  // nicht auf der Annahmeliste → grau
+      o.row.classList.toggle('tamauto-nomatch', no);
+      o.row.classList.toggle('tamauto-match', !why && !no);         // auf der Annahmeliste → grün
+      if (why) o.row.title = `TAM Auto-Annahme: gesperrt – ${why}`;
+      else if (no) o.row.title = 'TAM Auto-Annahme: nicht auf der Annahmeliste – wird nicht angenommen';
+      else if (/^TAM Auto-Annahme/.test(o.row.title)) o.row.removeAttribute('title');
     });
   }
   function renderReturns() {
@@ -2433,6 +2450,14 @@ Standard: 1 Anzahl am Ort · 2 Summe am Ort · 3 Einzelpreis.">?</span>
           </div>
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
+              <label class="tamauto-chk"><input type="checkbox" id="tamauto-colorrows"> <b>Farbige TAM-Einträge</b></label>
+              <span class="tamauto-help" title="Färbt die Aufträge in der TAM-Tabelle „Veröffentlichte Aufträge“ ein: grün = steht auf der Annahmeliste (wird angenommen), grau = nicht auf der Annahmeliste, rot = gesperrt (Excel „nicht annehmen“), orange = heute zurückgegeben. Der Grund steht im Tooltip der Zeile.
+
+Wichtig: Die Farben ändern nur die Anzeige der TAM-Oberfläche lokal in diesem Browser. In TAM selbst, bei TÜV SÜD und bei anderen Nutzern ändert sich nichts. Standard: an.">?</span>
+            </span>
+          </div>
+          <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
+            <span class="tamauto-chk">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-zeichen"> <b>„Ihr Zeichen“ per Doppelklick um „neu“ ergänzen</b></label>
               <span class="tamauto-help" title="Doppelklick auf einen Auftrag (oder die rote 1) im Auftragsbuch: Das Script wechselt in „Angenommene Aufträge“, öffnet per Rechtsklick „Ihr Zeichen bearbeiten“, hängt „neu“ an und speichert – danach zurück zu „Veröffentlichte Aufträge“. Standard: aus.">?</span>
             </span>
@@ -2805,6 +2830,12 @@ Hinweis: Für EINZELNE PLZ ist die „Tages-Annahmeliste“ weiter unten besser 
       $('tamauto-hidetips').checked = cfg.hideTips;
       p.querySelectorAll('.tamauto-help').forEach((h) => { h.style.display = cfg.hideTips ? 'none' : 'inline-flex'; });
       if (cfg.hideTips) $('tamauto-popup-helpbox').style.display = 'none';
+    };
+    $('tamauto-colorrows').checked = cfg.colorRows;
+    $('tamauto-colorrows').onchange = (e) => {
+      cfg.colorRows = e.target.checked; GM_setValue('colorRows', cfg.colorRows);
+      const g = visibleGrid(); if (g) markBlockedRows(readOrders(g)); else clearRowMarks();
+      log(`Farbige TAM-Einträge: ${cfg.colorRows ? 'an' : 'aus'} (nur lokale Anzeige).`);
     };
     $('tamauto-zeichen').checked = cfg.zeichenOn;
     $('tamauto-zeichen').onchange = (e) => { cfg.zeichenOn = e.target.checked; GM_setValue('zeichenOn', cfg.zeichenOn); log(`„Ihr Zeichen“ per Doppelklick: ${cfg.zeichenOn ? 'an' : 'aus'}.`); };

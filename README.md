@@ -44,6 +44,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 |---|---|
 | **Ortsliste** | Excel in SharePoint (Blatt „annehmen“), ohne Anmeldung, alle 30 min neu geladen |
 | **Sperrliste** | Excel-Blatt „nicht annehmen“ – diese PLZ werden nie angenommen (in der TAM-Tabelle **rot**); Blatt „nicht annehmen Adresse“ sperrt einzelne Adressen (PLZ + Straße) |
+| **Farbige TAM-Einträge** | Optional, Standard an: grün = wird angenommen, grau = nicht auf der Annahmeliste, rot = gesperrt, orange = zurückgegeben – nur lokale Anzeige |
 | **Rückgaben** | Heute angenommene und wieder zurückgegebene Aufträge werden auf **allen Geräten** bis Mitternacht nicht angenommen (in der TAM-Tabelle **orange**) |
 | **Tages-Annahmeliste** | Einzelne 5-stellige PLZ heute zusätzlich annehmen |
 | **Liste einfügen** | Bulk: viele PLZ auf einmal für 24 h zusätzlich annehmen |
@@ -400,6 +401,12 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.20.2 – 2026-10-06
+- **Farbige TAM-Einträge** (Erweiterte Einstellungen, Standard an): In „Veröffentlichte Aufträge“ sind Aufträge
+  **grün** (auf der Annahmeliste), **grau** (nicht auf der Annahmeliste), **rot** (Excel „nicht annehmen“) oder **orange**
+  (heute zurückgegeben); Grund im Tooltip. Ändert nur die Anzeige lokal in diesem Browser – nicht in TAM selbst.
+- Vom Wächter geschlossenes Auftragsfenster nach der Annahme steht als Hinweis statt als Fehler im Log.
 
 ### 1.20.1 – 2026-10-06
 - Updates wieder **zuerst über GitHub** (Tampermonkey und Update-Button installieren direkt); OneDrive nur noch als Ersatz,

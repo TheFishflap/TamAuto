@@ -293,6 +293,34 @@ describe('Rückgabe-Kanal: gefälschte Meldungen (Sicherheit)', { skip }, () => 
 });
 
 describe('Gesperrte Aufträge in der Tabelle', { skip }, () => {
+  it('Schalter „Farbige TAM-Einträge“: Standard an; aus → alle Farben weg, wieder an → zurück', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    const cb = tam.document.getElementById('tamauto-colorrows');
+    assert.equal(cb.checked, true);
+    tam.addOrder({ nr: 'MW3170030', plz: '99999', ort: 'Nirgendwo' });
+    const row = () => [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')].find((r) => r.textContent.includes('MW3170030'));
+    assert.ok(await until(() => row().classList.contains('tamauto-nomatch'), 3000));
+    cb.click();
+    assert.equal(tam.store.get('colorRows'), false);
+    assert.ok(!row().classList.contains('tamauto-nomatch') && !row().title, 'Markierung nicht entfernt');
+    cb.click();
+    assert.ok(row().classList.contains('tamauto-nomatch'));
+  });
+
+  it('passender Auftrag grün, nicht passender grau', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder({ nr: 'MW3170020', plz: '99999', ort: 'Nirgendwo' });
+    tam.addOrder({ nr: 'MW3170021', plz: '50825', ort: 'Köln', onOpen: () => {} });
+    const row = (nr) => [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')].find((r) => r.textContent.includes(nr));
+    assert.ok(await until(() => row('MW3170020').classList.contains('tamauto-nomatch'), 3000));
+    assert.ok(!row('MW3170021').classList.contains('tamauto-nomatch'));
+    assert.ok(row('MW3170021').classList.contains('tamauto-match'), 'auf der Annahmeliste → grün');
+    assert.ok(!row('MW3170020').classList.contains('tamauto-match'));
+    assert.match(row('MW3170020').title, /nicht auf der Annahmeliste/);
+  });
+
   const rowOf = (nr) => [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')].find((r) => r.textContent.includes(nr));
 
   it('Excel „nicht annehmen“ → rot, Rückgabe → orange, andere Zeilen ohne Markierung', async () => {
@@ -309,6 +337,9 @@ describe('Gesperrte Aufträge in der Tabelle', { skip }, () => {
     assert.ok(rowOf('MW3170004').classList.contains('tamauto-blocked'));
     assert.ok(!rowOf('MW3170004').classList.contains('tamauto-returned'));
     assert.ok(!rowOf('MW3170005').classList.contains('tamauto-blocked') && !rowOf('MW3170005').classList.contains('tamauto-returned'));
+    assert.ok(rowOf('MW3170005').classList.contains('tamauto-nomatch'), 'nicht auf der Annahmeliste → grau');
+    assert.ok(!rowOf('MW3170004').classList.contains('tamauto-nomatch'), 'gesperrt geht vor grau');
+    assert.ok(!rowOf('MW3170004').classList.contains('tamauto-match') && !rowOf('MW3170003').classList.contains('tamauto-match'), 'gesperrt geht vor grün');
     assert.match(rowOf('MW3170003').title, /zurückgegeben/);
     assert.doesNotMatch(rowOf('MW3170003').title, /erkannt von/);
   });
