@@ -45,7 +45,7 @@ describe('Auftragsbuch: Zeichen als Haken', { skip }, () => {
   });
 });
 
-describe('„XX zurück“ und Morgenroutine', { skip }, () => {
+describe('„XX zurück“, Start und stilles Laden', { skip }, () => {
   const old = new Date(Date.now() - 3 * 864e5).toISOString();
   const book = () => tam.store.get('orderbook') || [];
   const ret = () => (tam.store.get('returnsToday') || {}).items || {};
@@ -57,39 +57,6 @@ describe('„XX zurück“ und Morgenroutine', { skip }, () => {
     tam.selectTab('AgentEigeneAuftraege');
     assert.ok(await until(() => Object.keys(ret()).length, 3000), JSON.stringify(tam.store.get('returnsToday')));
     assert.ok(ret().MW3190801, JSON.stringify(ret()));
-  });
-
-  it('Morgenroutine: ab 07:58 einmal „Angenommene Aufträge“ lesen und zurück zu „Veröffentlichte Aufträge“', async () => {
-    tam = startTam({ fakeHour: 7, fakeMinute: 58, gm: { morgenScan: '', places: KOELN, orderbook: [{ ts: old, nr: 'MW3190802', plz: '44141', ort: 'Dortmund', tid: '3706802', zeichen: '' }] } });
-    tam.addAccepted('MW3190802', '', { id: '3706802', zeichen: 'LE zurück' });
-    tam.selectTab('AgentVeroeffentlichteAuftraege');
-    await tam.ready();
-    assert.ok(await until(() => ret().MW3190802, 15000), tam.logs().slice(-6).join('\n'));
-    assert.ok(await until(() => tam.store.get('morgenScan') === new Date().toLocaleDateString('sv-SE'), 3000), 'Tagesmarke fehlt');
-    assert.ok(await until(() => tam.document.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active'), 5000), 'nicht zurück im Reiter');
-    assert.equal(book().find((e) => e.nr === 'MW3190802').zeichen, 'LE zurück');
-  });
-
-  it('Morgenroutine läuft vor 07:58 nicht', async () => {
-    tam = startTam({ fakeHour: 7, fakeMinute: 30, gm: { morgenScan: '', places: KOELN } });
-    await tam.ready();
-    await sleep(6500);
-    assert.equal(tam.store.get('morgenScan'), '');
-  });
-
-  it('hat ein anderes Gerät die Routine gemeldet, entfällt sie hier', async () => {
-    tam = startTam({ fakeHour: 7, fakeMinute: 58, gm: { morgenScan: '', places: KOELN } });
-    await tam.ready();
-    tam.ntfy('tamret-', { v: 1, t: 'scan', nrs: [], at: Date.now() });
-    assert.ok(await until(() => tam.store.get('morgenScan') === new Date().toLocaleDateString('sv-SE'), 2000));
-    await sleep(6500);
-    assert.ok(!tam.logs().some((l) => /Morgenroutine: \d+ Zeilen/.test(l)), 'Routine lief trotz Meldung');
-  });
-
-  it('Routine gemeldet: nach dem Lauf geht eine „scan“-Meldung an die anderen Geräte', async () => {
-    tam = startTam({ fakeHour: 7, fakeMinute: 58, gm: { morgenScan: '', places: KOELN } });
-    await tam.ready();
-    assert.ok(await until(() => tam.posts('tamret-').some((m) => m.t === 'scan'), 15000), tam.logs().slice(-5).join('\n'));
   });
 
   it('MA-Management gleicht beim Öffnen mit „Angenommene Aufträge“ (TAM) ab', async () => {
@@ -118,7 +85,7 @@ describe('„XX zurück“ und Morgenroutine', { skip }, () => {
     assert.ok(await until(() => tam.document.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active'), 5000));
   });
 
-  it('Start nur mit „Information Cockpit“ (wie in TAM): Reiter entstehen über das Menü „Meine Aufträge“; am Ende „Veröffentlichte Aufträge“ aktiv, Zeichen abgeglichen', async () => {
+  it('Start nur mit „Information Cockpit“ (wie in TAM): Reiter über das Menü „Meine Aufträge“, am Ende „Veröffentlichte Aufträge“ aktiv, Zeichen abgeglichen, Erfolg im Log', async () => {
     tam = startTam({ gm: { startTabs: true, places: KOELN, orderbook: [{ ts: new Date().toISOString(), nr: 'MW3190821', plz: '44141', ort: 'Dortmund', tid: '3706821', zeichen: '' }] } });
     tam.addAccepted('MW3190821', '', { id: '3706821', zeichen: 'LE' });
     const d = tam.document, parts = {};
@@ -142,5 +109,26 @@ describe('„XX zurück“ und Morgenroutine', { skip }, () => {
     await tam.ready();
     assert.ok(await until(() => (book().find((e) => e.nr === 'MW3190821') || {}).zeichen === 'LE', 20000), tam.logs().slice(-6).join('\n'));
     assert.ok(await until(() => d.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active'), 5000), 'nicht in „Veröffentlichte Aufträge“');
-    assert.ok(await until(() => tam.logs().some((l) => /Start: beide Reiter geöffnet/.test(l)), 3000), tam.logs().slice(-5).join('\n'));
-  });});
+    assert.ok(await until(() => tam.logs().some((l) => /Start: „Veröffentlichte Aufträge“ geöffnet/.test(l)), 3000), tam.logs().slice(-5).join('\n'));
+  });
+
+  it('MA-Management: angenommene Aufträge still geladen (kein Reiterwechsel), Zeichen ergänzt, „zurück“ → Tagesblacklist; Zeichen aus TAMs Tabelle haben Vorrang', async () => {
+    tam = startTam({ gm: { accSyncAt: 0, places: { ...KOELN, ma: [{ k: 'GS', name: 'G', mail: '', backoffice: false }, { k: 'LE', name: 'L', mail: '', backoffice: false }] },
+      orderbook: [{ ts: new Date().toISOString(), nr: 'MW3190830', plz: '44141', ort: 'Dortmund', zeichen: '' }, { ts: new Date().toISOString(), nr: 'MW3190831', plz: '44141', ort: 'Dortmund', zeichen: 'GS 12.10 10:00 T', zeichenSrc: 'd' }, { ts: new Date().toISOString(), nr: 'MW3190832', plz: '44141', ort: 'Dortmund', zeichen: '' }] } });
+    await tam.ready();
+    const bar = [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-toolbar')].find((x) => /Einträge pro Seite/.test(x.textContent));
+    bar.querySelectorAll('.x-btn')[4].querySelector('button').click(); // TAM-Anfrage der Liste mitschneiden …
+    await sleep(1200);
+    const x = new tam.window.XMLHttpRequest(); x.open('POST', 'https://tam.tuvsud.com/tam/gwt-rpc/auftrag'); // … in der Form der echten Anfrage (mit Listentyp)
+    x.send('7|0|5|https://tam.tuvsud.com/|SUMME|de.tomcom.tam.client.rpc.gwt.IAuftragService|loadTeilauftraege|x.ListenTyp/1|1|2|3|4|5|0|');
+    await sleep(300);
+    tam.rpc = '//OK[1,2,3,1,4,5,1,6,7,' + JSON.stringify(['x.model.auftraege.Teilauftrag/1', 'MW3190830', 'LE t', 'MW3190831', 'LE', 'MW3190832', 'zurück LE']) + ',0,7]';
+    tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-ma"]').click();
+    assert.ok(await until(() => (book().find((e) => e.nr === 'MW3190830') || {}).zeichen === 'LE t', 8000), tam.logs().slice(-12).join('\n'));
+    assert.equal(book().find((e) => e.nr === 'MW3190831').zeichen, 'GS 12.10 10:00 T'); // aus der Tabelle gelesen: nicht überschrieben
+    assert.ok(await until(() => ret().MW3190832, 3000), JSON.stringify(tam.store.get('returnsToday')));
+    assert.ok(tam.document.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active'), 'Reiter wurde gewechselt');
+    assert.ok(tam.logs().some((l) => /angenommene Aufträge still geladen/.test(l)));
+  });
+});
+

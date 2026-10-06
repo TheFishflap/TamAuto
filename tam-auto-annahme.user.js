@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.23.6
+// @version      1.24.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -569,6 +569,44 @@
     return body;
   }
   // </liste-parser>
+  // <liste-zeichen>
+  // „Angenommene Aufträge“ ohne Reiterwechsel: Die Anfrage der Liste „Veröffentlichte Aufträge“ unterscheidet sich von der der angenommenen nur im
+  // Listentyp (ListenTyp-Wert 0 → 1: eigene Aufträge); alles andere (Modul, Prüfsumme, Sortierung, Filter) bleibt.
+  function acceptedBodyFromPublished(body) {
+    const p = String(body).split('|'), n = +p[2];
+    if (!(n > 0) || p.length < 4 + n) return null;
+    const ti = p.slice(3, 3 + n).findIndex((t) => /\.ListenTyp\//.test(t)) + 1;
+    if (!ti) return null;
+    const nums = p.slice(3 + n);
+    let k = -1; nums.forEach((v, i) => { if (+v === ti && /^\d+$/.test(nums[i + 1] || '')) k = i; }); // letzter Verweis auf den Listentyp, danach sein Wert
+    if (k < 0 || nums[k + 1] !== '0') return null;
+    nums[k + 1] = '1';
+    return [...p.slice(0, 3 + n), ...nums].join('|');
+  }
+  // Ihr Zeichen je Auftrag aus der Listenantwort: im Datensatz steht der Zeichentext als Stringverweis; welcher es ist, erkennt man am Inhalt
+  // (höchstens 20 Zeichen, ein bekanntes Kürzel, „?“ oder „… zurück“). Das ist eine Näherung – das Zeichen aus der Tabelle in TAM hat Vorrang.
+  function parseListeZeichen(txt, known = []) {
+    const out = new Map();
+    if (!/^\/\/OK\[/.test(txt)) return out;
+    const i = txt.indexOf(',["');
+    if (i < 0) return out;
+    const nums = txt.slice(5, i).split(',').map(Number);
+    const table = []; const re = /"((?:[^"\\]|\\.)*)"/g; const tail = txt.slice(i + 1); let m;
+    while ((m = re.exec(tail))) table.push(gwtUnescape(m[1]));
+    const typ = table.findIndex((t) => /\.model\.auftraege\.Teilauftrag\//.test(t)) + 1;
+    if (!typ) return out;
+    const isNr = (t) => /^(MW\d{6,9}|[A-Z]{2}\d{6}|\d{8,10})(-\d{1,3})?$/.test(t);
+    const istZeichen = (t) => { if (t.length > 20 || t.includes('\n') || isNr(t)) return false; const z = parseTourzeichen(t, known); return /^\?+$/.test(t) || z.rueckgabe || z.bekannt; };
+    const starts = []; nums.forEach((v, p) => { if (v === typ) starts.push(p); });
+    starts.forEach((p, k) => {
+      const seg = nums.slice(p, k + 1 < starts.length ? starts[k + 1] : nums.length);
+      const strs = [...new Set(seg.filter((v) => Number.isInteger(v) && v >= 1 && v <= table.length).map((v) => table[v - 1]))];
+      const nr = strs.find(isNr), z = strs.find(istZeichen);
+      if (nr && z && !out.has(nr.toUpperCase())) out.set(nr.toUpperCase(), z);
+    });
+    return out;
+  }
+  // </liste-zeichen>
   // <ma-logik>
   // MA-Management (reine Logik, ohne Oberfläche): Marktgebiet, SLA-Ampel, Kontaktzeile, Kennzeichenversand, Mail-Entwurf.
   // Auftrag o: { nr, plz, ort, strasse, dienst, status, sla (Endtermin Agent), ref, kontakt: {name, telefon, mail} }
@@ -682,13 +720,21 @@
       if (!a) return;
       if (a.tid && e.tid !== a.tid) { e.tid = a.tid; changed++; }
       if ((e.zeichen || '') !== a.zeichen) { e.zeichen = a.zeichen; changed++; }
+      e.zeichenSrc = 'd'; // aus der Tabelle in TAM gelesen
       if (a.preis != null && e.preis !== a.preis) { e.preis = a.preis; changed++; }
       ['plz', 'ort', 'dienst'].forEach((k) => { if (!e[k] && a[k]) { e[k] = a[k]; changed++; } }); // z. B. Annahmen anderer Geräte
       if (slaMs(a.sla) !== null && e.sla !== a.sla) { e.sla = a.sla; changed++; }
       ['status', 'ref', 'strasse'].forEach((k) => { if (a[k] && e[k] !== a[k]) { e[k] = a[k]; changed++; } });
     });
-    // „zurück …“ im Zeichen = Rückgabe: bei den Rückgaben eintragen (48 h nicht erneut annehmen) und den anderen Geräten melden
+    changed += verarbeiteRueckgaben(book);
+    if (!changed) return;
+    GM_setValue('orderbook', book);
+    renderOrderbook();
+  }
+  // „zurück …“ im Zeichen = Rückgabe: bei den Rückgaben eintragen (48 h nicht erneut annehmen) und den anderen Geräten melden
+  function verarbeiteRueckgaben(book) {
     const known = (places.ma || []).map((m) => m.k), neuRet = [];
+    let changed = 0;
     book.forEach((e) => {
       if (!e.zeichen || e.zurueck === today() || !/\bzur(ü|ue)ck\b/i.test(e.zeichen) || parseTourzeichen(e.zeichen, known).status !== 'rueckgabe') return;
       e.zurueck = today(); // „XX zurück“ (auch von früheren Tagen): heute auf die Tagesblacklist, damit der Auftrag nach der Rückgabe nicht erneut angenommen wird
@@ -696,9 +742,21 @@
       changed++;
     });
     if (neuRet.length) { log(`Rückgabe laut Zeichen („zurück …“): ${neuRet.join(', ')} – bei den Rückgaben eingetragen.`, 'ok'); retPost('ret', neuRet); renderReturns(); }
-    if (!changed) return;
-    GM_setValue('orderbook', book);
-    renderOrderbook();
+    return changed;
+  }
+  // Zeichen aus der stillen Listenantwort (Näherung): nur eintragen, wenn noch keins da ist oder das vorhandene auch so gelesen wurde;
+  // ein Zeichen aus der Tabelle in TAM (zeichenSrc 'd') wird nie überschrieben
+  function wendeListenZeichenAn(map) {
+    if (!map.size) return 0;
+    const book = GM_getValue('orderbook', []);
+    let changed = 0;
+    book.forEach((e) => {
+      const z = map.get(String(e.nr).toUpperCase());
+      if (z && e.zeichen !== z && (!e.zeichen || e.zeichenSrc === 's')) { e.zeichen = z; e.zeichenSrc = 's'; changed++; }
+    });
+    changed += verarbeiteRueckgaben(book);
+    if (changed) { GM_setValue('orderbook', book); renderOrderbook(); }
+    return changed;
   }
   // Auftragsbuch: 31 Tage Datenspeicherung (danach fallen Einträge heraus), harte Obergrenze gegen ein volles Tampermonkey-Archiv
   const BOOK_DAYS = 31, BOOK_MAX = 20000;
@@ -860,13 +918,11 @@
   }
   const ACC_CHUNK = 8; // ntfy erlaubt höchstens 4 KB je Nachricht
   function retPost(t, nrs) {
-    if (!nrs.length && t !== 'scan') return;
+    if (!nrs.length) return;
     // Rückgaben: nur Nummern. Annahmen: Nummern + Lizenzname des Geräts; auf dem geheimen Kanal zusätzlich die Auftragsdaten
     const base = () => Object.assign({ v: 1, t, at: Date.now() }, t === 'acc' && license ? { by: String(license.name || '').slice(0, 40) } : {});
     retChanP.then(async (ch) => {
-      if (ch && t === 'scan') await licFetch(`${LIC_NTFY}/${ch.topic}`, { method: 'POST', body: JSON.stringify(await sealMsg(ch, Object.assign(base(), { nrs: [] }))) });
-      else if (!ch && t === 'scan') await licFetch(`${LIC_NTFY}/${RET_TOPIC}`, { method: 'POST', body: JSON.stringify(Object.assign(base(), { nrs: [] })) });
-      else if (ch) {
+      if (ch) {
         for (let i = 0; i < nrs.length; i += (t === 'acc' ? ACC_CHUNK : nrs.length)) {
           const part = nrs.slice(i, i + (t === 'acc' ? ACC_CHUNK : nrs.length));
           await licFetch(`${LIC_NTFY}/${ch.topic}`, { method: 'POST', body: JSON.stringify(await sealMsg(ch, Object.assign(base(), { nrs: part }, t === 'acc' ? { det: detailsFor(part) } : {}))) });
@@ -920,7 +976,6 @@
   function onRetMessage(d, secure = false) {
     if (!d || d.v !== 1 || !Array.isArray(d.nrs) || d.nrs.length > 20) return;
     if (d.t === 'ret' ? !(Date.now() - d.at <= RET_KEEP_MS && d.at <= Date.now() + 60e3) : new Date(d.at || 0).toLocaleDateString('sv-SE') !== today()) return; // Rückgaben 48 h, übrige Meldungen nur von heute
-    if (d.t === 'scan') { GM_setValue('morgenScan', today()); log('Morgenroutine: von einem anderen Gerät schon erledigt.', 'debug'); return; }
     const nrs = d.nrs.map(nrKey).filter((x) => RET_NR.test(x));
     const info = { at: +d.at };
     if (d.t === 'acc') { addToday('accToday', nrs, info); addRemoteAccepts(nrs, String(d.by || '').slice(0, 40), +d.at, secure ? cleanDetails(d.det, nrs) : {}); }
@@ -1945,9 +2000,6 @@
     return !!ok;
   }
 
-  // Morgenroutine: einmal je Tag ab 07:30 „Angenommene Aufträge“ lesen (Reiter kurz öffnen, Zeichen abgleichen, zurück). Aufträge mit
-  // „XX zurück“ kommen so vor 08:00 – wenn TAM sie aus dem Account nimmt und neu veröffentlicht – auf die Tagesblacklist.
-  const MORGEN_AB = 7 * 60 + 58, MORGEN_BIS = 9 * 60; // einmal kurz vor 08:00 (letzter Stand der Zeichen); wer später kommt, holt es bis 09:00 nach
   let accSyncing = false;
   // „Angenommene Aufträge“ einmal lesen: Reiter kurz öffnen, Zeichen abgleichen, zurück. Nur im Ruhezustand.
   async function syncAcceptedTab(grund, force = false) {
@@ -1958,8 +2010,8 @@
       if (!li) { log(`${grund}: Reiter „Angenommene Aufträge“ nicht gefunden.`, 'err'); return false; }
       fire(li.querySelector('.x-tab-strip-text') || li, ['mouseover', 'mousedown', 'mouseup', 'click']);
       if (!(await waitFor(onAcceptedTab, 3000))) { log(`${grund}: Reiterwechsel fehlgeschlagen.`, 'err'); return false; }
-      await waitFor(() => document.querySelectorAll(`#${cfg.acceptedTabId} .x-grid3-row`).length > 0, 10000);
-      await sleep(800);
+      await waitFor(() => document.querySelectorAll(`#${cfg.acceptedTabId} .x-grid3-row`).length > 0, 10000, 100);
+      await sleep(300);
       scanAccepted();
       GM_setValue('accSyncAt', Date.now());
       const n = document.querySelectorAll(`#${cfg.acceptedTabId} .x-grid3-row`).length;
@@ -1970,21 +2022,23 @@
       if (!onPublishedTab()) await switchToPublishedTab();
     }
   }
-  // Morgenroutine: einmal je Tag (ab 07:58, bis 09:00 nachholbar). „XX zurück“ kommt so VOR 08:00 – wenn TAM die Aufträge aus dem Account
-  // nimmt und neu veröffentlicht – auf die Tagesblacklist. Hat ein anderes Gerät die Routine schon gemeldet, entfällt sie hier.
-  let morgenTry = 0;
-  async function morgenScan() {
-    const nowD = new Date(), heute = today();
-    if (accSyncing || busy || !license || GM_getValue('morgenScan', '') === heute) return;
-    const min = nowD.getHours() * 60 + nowD.getMinutes();
-    if (min < MORGEN_AB || min >= MORGEN_BIS || Date.now() - morgenTry < 10 * 60e3) return;
-    if (!onPublishedTab()) return;
-    morgenTry = Date.now();
-    if (await syncAcceptedTab('Morgenroutine')) { GM_setValue('morgenScan', heute); retPost('scan', []); }
+  // „Angenommene Aufträge“ abgleichen – bevorzugt still (Anfrage ohne Reiterwechsel), nur sonst über den Reiter. Beim Start einmal: „XX zurück“
+  // kommt so auf die Tagesblacklist, bevor TAM die Aufträge zurückgibt und neu veröffentlicht.
+  async function angenommenAbgleichen(grund, hop = true) {
+    if (!license) return false;
+    try {
+      const n = await ladeMaKontakte();
+      GM_setValue('accSyncAt', Date.now());
+      log(`${grund}: angenommene Aufträge still geladen (${n} Aufträge, kein Reiterwechsel).`, 'ok');
+      return true;
+    } catch (e) {
+      log(`${grund}: still nicht möglich (${e.message})${hop ? ' – Reiter wird kurz geöffnet' : ''}.`, 'debug');
+      return hop ? syncAcceptedTab(grund) : false;
+    }
   }
   // Beim Start von TAM beide Reiter öffnen: „Veröffentlichte Aufträge“ (Liste laden, Silent Reload) und „Angenommene Aufträge“ (existiert erst,
   // wenn der Reiter einmal geöffnet wurde: Zeichen abgleichen, Kontakte). Danach bleibt „Veröffentlichte Aufträge“ aktiv. Einmal je Seitenaufruf.
-  let startTabsDone = false, startTries = 0, startNextAt = 0;
+  let startTabsDone = false, startNextAt = 0;
   const tabDiag = () => { // für das Protokoll: welche Reiter gibt es, welcher ist aktiv, ist das Panel „Angenommene Aufträge“ da?
     const ids = [...document.querySelectorAll('li[id*="__"]')].map((li) => `${li.id.split('__').pop()}${li.classList.contains('x-tab-strip-active') ? '*' : ''}`);
     const pa = document.getElementById(cfg.acceptedTabId);
@@ -2003,31 +2057,42 @@
     let el = findByText(labelRe);                                 // Link/Menüpunkt schon sichtbar?
     if (!el) {                                                      // sonst Menü „Meine Aufträge“ öffnen
       const menu = findByText(/^Meine Auftr(ä|ae)ge$/i);
-      if (menu) { clickEl(menu); await sleep(350); el = findByText(labelRe); }
+      if (menu) { clickEl(menu); el = await waitFor(() => findByText(labelRe), 1500, 80); }
     }
     if (!el) return false;
     clickEl(el);
     return !!(await waitFor(has, 4000, 200));
   }
+  // Sobald das Hauptmenü („Meine Aufträge“) steht – das ist schon, während das Dashboard lädt –, werden die Reiter geöffnet. Ein schneller Takt (150 ms)
+  // wartet nur auf dieses Menü; scheitert ein Durchlauf, folgt der nächste nach 1 s (höchstens 8 Durchläufe).
+  let startRunning = false, startFails = 0;
   async function openTabsOnStart() {
-    if (startTabsDone || !license || busy || accSyncing || !GM_getValue('startTabs', true) || Date.now() < startNextAt) return;
-    startNextAt = Date.now() + 3000;
-    if (!document.querySelector('li[id*="__"]')) return; // TAM noch nicht aufgebaut
-    if (++startTries > 15) { startTabsDone = true; log(`Start: Reiter öffnen hat nicht geklappt – aufgegeben (${tabDiag()}).`, 'err'); return; }
-    log(`Start: „Veröffentlichte“ und „Angenommene Aufträge“ werden geöffnet (Versuch ${startTries}) …`, 'debug');
-    if (!(await openTabViaMenu(cfg.tabPanelId, /^Ver(ö|oe)ffentlichte Auftr(ä|ae)ge$/i))) {
-      const knöpfe = [...document.querySelectorAll('.x-btn, .x-menu-item')].filter((e) => visible(e) && !e.closest('#tamauto, .x-grid3')).map((e) => text(e)).filter((t) => t && t.length < 40).slice(0, 25);
-      log(`Start: Menü/Link „Veröffentlichte Aufträge“ nicht gefunden (${tabDiag()} · sichtbare Schaltflächen: ${[...new Set(knöpfe)].join(' | ') || 'keine'}).`, 'debug');
-      return;
-    }
-    if (!onPublishedTab()) { clickPublishedTab(); await waitFor(onPublishedTab, 3000, 200); }
-    await sleep(1200); // Liste laden lassen
-    if (!(await openTabViaMenu(cfg.acceptedTabId, /^Angenommene Auftr(ä|ae)ge$/i))) { log(`Start: Menü/Link „Angenommene Aufträge“ nicht gefunden (${tabDiag()}).`, 'debug'); return; }
-    if (await syncAcceptedTab('Start', true)) { startTabsDone = true; log(`Start: beide Reiter geöffnet („Veröffentlichte“ und „Angenommene Aufträge“), aktiv: ${onPublishedTab() ? 'Veröffentlichte Aufträge' : 'anderer Reiter'}.`, 'ok'); }
-    else log(`Start: Reiter noch nicht bereit, neuer Versuch (${tabDiag()}).`, 'debug');
+    if (startTabsDone || startRunning || !license || busy || accSyncing || !GM_getValue('startTabs', true) || Date.now() < startNextAt) return;
+    if (!findByText(/^Meine Auftr(ä|ae)ge$/i) && !document.querySelector(`li[id$="__${cfg.tabPanelId}"]`)) return; // Menü noch nicht aufgebaut
+    startRunning = true;
+    try {
+      if (!(await openTabViaMenu(cfg.tabPanelId, /^Ver(ö|oe)ffentlichte Auftr(ä|ae)ge$/i))) throw new Error('Menü/Link „Veröffentlichte Aufträge“ nicht gefunden');
+      if (!onPublishedTab()) { clickPublishedTab(); await waitFor(onPublishedTab, 3000, 100); }
+      // „Angenommene Aufträge“ bleiben geschlossen und werden still geladen, sobald TAM die Liste „Veröffentlichte“ geladen hat (Anfrage mitgeschnitten)
+      await waitFor(() => tamLoadReq, 5000, 100);
+      let still = await angenommenAbgleichen('Start', false);
+      if (!still) { // Rückfall: Reiter über das Menü öffnen, kurz auslesen, zurück
+        if (!(await openTabViaMenu(cfg.acceptedTabId, /^Angenommene Auftr(ä|ae)ge$/i))) throw new Error('Menü/Link „Angenommene Aufträge“ nicht gefunden');
+        if (!(await syncAcceptedTab('Start', true))) throw new Error('„Angenommene Aufträge“ lieferte keine Zeilen');
+      }
+      startTabsDone = true;
+      log(`Start: „Veröffentlichte Aufträge“ geöffnet, „Angenommene Aufträge“ ${still ? 'still geladen' : 'über den Reiter gelesen'} – aktiv: ${onPublishedTab() ? 'Veröffentlichte Aufträge' : 'anderer Reiter'}.`, 'ok');
+    } catch (e) {
+      const knöpfe = [...document.querySelectorAll('.x-btn, .x-menu-item')].filter((x) => visible(x) && !x.closest('#tamauto, .x-grid3')).map((x) => text(x)).filter((t) => t && t.length < 40).slice(0, 25);
+      log(`Start: ${e.message} (Durchlauf ${++startFails}/8) – ${tabDiag()} · sichtbare Schaltflächen: ${[...new Set(knöpfe)].join(' | ') || 'keine'}.`, startFails >= 8 ? 'err' : 'debug');
+      if (startFails >= 8) startTabsDone = true; else startNextAt = Date.now() + 1000;
+    } finally { startRunning = false; }
+  }
+  if (GM_getValue('startTabs', true)) { // schneller Takt, bis die Reiter offen sind (höchstens 90 s)
+    const t0 = Date.now(), iv = setInterval(() => { if (startTabsDone || Date.now() - t0 > 90000) clearInterval(iv); else openTabsOnStart().catch(() => {}); }, 150);
   }
   // Beim Öffnen des MA-Managements mit TAM abgleichen (TAM ist die Quelle – nicht nur der lokale Stand), höchstens alle 5 min
-  function maAutoSync() { if (Date.now() - GM_getValue('accSyncAt', 0) > 5 * 60e3) syncAcceptedTab('MA-Management').then((ok) => { if (ok) renderMa(); }).catch(() => {}); }
+  function maAutoSync() { if (Date.now() - GM_getValue('accSyncAt', 0) > 5 * 60e3) angenommenAbgleichen('MA-Management').then((ok) => { if (ok) renderMa(); }).catch(() => {}); }
 
   // ------------------------------------------------------------------ Hauptzyklus
   // reason: Anlass für das Protokoll (Refresh, Tabelle aktualisiert, Reiterwechsel, Start …)
@@ -2593,8 +2658,6 @@
       scanAccepted();    // Auftragsbuch mit „Angenommene Aufträge“ abgleichen (nur wenn sichtbar und geändert)
       const bookPage = document.getElementById('tamauto-page-book');
       if (bookPage && bookPage.style.display !== 'none' && now - lastBookRenderAt > 60000) { lastBookRenderAt = now; renderOrderbook(); } // rote 1 wandert mit der Zeit
-      morgenScan().catch(() => {}); // einmal morgens ab 07:58
-      openTabsOnStart().catch(() => {}); // einmal je Seitenaufruf
     }
     renderSync(now);
     if (busy || !onPublishedTab()) return;
@@ -2651,15 +2714,20 @@
   let maFehler = ''; // letzte Fehlermeldung beim Laden der Kontakte (bleibt sichtbar, bis es klappt)
   // Kontakte/Telefon aller angenommenen Aufträge: dieselbe Anfrage wie TAM, aber mit Seitengröße 1500 (TAM zeigt 500)
   async function ladeMaKontakte() {
-    if (!tamAcceptedReq) throw new Error('„Angenommene Aufträge“ öffnen und dort einmal aktualisieren (Refresh-Pfeil)');
+    // Anfrage: die mitgeschnittene der angenommenen Liste, sonst aus der der „Veröffentlichten“ abgeleitet (kein Reiterwechsel nötig)
+    const abgeleitet = !tamAcceptedReq && tamLoadReq ? acceptedBodyFromPublished(tamLoadReq.body) : null;
+    const req = tamAcceptedReq || (abgeleitet ? { url: tamLoadReq.url, headers: tamLoadReq.headers, body: abgeleitet } : null);
+    if (!req) throw new Error('TAM-Anfrage noch nicht übernommen („Veröffentlichte Aufträge“ einmal aktualisieren)');
     const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-    const t0 = Date.now(), neu = mitLimit(tamAcceptedReq.body, 1500);
-    const res = await W.fetch(tamAcceptedReq.url, { method: 'POST', credentials: 'include', headers: tamAcceptedReq.headers, body: neu });
+    const t0 = Date.now(), neu = mitLimit(req.body, 1500);
+    const res = await W.fetch(req.url, { method: 'POST', credentials: 'include', headers: req.headers, body: neu });
     const txt = await res.text();
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     maKontakte = { map: parseListeKontakte(txt), at: Date.now() };
+    const nz = wendeListenZeichenAn(parseListeZeichen(txt, (places.ma || []).map((m) => m.k)));
+    if (nz) log(`Angenommene Aufträge (still gelesen): ${nz} Zeichen im Auftragsbuch ergänzt.`, 'debug');
     const v = [...maKontakte.map.values()], buch = maOrders();
-    log(`MA-Management: Antwort ${Math.round(txt.length / 1024)} KB in ${Date.now() - t0} ms · Seitengröße ${neu === tamAcceptedReq.body ? 'unverändert (Aufbau der Anfrage unbekannt)' : '1500'} · ` +
+    log(`MA-Management: Antwort ${Math.round(txt.length / 1024)} KB in ${Date.now() - t0} ms · Seitengröße ${neu === req.body ? 'unverändert (Aufbau der Anfrage unbekannt)' : '1500'} · ` +
       `${v.length} Aufträge gelesen, ${v.filter((x) => x.telefon).length} mit Telefon, ${v.filter((x) => !x.eindeutig).length} nicht eindeutig · ` +
       `Auftragsbuch: ${buch.length} Aufträge (7 Tage), davon ${buch.filter((o) => o.kontakt).length} mit Kontakt, ${buch.filter((o) => o.kontakt && o.kontakt.telefon).length} mit Telefon`, 'debug');
     return maKontakte.map.size;
@@ -2789,7 +2857,7 @@
   const MA_RELOAD_MS = 30 * 60e3; // Kontakte alle 30 min (wie die Excel)
   function maAutoLoad() { // beim Öffnen des Reiters, wenn die Anfrage bekannt und der Stand älter als 5 min ist
     maAutoSync();
-    if (tamAcceptedReq && Date.now() - maKontakte.at > MA_RELOAD_MS) ladeMaKontakte().then(renderMa).catch(() => {});
+    if ((tamAcceptedReq || tamLoadReq) && Date.now() - maKontakte.at > MA_RELOAD_MS) ladeMaKontakte().then(renderMa).catch(() => {});
   }
 
   function buildPanel() {
@@ -3999,7 +4067,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     const reloadMs = cfg.placesReloadMin * 60 * 1000;
     if (age > reloadMs || places.v !== 2 || !places.block || places.ma === undefined) loadPlacesFromSheet(); // places.ma fehlt = Stand von vor dem MA-Management
     setInterval(loadPlacesFromSheet, reloadMs);
-    setInterval(() => { if (tamAcceptedReq && license) ladeMaKontakte().then(renderMa).catch(() => {}); }, MA_RELOAD_MS); // Kontakte der angenommenen Aufträge
+    setInterval(() => { if ((tamAcceptedReq || tamLoadReq) && license) ladeMaKontakte().then(renderMa).catch(() => {}); }, MA_RELOAD_MS); // Kontakte der angenommenen Aufträge
     restartTimer();
     if (cfg.enabled) cycle('Start');
     // Update-Prüfung beim Start (max. alle 6 h) und danach alle 6 h

@@ -396,13 +396,12 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
-### 1.23.6 – 2026-10-06
-- **Start-Routine öffnet die Reiter über TAMs Menü „Meine Aufträge“:** TAM startet nur mit dem „Information Cockpit“, die Reiter „Veröffentlichte“ und „Angenommene Aufträge“ entstehen erst über das Menü. Das Script öffnet beide (Versuche alle 3 s), liest „Angenommene Aufträge“ einmal aus und bleibt in „Veröffentlichte Aufträge“. Im Protokoll steht „Start: beide Reiter geöffnet …“; bei Misserfolg die gefundenen Reiter und sichtbaren Schaltflächen.
-- Protokoll: der minütliche Routine-Abgleich ohne Treffer („Intervall → Abgleich: 0 Aufträge in Tabelle, 0 offen …“) wird nicht mehr geschrieben.
-
-### 1.23.5 – 2026-10-06
-- **Auftragsbuch:** die Spalte „Z.“ (Zeichen gesetzt ✓) entfällt komplett – fünf Spalten: Datum | Von | AuftragsNr | Ort | Euro.
-- **Start-Routine robuster:** bis zu 6 Versuche im Abstand von 15 s (auch wenn TAM mit einem anderen Reiter startet); das Protokoll nennt bei Misserfolg die vorhandenen Reiter und den Zustand des Panels „Angenommene Aufträge“.
+### 1.24.0 – 2026-10-06
+- **Angenommene Aufträge werden still geladen – kein Reiterwechsel mehr:** Die Anfrage der angenommenen Liste wird aus der der „Veröffentlichten“ abgeleitet (nur der Listentyp ändert sich); Kontakte (Telefon) und **Ihr Zeichen** kommen aus der Antwort. Das Zeichen aus der Antwort ist eine Näherung (erkannt am Inhalt: bekanntes Kürzel, „?“, „… zurück“) und wird nie über ein aus TAMs Tabelle gelesenes Zeichen geschrieben.
+- **Start:** Das Script öffnet über TAMs Menü „Meine Aufträge“ nur noch „Veröffentlichte Aufträge“ (sobald das Menü steht, noch während das Dashboard lädt – Prüfung alle 150 ms), lädt die angenommenen einmal still und bleibt im Veröffentlichen-Bereich. Nur wenn das nicht geht, wird „Angenommene Aufträge“ kurz geöffnet. Das Protokoll meldet den Erfolg.
+- **Die Morgenroutine (07:58) und ihre Abstimmung zwischen den Geräten entfallen:** Der Abgleich beim Start ersetzt sie (bessere Performance, einmal abgeglichen). Beim Öffnen des MA-Managements wird höchstens alle 5 min still nachgeladen.
+- Protokoll: der minütliche Routine-Abgleich ohne Treffer („Intervall → Abgleich: 0 Aufträge in Tabelle …“) wird nicht mehr geschrieben.
+- **Auftragsbuch:** die Spalte „Z.“ (Zeichen gesetzt) entfällt – fünf Spalten: Datum | Von | AuftragsNr | Ort | Euro.
 
 ### 1.23.4 – 2026-10-06
 Fasst die Entwicklung 1.21.0 bis 1.23.4 zusammen (zwischenzeitlich gebaute und wieder entfernte Funktionen wie Zeichen-Schreiben, Marktgebiete und mehrere Mail-Bausteine sind hier nicht aufgeführt).
@@ -423,8 +422,6 @@ Fasst die Entwicklung 1.21.0 bis 1.23.4 zusammen (zwischenzeitlich gebaute und w
 
 **Sonstiges**
 - **Tages-Blacklist (Rückgaben) gilt 48 Stunden rollierend** – auch für „XX zurück“ im Zeichen (auch bei Aufträgen früherer Tage), damit Nachtarbeit sie nicht um Mitternacht löscht.
-- **Morgenroutine** einmal um 07:58 (nachholbar bis 09:00): „Angenommene Aufträge“ kurz öffnen, Zeichen abgleichen, zurück – so stehen „zurück“-Aufträge **vor 08:00** auf der Blacklist. Hat ein anderes Gerät sie schon gemeldet, entfällt sie.
-- **Start:** Beim Öffnen von TAM werden einmal beide Reiter geöffnet („Veröffentlichte“ und „Angenommene Aufträge“); danach bleibt „Veröffentlichte Aufträge“ aktiv.
 - **Silent Reload ersetzt den Auto-Refresh** (Standard an, alle 30 s; eigene Einstellungen bleiben). **Arbeitszeit fest 08:00–18:00** (außerhalb pausiert Silent Reload; die Annahme läuft weiter). **Bildschirm anlassen** standardmäßig an.
 - Die Statuszeile „Abgleich … in Tabelle … passend“ im Kopf entfällt (steht im Protokoll).
 - Die Marktgebiete beeinflussen die Annahme nie – es gelten nur „annehmen“ und „nicht annehmen“.

@@ -76,3 +76,39 @@ describe('Limit der Listenanfrage', () => {
     assert.deepEqual(r.split('|').filter((x, i) => x !== n.split('|')[i]), ['500']);
   });
 });
+
+// Angenommene Aufträge still laden: Anfrage aus der „Veröffentlichte“-Anfrage ableiten, Zeichen aus der Antwort lesen
+describe('Angenommene Aufträge still laden', () => {
+  const za = src.indexOf('// <zeichen-parser>'), zb = src.indexOf('// </zeichen-parser>'), la = src.indexOf('// <liste-zeichen>'), lb = src.indexOf('// </liste-zeichen>');
+  if (la < 0 || lb < 0) throw new Error('Marker <liste-zeichen> fehlt im Script');
+  const L = new Function(`${src.slice(za, zb)}\n${src.slice(a, b)}\n${src.slice(la, lb)}; return { acceptedBodyFromPublished, parseListeZeichen };`)();
+  const fx = path.join(__dirname, 'fixtures', 'mitschnitt-angenommen-liste.json');
+
+  it('Anfrage: nur der Listentyp (0 → 1) ändert sich', () => {
+    const p = ['7', '0', '5', 'Modul', 'Sum', 'Svc', 'x.ListenTyp/1', 'y', '1', '2', '3', '4', '0', '2', '4', '0'];
+    const r = L.acceptedBodyFromPublished(p.join('|'));
+    assert.equal(r.split('|').slice(-1)[0], '1'); assert.equal(r.split('|').length, p.length);
+    assert.equal(L.acceptedBodyFromPublished('7|0|1|a|1|'), null); // unbekannter Aufbau → null
+  });
+  it('Anfrage aus dem echten Mitschnitt: veröffentlicht → angenommen (nur Listentyp wie in TAM), unbekannter Aufbau → null', { skip: !fs.existsSync(fx) && 'Mitschnitt fehlt' }, () => {
+    const j = JSON.parse(fs.readFileSync(fx, 'utf8')), r = L.acceptedBodyFromPublished(j[0].req).split('|'), pub = j[0].req.split('|'), acc = j[1].req.split('|');
+    assert.equal(r[60], acc[60]); // Listentyp
+    const diff = r.map((x, i) => (x !== pub[i] ? i : -1)).filter((i) => i >= 0);
+    assert.deepEqual(diff, [60]);
+  });
+  it('Zeichen je Auftrag (synthetisch): bekanntes Kürzel, „zurück“, „?“; Ort, Kontakt und Nummern zählen nicht', () => {
+    const T2 = 'x.model.auftraege.Teilauftrag/1';
+    const table = [T2, 'MW3000001', 'Dortmund', 'LE t', 'A\n0171 1234567\nE-Mail: a@x.de', 'MW3000002', 'zurück LH', 'MW3000003', '?', 'Essen', 'MW3000004'];
+    const txt = `//OK[1,2,3,4,5,1,6,7,1,8,9,10,1,11,3,${JSON.stringify(table)},0,7]`;
+    const m = L.parseListeZeichen(txt, ['LE', 'LH']);
+    assert.equal(m.get('MW3000001'), 'LE t'); assert.equal(m.get('MW3000002'), 'zurück LH'); assert.equal(m.get('MW3000003'), '?');
+    assert.equal(m.has('MW3000004'), false); // nur Ort, kein Zeichen
+  });
+  it('echte Antwort: Zeichen für den größten Teil der Aufträge, „zurück“ erkannt', { skip: !fs.existsSync(fx) && 'Mitschnitt fehlt' }, () => {
+    const j = JSON.parse(fs.readFileSync(fx, 'utf8')), t = j.reduce((x, y) => (String(y.res).length > String(x.res).length ? y : x)).res;
+    const m = L.parseListeZeichen(t, ['AT', 'CST', 'DA', 'GS', 'JH', 'JHO', 'LE', 'LH', 'LU', 'MB', 'MK', 'MN', 'PM', 'TV', 'TÖ', 'VV']);
+    assert.ok(m.size > 150, `nur ${m.size}`);
+    assert.ok([...m.values()].some((z) => /zur(ü|ue)ck/i.test(z)));
+  });
+});
+
