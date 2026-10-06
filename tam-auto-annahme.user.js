@@ -454,6 +454,46 @@
   // Das Fenster kann schon vor dem Eintrag ins Auftragsbuch kommen → vormerken und beim Eintragen setzen.
   const SLA_SOON_MS = 2 * 3600 * 1000;
   const slaMs = (s) => { const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})/.exec(String(s || '')); return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5]).getTime() : null; };
+  // <zeichen-parser>
+  // „Ihr Zeichen“ als Tour lesen: Kürzel, Datum und Uhrzeit in beliebiger Reihenfolge und Schreibweise
+  // (MK 12.10 10:00 · 12.10 MK 10 Uhr · mk 12/10. 9.30 · PM Okt 07 10 T). status: leer | tour | ohneDatum | ohneKuerzel | unklar
+  function parseTourzeichen(raw, kuerzelListe = [], now = new Date()) {
+    const s = String(raw == null ? '' : raw).trim();
+    const out = { status: 'leer', raw: s, kuerzel: '', bekannt: false, datum: null, zeit: null, vergangen: false };
+    if (!s) return out;
+    const MONATE = { jan: 1, feb: 2, mär: 3, mar: 3, maer: 3, apr: 4, mai: 5, jun: 6, jul: 7, aug: 8, sep: 9, okt: 10, nov: 11, dez: 12 };
+    let rest = ` ${s} `, datum = null, zeit = null;
+    const dateOk = (d, m) => d >= 1 && d <= 31 && m >= 1 && m <= 12 && new Date(2000, m - 1, d).getDate() === d; // 2000 = Schaltjahr
+    const timeOk = (h, m) => h >= 0 && h <= 23 && m >= 0 && m <= 59;
+    const setDate = (d, m, y) => { if (datum || !dateOk(d, m)) return false; datum = { d, m, y: y ? (y < 100 ? 2000 + y : y) : 0 }; return true; };
+    const setTime = (h, m) => { if (zeit || !timeOk(h, m)) return false; zeit = { h, m }; return true; };
+    // 1) Uhrzeit mit Doppelpunkt (10:00, 10:00 Uhr) und „10 Uhr“ / „10h“
+    rest = rest.replace(/(?<![\d.:])(\d{1,2}):(\d{2})(?:\s*(?:uhr|h))?(?!\d)/gi, (all, h, m) => (setTime(+h, +m) ? ' ' : all));
+    rest = rest.replace(/(?<![\d.:])(\d{1,2})\s*(?:uhr|h)\b/gi, (all, h) => (setTime(+h, 0) ? ' ' : all));
+    // 2) Datum mit Monatsnamen: „12. Okt“, „12 Oktober“, „Okt 07“
+    const MON = 'jan|feb|mär|mar|maer|apr|mai|jun|jul|aug|sep|okt|nov|dez';
+    rest = rest.replace(new RegExp(`(?<![\\d.:])(\\d{1,2})\\.?\\s*(${MON})[a-zäöü]*\\.?(?![a-zäöü])`, 'gi'), (all, d, mo) => (setDate(+d, MONATE[mo.toLowerCase()]) ? ' ' : all));
+    rest = rest.replace(new RegExp(`(?<![a-zäöü])(${MON})[a-zäöü]*\\.?\\s*(\\d{1,2})(?![\\d:])`, 'gi'), (all, mo, d) => (setDate(+d, MONATE[mo.toLowerCase()]) ? ' ' : all));
+    // 3) Zahlen mit Trennzeichen: 12.10 / 12.10.26 / 12/10 / 12-10 – als Datum, wenn gültig; sonst (9.30, 10.00) als Uhrzeit
+    rest = rest.replace(/(?<![\d.:])(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\.?(?![\d:])/g, (all, a, b, y) =>
+      ((!y && setDate(+a, +b)) || (y && setDate(+a, +b, +y)) || (!y && setTime(+a, +b)) ? ' ' : all));
+    // 4) Kürzel: erstes bekanntes Wort, sonst das erste 2–4-stellige Wort (ohne Füllwörter wie „neu“, „erl“)
+    const SKIP = /^(neu|erl|uhr|tour|tel|ok|am|um)$/i;
+    const words = (rest.match(/[A-Za-zÄÖÜäöüß]{2,4}(?![A-Za-zÄÖÜäöüß])/g) || []).filter((w) => !SKIP.test(w));
+    const known = new Set((kuerzelListe || []).map((k) => String(k).toUpperCase()));
+    const hit = words.find((w) => known.has(w.toUpperCase())) || words[0] || '';
+    out.kuerzel = hit.toUpperCase(); out.bekannt = !!hit && known.has(out.kuerzel);
+    out.datum = datum; out.zeit = zeit;
+    if (datum) { // Jahr ergänzen: ohne Angabe das aktuelle, außer das Datum liegt weit zurück (Jahreswechsel)
+      const heute = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      let y = datum.y || now.getFullYear(), c = new Date(y, datum.m - 1, datum.d);
+      if (!datum.y && heute - c > 180 * 864e5) { y++; c = new Date(y, datum.m - 1, datum.d); }
+      datum.y = y; out.vergangen = c < heute;
+    }
+    out.status = out.kuerzel && datum ? 'tour' : out.kuerzel ? 'ohneDatum' : (datum || zeit) ? 'ohneKuerzel' : 'unklar';
+    return out;
+  }
+  // </zeichen-parser>
   const terminRed = (e) => { const t = slaMs(e.sla); return !!e.terminWeg && !e.zeichen && t !== null && t - new Date(e.ts).getTime() <= SLA_SOON_MS; };
   const terminPending = new Set();
   function markTermin(nrs) {
