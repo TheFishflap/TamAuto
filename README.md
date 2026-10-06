@@ -400,6 +400,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 - **Kontaktstatus in „Ihr Zeichen“** auch als Kombination (z. B. `tm` = Telefon- und Mailversuch, `Tm` = telefonisch bestätigt, Mail nur versucht);
   ein bekanntes Kürzel (z. B. MM) hat Vorrang vor den Kontaktbuchstaben.
 - Protokoll MA-Management: nicht zugeordnete Aufträge mit PLZ, Ort und Anzahl.
+- **„?“ im Zeichen = ungeklärt** (eigener Status). **„zurück LH“ = Rückgabe:** solche Aufträge werden bei den Rückgaben eingetragen
+  (heute nicht erneut annehmen, den anderen Geräten gemeldet) und tauchen bei den Mitarbeitern nicht mehr unter „neue Aufträge“ auf.
+- Mail-Hinweis „Keine E-Mail-Adresse für … “ steht neben der Überschrift „Mail an den Mitarbeiter“.
 
 ### 1.21.2 – 2026-10-06
 - **MA-Management – Mail:** Aufträge stehen als **Tabelle mit Kontakt** in der Mail (Auftrag · PLZ/Ort · SLA · Kontakt · Hinweis); neuer Knopf

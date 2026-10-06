@@ -1033,6 +1033,14 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.equal(tam.store.get('maSender'), 'Leonie Struve');
   });
 
+  it('Hinweis „keine E-Mail-Adresse“ steht in der Überschriftszeile der Mail und nennt das Kürzel', async () => {
+    tam = startTam({ gm: { places: { ...KOELN, ma: [{ k: 'MK', name: 'Markus', mail: '', gebiet: ['44'] }], kontakte: KON }, orderbook: BOOK() } });
+    await tam.ready(); open();
+    const st = $('tamauto-ma-mailstate');
+    assert.match(st.textContent, /Keine E-Mail-Adresse für MK/);
+    assert.ok(st.previousElementSibling && /Mail an den Mitarbeiter/.test(st.previousElementSibling.textContent) || /Mail an den Mitarbeiter/.test(st.parentElement.firstElementChild.textContent), 'Hinweis nicht neben der Überschrift');
+  });
+
   it('Baustein wechseln ändert Betreff und Text', async () => {
     await setup();
     $('tamauto-ma-baustein').value = 'mahnung'; $('tamauto-ma-baustein').onchange();
@@ -1087,6 +1095,26 @@ describe('MA-Management (Reiter)', { skip }, () => {
     const before = n();
     $('tamauto-ma-load').click();
     assert.ok(await until(() => n() > before, 3000), 'Excel nicht neu geladen');
+  });
+
+  it('„zurück LH“ im Zeichen → Rückgabe: bei den Rückgaben, nicht mehr unter „neue Aufträge“', async () => {
+    await setup();
+    tam.addAccepted('MW3190401', '', { id: '3705401', zeichen: 'zurück LH' });
+    tam.selectTab('AgentEigeneAuftraege');
+    assert.ok(await until(() => ((tam.store.get('returnsToday') || { items: {} }).items || {}).MW3190401, 3000), JSON.stringify(tam.store.get('returnsToday')));
+    tam.selectTab('AgentVeroeffentlichteAuftraege');
+    await sleep(300);
+    assert.doesNotMatch($('tamauto-ma-rows').textContent, /MW3190401/);
+  });
+
+  it('Zeichen „?“ wird als „ungeklärt“ angezeigt', async () => {
+    await setup();
+    $('tamauto-ma-nurohne').click(); $('tamauto-ma-nurohne').click();
+    tam.addAccepted('MW3190403', '', { id: '3705403', zeichen: '?' });
+    tam.addAccepted('MW3190404', '', { id: '3705404', zeichen: '?' });
+    tam.selectTab('AgentEigeneAuftraege'); await sleep(500); tam.selectTab('AgentVeroeffentlichteAuftraege'); await sleep(300);
+    $('tamauto-ma-sel').value = 'MK'; $('tamauto-ma-sel').onchange({ target: $('tamauto-ma-sel') });
+    assert.match($('tamauto-ma-rows').textContent, /ungeklärt/);
   });
 
   it('Kontakte laden ohne bekannte TAM-Anfrage → Hinweis statt Fehler', async () => {

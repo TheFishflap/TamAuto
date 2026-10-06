@@ -494,13 +494,15 @@
   const slaMs = (s) => { const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})/.exec(String(s || '')); return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5]).getTime() : null; };
   // <zeichen-parser>
   // „Ihr Zeichen“ als Tour lesen: Kürzel, Datum und Uhrzeit in beliebiger Reihenfolge und Schreibweise
-  // (MK 12.10 10:00 · 12.10 MK 10 Uhr · mk 12/10. 9.30 · PM Okt 07 10 T). status: leer | tour | ohneDatum | ohneKuerzel | unklar.
+  // (MK 12.10 10:00 · 12.10 MK 10 Uhr · mk 12/10. 9.30 · PM Okt 07 10 T). status: leer | tour | ohneDatum | ohneKuerzel | unklar |
+  // ungeklaert („?“) | rueckgabe („zurück LH“).
   // Kontaktstatus als einzelner Buchstabe (Groß-/Kleinschreibung zählt): T = telefonisch bestätigt, t = nur Telefonversuch,
   // M = Mail bestätigt, m = nur Mailversuch.
   function parseTourzeichen(raw, kuerzelListe = [], now = new Date()) {
     const s = String(raw == null ? '' : raw).trim();
-    const out = { status: 'leer', raw: s, kuerzel: '', bekannt: false, datum: null, zeit: null, vergangen: false, kontakt: '', bestaetigt: false, versuch: false };
+    const out = { status: 'leer', raw: s, kuerzel: '', bekannt: false, datum: null, zeit: null, vergangen: false, kontakt: '', bestaetigt: false, versuch: false, rueckgabe: false };
     if (!s) return out;
+    if (/^\?+$/.test(s)) { out.status = 'ungeklaert'; return out; } // „?“ = Zeichen ungeklärt
     const MONATE = { jan: 1, feb: 2, mär: 3, mar: 3, maer: 3, apr: 4, mai: 5, jun: 6, jul: 7, aug: 8, sep: 9, okt: 10, nov: 11, dez: 12 };
     let rest = ` ${s} `, datum = null, zeit = null;
     const dateOk = (d, m) => d >= 1 && d <= 31 && m >= 1 && m <= 12 && new Date(2000, m - 1, d).getDate() === d; // 2000 = Schaltjahr
@@ -536,7 +538,8 @@
       datum.y = y; out.vergangen = c < heute;
     }
     out.zeit = zeit;
-    out.status = out.kuerzel && datum ? 'tour' : out.kuerzel ? 'ohneDatum' : (datum || zeit) ? 'ohneKuerzel' : 'unklar';
+    out.rueckgabe = /\bzur(ü|ue)ck\b/i.test(s); // „zurück LH“ = an LH zurückgegeben
+    out.status = out.rueckgabe ? 'rueckgabe' : out.kuerzel && datum ? 'tour' : out.kuerzel ? 'ohneDatum' : (datum || zeit) ? 'ohneKuerzel' : 'unklar';
     return out;
   }
   // </zeichen-parser>
@@ -776,6 +779,16 @@
       if (slaMs(a.sla) !== null && e.sla !== a.sla) { const was = terminRed(e); e.sla = a.sla; changed++; if (!was && terminRed(e)) red.push(e.nr); }
       ['status', 'ref', 'strasse'].forEach((k) => { if (a[k] && e[k] !== a[k]) { e[k] = a[k]; changed++; } });
     });
+    // „zurück …“ im Zeichen = Rückgabe: bei den Rückgaben eintragen (heute nicht erneut annehmen) und den anderen Geräten melden
+    const known = (places.ma || []).map((m) => m.k), neuRet = [];
+    book.forEach((e) => {
+      if (!e.zeichen || e.zurueck || !/\bzur(ü|ue)ck\b/i.test(e.zeichen) || parseTourzeichen(e.zeichen, known).status !== 'rueckgabe') return;
+      e.zurueck = 1;
+      if (new Date(e.ts).toDateString() === new Date().toDateString() && addToday('returnsToday', [e.nr], { plz: e.plz, ort: e.ort })) neuRet.push(e.nr);
+      else if (!dayList('returnsToday').items[nrKey(e.nr)]) neuRet.push(e.nr);
+      changed++;
+    });
+    if (neuRet.length) { log(`Rückgabe laut Zeichen („zurück …“): ${neuRet.join(', ')} – bei den Rückgaben eingetragen.`, 'ok'); retPost('ret', neuRet); renderReturns(); }
     if (!changed) return;
     GM_setValue('orderbook', book);
     if (red.length) log(`Termin offen und SLA endet in ≤ 2 h: ${red.join(', ')} – im Auftragsbuch rot markiert.`, 'err');
@@ -2638,6 +2651,8 @@
   function tourLabel(t) {
     const p2 = (n) => String(n).padStart(2, '0');
     if (t.status === 'leer') return '–';
+    if (t.status === 'ungeklaert') return 'ungeklärt';
+    if (t.status === 'rueckgabe') return `Rückgabe${t.kuerzel ? ` an ${t.kuerzel}` : ''}`;
     if (t.status === 'tour') return `${t.kuerzel} ${p2(t.datum.d)}.${p2(t.datum.m)}.${t.zeit ? ` ${p2(t.zeit.h)}:${p2(t.zeit.m)}` : ''}${t.kontakt ? ` ${t.kontakt}` : ''}${t.bestaetigt ? ' ✓' : t.versuch ? ' (Versuch)' : ''}${t.vergangen ? ' – vergangen' : ''}`;
     if (t.status === 'ohneDatum') return `${t.kuerzel} – Datum fehlt`;
     if (t.status === 'ohneKuerzel') return 'Kürzel fehlt';
@@ -2656,14 +2671,14 @@
     }
     const m = ma.find((x) => x.k === sel.value);
     const all = maOrders(), nurOhne = $('tamauto-ma-nurohne').checked;
-    const mine = m ? all.filter((o) => zustaendig(o).includes(m.k) && (!nurOhne || o.tour.status !== 'tour')) : [];
+    const mine = m ? all.filter((o) => o.tour.status !== 'rueckgabe' && zustaendig(o).includes(m.k) && (!nurOhne || o.tour.status !== 'tour')) : [];
     const sumKey = `${m ? m.k : ''}|${all.length}|${mine.length}|${(places.ma || []).length}|${(places.gebiete || []).length}|${maKontakte.at}`;
     if (sumKey !== renderMa.last) {
       renderMa.last = sumKey;
       const znt = all.filter((o) => zustaendig(o).length).length, zeichen = all.filter((o) => o.zeichen);
       const cnt = (st) => zeichen.filter((o) => o.tour.status === st).length;
       log(`MA-Management: ${(places.ma || []).length} MA, ${(places.gebiete || []).length} Marktgebiete, ${(places.kontakte || []).length} Kontakte · Auftragsbuch ${all.length} Aufträge (7 Tage), ${znt} zugeordnet, ${all.length - znt} nicht · ` +
-        `${m ? `${m.k}: ${mine.length} Aufträge${nurOhne ? ' ohne Tour' : ''}` : 'kein MA gewählt'} · Zeichen gelesen: ${cnt('tour')} Tour, ${cnt('ohneDatum')} ohne Datum, ${cnt('ohneKuerzel')} ohne Kürzel, ${cnt('unklar')} unklar`, 'debug');
+        `${m ? `${m.k}: ${mine.length} Aufträge${nurOhne ? ' ohne Tour' : ''}` : 'kein MA gewählt'} · Zeichen gelesen: ${cnt('tour')} Tour, ${cnt('ohneDatum')} ohne Datum, ${cnt('ohneKuerzel')} ohne Kürzel, ${cnt('unklar')} unklar, ${cnt('ungeklaert')} ungeklärt (?), ${cnt('rueckgabe')} Rückgabe (zurück)`, 'debug');
       const nz = new Map(); all.filter((o) => !zustaendig(o).length).forEach((o) => nz.set(`${o.plz} ${o.ort}`, (nz.get(`${o.plz} ${o.ort}`) || 0) + 1));
       if (nz.size) log(`MA-Management: nicht zugeordnet (${nz.size}): ${[...nz.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([k, n]) => `${k} ×${n}`).join(', ')}`, 'debug');
       const rest = new Map(); zeichen.filter((o) => o.tour.status !== 'tour').forEach((o) => rest.set(o.zeichen, (rest.get(o.zeichen) || 0) + 1));
@@ -2707,7 +2722,7 @@
     const ccList = [...cc.querySelectorAll('input')].filter((i) => i.checked || i.disabled).map((i) => i.dataset.mail);
     const mail = m ? baueMail({ ma: m, orders: mine, baustein: $('tamauto-ma-baustein').value, absender: ab.value, cc: ccList, now: new Date() }) : { to: '', cc: [], subject: '', body: '' };
     $('tamauto-ma-subject').value = mail.subject; $('tamauto-ma-body').value = mail.body;
-    $('tamauto-ma-open').dataset.to = mail.to; $('tamauto-ma-open').dataset.cc = mail.cc.join(','); $('tamauto-ma-open').dataset.html = mail.html || '';
+    $('tamauto-ma-open').dataset.ma = m ? m.k : ''; $('tamauto-ma-open').dataset.to = mail.to; $('tamauto-ma-open').dataset.cc = mail.cc.join(','); $('tamauto-ma-open').dataset.html = mail.html || '';
     updateMaLink();
   }
   function updateMaLink() {
@@ -2718,7 +2733,7 @@
     const full = `${base}&body=${q($('tamauto-ma-body').value)}`;
     const zuLang = full.length > 1900; // Mailprogramme/Browser kürzen sehr lange Links
     a.href = zuLang ? base : full;
-    $('tamauto-ma-mailstate').textContent = !a.dataset.to ? 'Keine Empfänger-Adresse.' : zuLang ? '⚠ Text zu lang für den Link – „Text kopieren“ nutzen und in die Mail einfügen.' : '';
+    $('tamauto-ma-mailstate').textContent = !a.dataset.to ? `Keine E-Mail-Adresse für ${a.dataset.ma || 'diesen MA'} (Blatt „MA“).` : zuLang ? '⚠ Text zu lang für den Link – „Text kopieren“ nutzen und in die Mail einfügen.' : '';
   }
   function initMa() {
     const $ = (id) => document.getElementById(id);
@@ -3022,7 +3037,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
           <div style="margin-top:6px"><b id="tamauto-ma-unzhead" style="cursor:pointer" title="Aus-/einklappen"><span id="tamauto-ma-unzarrow">▾</span> Nicht zugeordnet <span id="tamauto-ma-unzcount"></span></b>
             <span class="tamauto-help" title="Aufträge, deren PLZ und Ort in keiner Zeile des Blatts „Marktgebiete“ (Ortsliste.xlsx) vorkommen. Anklicken kopiert PLZ und Ort – dann in der Excel einem Mitarbeiter zuordnen.">?</span>
             <div id="tamauto-ma-unz" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px"></div></div>
-          <div style="margin-top:8px;padding-top:6px;border-top:2px solid #1a4d8f"><b>Mail an den Mitarbeiter</b>
+          <div style="margin-top:8px;padding-top:6px;border-top:2px solid #1a4d8f"><b>Mail an den Mitarbeiter</b> <span id="tamauto-ma-mailstate" style="color:#b36b00;font-size:11px"></span>
             <div class="tamauto-chk" style="gap:6px;flex-wrap:wrap;margin:4px 0">Baustein
               <select id="tamauto-ma-baustein"><option value="neu">Neue Aufträge</option><option value="termin">Termin vereinbaren + Kurzzeichen</option><option value="tour">Tour ergänzen</option><option value="mahnung">Mahnung</option><option value="pma">Problem mit Auftrag (PMA)</option></select>
               Absender <select id="tamauto-ma-absender"></select></div>
@@ -3030,7 +3045,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
             <input id="tamauto-ma-subject" style="width:100%;margin:2px 0">
             <textarea id="tamauto-ma-body" style="width:100%;height:150px;font:11px monospace"></textarea>
             <div class="tamauto-chk" style="gap:6px;margin-top:4px"><a id="tamauto-ma-open" href="#" target="_blank" rel="noopener noreferrer" style="padding:3px 8px;border:1px solid #1a4d8f;border-radius:3px;background:#e8f0fb;color:#000;text-decoration:none">✉ Mail öffnen</a>
-              <button id="tamauto-ma-copy">Text kopieren</button><button id="tamauto-ma-copyhtml" title="Kopiert die Mail mit echter Tabelle – in die Mail einfügen (Strg+V / Cmd+V)">Als Tabelle kopieren</button><span id="tamauto-ma-mailstate" style="color:#b36b00"></span></div>
+              <button id="tamauto-ma-copy">Text kopieren</button><button id="tamauto-ma-copyhtml" title="Kopiert die Mail mit echter Tabelle – in die Mail einfügen (Strg+V / Cmd+V)">Als Tabelle kopieren</button></div>
           </div>
         </div>
         <div id="tamauto-page-main" style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">

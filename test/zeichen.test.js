@@ -72,6 +72,16 @@ describe('Tourzeichen', () => {
   it('nur Kürzel → Datum fehlt', () => { const r = p('MK'); assert.equal(r.status, 'ohneDatum'); assert.equal(r.kuerzel, 'MK'); });
   it('Kürzel mit Zeit, aber ohne Datum → Datum fehlt', () => { assert.equal(p('MK 10:00').status, 'ohneDatum'); });
   it('Datum ohne Kürzel → Kürzel fehlt', () => { const r = p('12.10 10:00'); assert.equal(r.status, 'ohneKuerzel'); assert.equal(r.kuerzel, ''); });
+  it('„?“ = Zeichen ungeklärt (eigener Status)', () => { for (const s of ['?', ' ? ', '??']) assert.equal(p(s).status, 'ungeklaert', s); assert.equal(p('MK ?').status, 'ohneDatum'); });
+  it('„zurück LH“ = Rückgabe an LH', () => {
+    for (const s of ['zurück LH', 'Zurueck LH', 'LH zurück', 'ZURÜCK an LH']) { const r = p(s); assert.equal(r.status, 'rueckgabe', s); assert.equal(r.rueckgabe, true, s); }
+    assert.equal(parse('zurück LH', ['LH', 'MK'], new Date(2026, 9, 6)).kuerzel, 'LH');
+    assert.equal(p('MK 12.10 10:00').rueckgabe, false);
+  });
+  it('neu bekannte Kürzel LE, VV, TV', () => {
+    const r = parse('VV TV', ['LE', 'VV', 'TV'], new Date(2026, 9, 6)); assert.equal(r.kuerzel, 'VV'); assert.equal(r.bekannt, true); assert.equal(r.status, 'ohneDatum');
+    assert.equal(parse('LE tm', ['LE'], new Date(2026, 9, 6)).kuerzel, 'LE');
+  });
   it('leer', () => { assert.equal(p('').status, 'leer'); assert.equal(p('   ').status, 'leer'); assert.equal(p(null).status, 'leer'); });
   it('unbekanntes Kürzel wird als solches erkannt, aber markiert', () => { const r = p('XY 12.10 10:00'); assert.equal(r.kuerzel, 'XY'); assert.equal(r.bekannt, false); assert.equal(p('MK 12.10').bekannt, true); });
   it('ohne Kürzelliste wird jedes 2–4-stellige Wort als Kürzel genommen', () => { assert.equal(parse('ZZ 12.10 10:00', [], new Date(2026, 9, 6)).kuerzel, 'ZZ'); });
