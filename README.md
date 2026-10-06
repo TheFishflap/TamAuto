@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.23.3 – 2026-10-06
+- **Mail:** Louis Thomee (LU) ist in der Cc-Auswahl nicht mehr enthalten (bleibt als Absender wählbar).
+
 ### 1.23.2 – 2026-10-06
 - **Tages-Blacklist (Rückgaben) gilt 48 Stunden rollierend** statt bis Mitternacht – wer nachts arbeitet, verliert „XX zurück“ nicht um 00:00. Rückgabemeldungen werden bis 48 h alt übernommen.
 - **MA-Management:** die rote 1 (Terminfenster war offen, Reservierung läuft in ≤ 2 h aus) steht auch in der Liste; in der **Mail** stehen Ampel (🔴/🟡) und die 1 in der Spalte „Reservierung bis“ mit einer Legende unter der Tabelle.

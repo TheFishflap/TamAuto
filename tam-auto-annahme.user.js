@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.23.2
+// @version      1.23.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -2670,7 +2670,7 @@
     }).join('') : '<tr><td colspan="6" style="color:#555;padding:4px">Keine offenen Terminvereinbarungen (Aufträge der letzten 7 Tage, ab 150 €, Kürzel im Zeichen, noch ohne Tour).</td></tr>';
     $('tamauto-ma-loadstate').textContent = maKontakte.at ? `Kontakte: ${maKontakte.map.size} · ${hhmm(new Date(maKontakte.at))}` : 'Kontakte: nicht geladen';
     // Cc und Absender: die Backoffice-Zeilen im Blatt „MA“
-    const bo = ma.filter((x) => x.backoffice), withMail = bo.filter((k) => k.mail);
+    const bo = ma.filter((x) => x.backoffice), withMail = bo.filter((k) => k.mail && !(k.k === 'LU' || /louis/i.test(k.name))); // Louis Thomee (LU) ist in Cc nicht wählbar
     const cc = $('tamauto-ma-cc'), sigC = withMail.map((k) => `${k.name || k.k}|${k.mail}`).join(';');
     if (cc.dataset.sig !== sigC) {
       cc.dataset.sig = sigC;

@@ -199,7 +199,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
   const inH = (h) => { const d = new Date(Date.now() + h * 3600000), p = (n) => String(n).padStart(2, '0'); return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
   const MAS = [{ k: 'MK', name: 'Markus Kirschbaum', mail: 'mk@example.com', backoffice: false }, { k: 'PM', name: 'Petra M.', mail: 'pm@example.com', backoffice: false },
     { k: 'BO', name: 'Backoffice Postfach', mail: 'auftrag@example.com', backoffice: true }, { k: 'SI', name: 'Silke', mail: 'silke@example.com', backoffice: true },
-    { k: 'LS', name: 'Leonie Struve', mail: '', backoffice: true }];
+    { k: 'LS', name: 'Leonie Struve', mail: '', backoffice: true }, { k: 'LU', name: 'Louis Thomee', mail: 'louis@example.com', backoffice: true }];
   const BOOK = () => [
     { ts: today, nr: 'MW3190401', plz: '44141', ort: 'Dortmund', dienst: 'Sixt Rückgabe', ref: 'WVWZZZ000B', strasse: 'Hauptstr. 5', sla: inH(1), preis: 200, terminWeg: 1, zeichen: 'MK' },
     { ts: today, nr: 'MW3190402', plz: '45127', ort: 'Essen', dienst: 'Standard', ref: 'WVWZZZ000A', preis: 180, zeichen: 'MK 12.10 10:00 T' }, // hat schon eine Tour
@@ -243,7 +243,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
 
   it('Cc abwählbar, Absender = Backoffice-Zeilen, gemerkt (Signatur „Liebe Grüße“)', async () => {
     await setup();
-    assert.deepEqual([...$('tamauto-ma-absender').options].map((o) => o.value), ['', 'Backoffice Postfach', 'Silke', 'Leonie Struve']);
+    assert.deepEqual([...$('tamauto-ma-absender').options].map((o) => o.value), ['', 'Backoffice Postfach', 'Silke', 'Leonie Struve', 'Louis Thomee']);
     [...tam.document.querySelectorAll('#tamauto-ma-cc input')].find((i) => i.dataset.mail === 'silke@example.com').click();
     assert.doesNotMatch(mailto(), /silke@example\.com/);
     $('tamauto-ma-absender').value = 'Leonie Struve'; $('tamauto-ma-absender').onchange({ target: $('tamauto-ma-absender') });
@@ -251,6 +251,12 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.equal(tam.store.get('maSender'), 'Leonie Struve');
   });
 
+  it('Louis Thomee ist in Cc gar nicht auswählbar (bleibt aber Absender)', async () => {
+    await setup();
+    assert.doesNotMatch(mailto(), /louis@example\.com/);
+    assert.ok(![...tam.document.querySelectorAll('#tamauto-ma-cc input')].some((i) => i.dataset.mail === 'louis@example.com'));
+    assert.ok([...$('tamauto-ma-absender').options].some((o) => o.value === 'Louis Thomee'));
+  });
   it('Zahl in Klammern beim MA = offene Terminvereinbarungen (Summe = Reiter)', async () => {
     await setup();
     const lab = (k) => [...$('tamauto-ma-sel').options].find((o) => o.value === k).textContent;
