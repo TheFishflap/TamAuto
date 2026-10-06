@@ -406,7 +406,7 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 - **Farbige TAM-Einträge** (Erweiterte Einstellungen, Standard an): In „Veröffentlichte Aufträge“ sind Aufträge
   **grün** (auf der Annahmeliste), **grau** (nicht auf der Annahmeliste), **rot** (Excel „nicht annehmen“) oder **orange**
   (heute zurückgegeben); Grund im Tooltip. Ändert nur die Anzeige lokal in diesem Browser – nicht in TAM selbst.
-- Vom Wächter geschlossenes Auftragsfenster nach der Annahme steht als Hinweis statt als Fehler im Log.
+- Log: Hinweise in **blau** (z. B. vom Wächter geschlossenes Auftragsfenster nach der Annahme – bisher als Fehler).
 
 ### 1.20.1 – 2026-10-06
 - Updates wieder **zuerst über GitHub** (Tampermonkey und Update-Button installieren direkt); OneDrive nur noch als Ersatz,

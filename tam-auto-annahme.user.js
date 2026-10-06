@@ -213,7 +213,8 @@
     return null;
   }
 
-  // Protokoll im Bedienfeld ("Console Log", ein-/ausblendbar). level 'debug' = Details wie Verzögerungen.
+  // Protokoll im Bedienfeld ("Console Log", ein-/ausblendbar). level 'debug' = Details wie Verzögerungen,
+  // 'hint' = Hinweis (blau), 'ok' = grün, 'err' = Fehler (rot).
   // Verlauf für "Log kopieren": deutlich länger als die 200 sichtbaren Zeilen, mit Datum, übersteht ein
   // Neuladen der Seite (wird regelmäßig gespeichert). Die Anzeige im Bedienfeld bleibt auf 200 Zeilen begrenzt.
   const LOG_KEEP = 5000;
@@ -235,6 +236,7 @@
       if (level === 'err') d.style.color = '#c62828';
       if (level === 'ok') d.style.color = '#2e7d32';
       if (level === 'debug') d.style.color = '#888';
+      if (level === 'hint') d.style.color = '#1a4d8f'; // Hinweis: blau
       box.prepend(d);
       while (box.childNodes.length > 200) box.lastChild.remove();
     }
@@ -1441,7 +1443,7 @@
       const k = [...triedNrs.keys()].find((x) => up.includes(x));
       if (!k || k === currentAcceptNr) return;
       closeWindow(w);
-      if (!strayLogged.has(w)) { strayLogged.add(w); log(`Hinweis: Fenster „${t}“ stand noch im Vordergrund – vom Wächter geschlossen.`); }
+      if (!strayLogged.has(w)) { strayLogged.add(w); log(`Hinweis: Fenster „${t}“ stand noch im Vordergrund – vom Wächter geschlossen.`, 'hint'); }
     });
   }
 
