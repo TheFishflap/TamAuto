@@ -109,7 +109,8 @@ describe('„XX zurück“, Start und stilles Laden', { skip }, () => {
     await tam.ready();
     assert.ok(await until(() => (book().find((e) => e.nr === 'MW3190821') || {}).zeichen === 'LE', 20000), tam.logs().slice(-6).join('\n'));
     assert.ok(await until(() => d.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active'), 5000), 'nicht in „Veröffentlichte Aufträge“');
-    assert.ok(await until(() => tam.logs().some((l) => /Start: „Veröffentlichte Aufträge“ geöffnet/.test(l)), 3000), tam.logs().slice(-5).join('\n'));
+    assert.ok(await until(() => tam.logs().some((l) => /Start: beide Reiter geöffnet/.test(l)), 3000), tam.logs().slice(-5).join('\n'));
+    assert.ok(d.querySelector('li[id$="__AgentEigeneAuftraege"]'), 'Reiter „Angenommene Aufträge“ ist nicht geöffnet');
   });
 
   it('MA-Management: angenommene Aufträge still geladen (kein Reiterwechsel), Zeichen ergänzt, „zurück“ → Tagesblacklist; Zeichen aus TAMs Tabelle haben Vorrang', async () => {

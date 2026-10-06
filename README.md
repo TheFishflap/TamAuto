@@ -396,6 +396,11 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.24.1 – 2026-10-06
+- **Start:** Der Reiter „Angenommene Aufträge“ wird ebenfalls geöffnet (sofort anklickbar), das Script bleibt aber in „Veröffentlichte Aufträge“; die Daten werden still geladen.
+- **Still geladene Liste wie in TAMs Reiter sortiert** (Endtermin aufsteigend, rote SLA zuerst), Seitengröße unverändert bei 500 – die Erhöhung auf 1500 entfällt.
+- Protokoll MA-Management: eine Vergleichszeile je Gerät (Auftragsbuch, Terminpflicht mit/ohne Kürzel, offen).
+
 ### 1.24.0 – 2026-10-06
 - **Angenommene Aufträge werden still geladen – kein Reiterwechsel mehr:** Die Anfrage der angenommenen Liste wird aus der der „Veröffentlichten“ abgeleitet (nur der Listentyp ändert sich); Kontakte (Telefon) und **Ihr Zeichen** kommen aus der Antwort. Das Zeichen aus der Antwort ist eine Näherung (erkannt am Inhalt: bekanntes Kürzel, „?“, „… zurück“) und wird nie über ein aus TAMs Tabelle gelesenes Zeichen geschrieben.
 - **Start:** Das Script öffnet über TAMs Menü „Meine Aufträge“ nur noch „Veröffentlichte Aufträge“ (sobald das Menü steht, noch während das Dashboard lädt – Prüfung alle 150 ms), lädt die angenommenen einmal still und bleibt im Veröffentlichen-Bereich. Nur wenn das nicht geht, wird „Angenommene Aufträge“ kurz geöffnet. Das Protokoll meldet den Erfolg.

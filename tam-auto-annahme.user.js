@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.24.0
+// @version      1.24.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -555,33 +555,27 @@
     });
     return out;
   }
-  // Seitengröße („limit“) der mitgeschnittenen Anfrage ändern: Zahl, die im Zahlenteil hinter dem Schlüssel „limit“
-  // und dem Typ-Verweis steht (… |limit-Index|Integer-Index|500| …). Bei unerwartetem Aufbau bleibt die Anfrage unverändert.
-  function mitLimit(body, limit) {
-    const p = String(body).split('|'), n = +p[2];
-    if (!(n > 0) || p.length < 4 + n) return body;
-    const strs = p.slice(3, 3 + n), li = strs.indexOf('limit') + 1, ti = strs.findIndex((t) => /^java\.lang\.Integer\//.test(t)) + 1;
-    if (!li || !ti) return body;
-    const nums = p.slice(3 + n);
-    for (let i = 0; i < nums.length - 2; i++) {
-      if (+nums[i] === li && +nums[i + 1] === ti && /^\d+$/.test(nums[i + 2])) { nums[i + 2] = String(limit); return [...p.slice(0, 3 + n), ...nums].join('|'); }
-    }
-    return body;
-  }
   // </liste-parser>
   // <liste-zeichen>
   // „Angenommene Aufträge“ ohne Reiterwechsel: Die Anfrage der Liste „Veröffentlichte Aufträge“ unterscheidet sich von der der angenommenen nur im
-  // Listentyp (ListenTyp-Wert 0 → 1: eigene Aufträge); alles andere (Modul, Prüfsumme, Sortierung, Filter) bleibt.
+  // Listentyp (ListenTyp-Wert 0 → 1: eigene Aufträge); sortiert wird wie in TAMs Reiter nach „slaEndeAgent“ aufsteigend – Aufträge mit roter SLA stehen
+  // zuerst, die Seitengröße (500) bleibt unverändert, mehr braucht es nicht.
   function acceptedBodyFromPublished(body) {
     const p = String(body).split('|'), n = +p[2];
     if (!(n > 0) || p.length < 4 + n) return null;
     const ti = p.slice(3, 3 + n).findIndex((t) => /\.ListenTyp\//.test(t)) + 1;
     if (!ti) return null;
-    const nums = p.slice(3 + n);
+    const strs = p.slice(3, 3 + n), nums = p.slice(3 + n);
     let k = -1; nums.forEach((v, i) => { if (+v === ti && /^\d+$/.test(nums[i + 1] || '')) k = i; }); // letzter Verweis auf den Listentyp, danach sein Wert
     if (k < 0 || nums[k + 1] !== '0') return null;
     nums[k + 1] = '1';
-    return [...p.slice(0, 3 + n), ...nums].join('|');
+    const si = strs.findIndex((t) => /SortDir\//.test(t)) + 1, fi = strs.indexOf('erstelltAm');
+    if (fi >= 0 && si) { // Sortierung: erstelltAm absteigend → slaEndeAgent aufsteigend
+      strs[fi] = 'slaEndeAgent';
+      let q = -1; nums.forEach((v, i) => { if (+v === si && /^\d+$/.test(nums[i + 1] || '')) q = i; });
+      if (q >= 0) nums[q + 1] = '1';
+    }
+    return [...p.slice(0, 3), ...strs, ...nums].join('|');
   }
   // Ihr Zeichen je Auftrag aus der Listenantwort: im Datensatz steht der Zeichentext als Stringverweis; welcher es ist, erkennt man am Inhalt
   // (höchstens 20 Zeichen, ein bekanntes Kürzel, „?“ oder „… zurück“). Das ist eine Näherung – das Zeichen aus der Tabelle in TAM hat Vorrang.
@@ -2073,15 +2067,14 @@
     try {
       if (!(await openTabViaMenu(cfg.tabPanelId, /^Ver(ö|oe)ffentlichte Auftr(ä|ae)ge$/i))) throw new Error('Menü/Link „Veröffentlichte Aufträge“ nicht gefunden');
       if (!onPublishedTab()) { clickPublishedTab(); await waitFor(onPublishedTab, 3000, 100); }
-      // „Angenommene Aufträge“ bleiben geschlossen und werden still geladen, sobald TAM die Liste „Veröffentlichte“ geladen hat (Anfrage mitgeschnitten)
-      await waitFor(() => tamLoadReq, 5000, 100);
+      // Der Reiter „Angenommene Aufträge“ wird ebenfalls geöffnet (dann kann man ihn sofort anklicken), aber nicht abgewartet: die Daten kommen still.
+      if (!(await openTabViaMenu(cfg.acceptedTabId, /^Angenommene Auftr(ä|ae)ge$/i))) throw new Error('Menü/Link „Angenommene Aufträge“ nicht gefunden');
+      if (!onPublishedTab()) { clickPublishedTab(); await waitFor(onPublishedTab, 3000, 100); }
+      await waitFor(() => tamLoadReq || tamAcceptedReq, 5000, 100);
       let still = await angenommenAbgleichen('Start', false);
-      if (!still) { // Rückfall: Reiter über das Menü öffnen, kurz auslesen, zurück
-        if (!(await openTabViaMenu(cfg.acceptedTabId, /^Angenommene Auftr(ä|ae)ge$/i))) throw new Error('Menü/Link „Angenommene Aufträge“ nicht gefunden');
-        if (!(await syncAcceptedTab('Start', true))) throw new Error('„Angenommene Aufträge“ lieferte keine Zeilen');
-      }
+      if (!still && !(await syncAcceptedTab('Start', true))) throw new Error('„Angenommene Aufträge“ lieferte keine Zeilen'); // Rückfall: Reiter kurz auslesen
       startTabsDone = true;
-      log(`Start: „Veröffentlichte Aufträge“ geöffnet, „Angenommene Aufträge“ ${still ? 'still geladen' : 'über den Reiter gelesen'} – aktiv: ${onPublishedTab() ? 'Veröffentlichte Aufträge' : 'anderer Reiter'}.`, 'ok');
+      log(`Start: beide Reiter geöffnet, „Angenommene Aufträge“ ${still ? 'still geladen' : 'über den Reiter gelesen'} – aktiv: ${onPublishedTab() ? 'Veröffentlichte Aufträge' : 'anderer Reiter'}.`, 'ok');
     } catch (e) {
       const knöpfe = [...document.querySelectorAll('.x-btn, .x-menu-item')].filter((x) => visible(x) && !x.closest('#tamauto, .x-grid3')).map((x) => text(x)).filter((t) => t && t.length < 40).slice(0, 25);
       log(`Start: ${e.message} (Durchlauf ${++startFails}/8) – ${tabDiag()} · sichtbare Schaltflächen: ${[...new Set(knöpfe)].join(' | ') || 'keine'}.`, startFails >= 8 ? 'err' : 'debug');
@@ -2719,15 +2712,15 @@
     const req = tamAcceptedReq || (abgeleitet ? { url: tamLoadReq.url, headers: tamLoadReq.headers, body: abgeleitet } : null);
     if (!req) throw new Error('TAM-Anfrage noch nicht übernommen („Veröffentlichte Aufträge“ einmal aktualisieren)');
     const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-    const t0 = Date.now(), neu = mitLimit(req.body, 1500);
-    const res = await W.fetch(req.url, { method: 'POST', credentials: 'include', headers: req.headers, body: neu });
+    const t0 = Date.now();
+    const res = await W.fetch(req.url, { method: 'POST', credentials: 'include', headers: req.headers, body: req.body });
     const txt = await res.text();
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     maKontakte = { map: parseListeKontakte(txt), at: Date.now() };
     const nz = wendeListenZeichenAn(parseListeZeichen(txt, (places.ma || []).map((m) => m.k)));
     if (nz) log(`Angenommene Aufträge (still gelesen): ${nz} Zeichen im Auftragsbuch ergänzt.`, 'debug');
     const v = [...maKontakte.map.values()], buch = maOrders();
-    log(`MA-Management: Antwort ${Math.round(txt.length / 1024)} KB in ${Date.now() - t0} ms · Seitengröße ${neu === req.body ? 'unverändert (Aufbau der Anfrage unbekannt)' : '1500'} · ` +
+    log(`MA-Management: Antwort ${Math.round(txt.length / 1024)} KB in ${Date.now() - t0} ms · ${tamAcceptedReq ? 'Anfrage von TAM' : 'Anfrage abgeleitet'} · ` +
       `${v.length} Aufträge gelesen, ${v.filter((x) => x.telefon).length} mit Telefon, ${v.filter((x) => !x.eindeutig).length} nicht eindeutig · ` +
       `Auftragsbuch: ${buch.length} Aufträge (7 Tage), davon ${buch.filter((o) => o.kontakt).length} mit Kontakt, ${buch.filter((o) => o.kontakt && o.kontakt.telefon).length} mit Telefon`, 'debug');
     return maKontakte.map.size;
@@ -2775,6 +2768,11 @@
     const all = maOrders();
     const mine = m ? maMine(m, all) : [];
     const ohneKz = all.filter((o) => terminPflicht(o) && o.tour.status !== 'rueckgabe' && o.tour.status !== 'tour' && !o.tour.kuerzel).length;
+    const tp = all.filter((o) => terminPflicht(o) && o.tour.status !== 'rueckgabe' && o.tour.status !== 'tour'), sumKey = `${all.length}|${tp.length}|${tp.filter((o) => o.tour.kuerzel).length}|${m ? m.k : ''}|${mine.length}`;
+    if (sumKey !== renderMa.last) { // Vergleich zwischen Geräten: jedes Gerät kennt nur die Aufträge seines Auftragsbuchs
+      renderMa.last = sumKey;
+      log(`MA-Management: Auftragsbuch ${all.length} Aufträge (7 Tage) · Terminpflicht ohne Tour ${tp.length}, davon mit Kürzel ${tp.filter((o) => o.tour.kuerzel).length}, ohne ${tp.filter((o) => !o.tour.kuerzel).length} · ${m ? `${m.k}: ${mine.length} offen` : 'kein MA gewählt'} · Zeichen: ${all.filter((o) => o.zeichen).length} gelesen`, 'debug');
+    }
     $('tamauto-ma-hint').textContent = maFehler || (!ma.length ? 'Excel-Blatt „MA“ fehlt oder ist leer (Ortsliste.xlsx).' : m && !m.mail ? `${m.k} hat keine E-Mail im Blatt „MA“.`
       : ohneKz ? `${ohneKz} Aufträge mit Terminpflicht haben noch kein Kürzel im Zeichen – sie stehen bei niemandem.` : '');
     $('tamauto-ma-rows').innerHTML = mine.length ? mine.map((o) => {
