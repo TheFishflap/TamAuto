@@ -76,7 +76,6 @@
     delaySec: Math.min(0.5, Math.max(0, GM_getValue('delaySecV2', 0.12))), // 0–0,500 s in 1-ms-Schritten, Standard 0,12 (V2: gilt einmal für alle)
     delayRandom: GM_getValue('delayRandom', true), // + zufällige Streuung
     delayRandomMs: Math.min(500, GM_getValue('delayRandomMsV3', 80)), // Streuung 0 … x ms (0–500, Standard 80 ms; V3 = neuer Standard für alle)
-    burstOn: true, // Burst-Refresh nach manuellem Refresh immer aktiv (ohne Checkbox)
     hideTips: GM_getValue('hideTips', false), // alle ?-Erklärungen ausblenden
     colorRows: GM_getValue('colorRows', true),   // Aufträge in der TAM-Tabelle einfärben (nur lokal in diesem Browser) – Standard an
     zeichenOn: GM_getValue('zeichenOn', false), // Doppelklick im Auftragsbuch: „Ihr Zeichen“ um „neu“ ergänzen – Standard aus
@@ -94,7 +93,6 @@
     schedTo: GM_getValue('schedTo', '18:00'),
     pushOn: GM_getValue('pushOnV3', true),          // Push-Signal (App „TAM-Signal“ über ntfy) – Standard an (V3: gilt einmal für alle)
     pushTopic: GM_getValue('pushTopic', 'tam-zrd6g634b4wej7aqhsycc9qm'), // gemeinsamer Kanal der IB Thomée // Silent Reload: Hintergrund-Abfrage alle x s (0 = aus, Standard)
-    burstSec: GM_getValue('burstSecV2', 3), // Dauer des Burst-Refresh in s (1 Refresh pro Sekunde), Standard 3
   });
 
   let places = GM_getValue('places', { plz: [], orte: [], loadedAt: null, source: '' });
@@ -471,7 +469,7 @@
   const onAcceptedTab = () => { const li = document.querySelector(`li[id$="__${cfg.acceptedTabId}"]`), p = document.getElementById(cfg.acceptedTabId);
     return !!li && li.classList.contains('x-tab-strip-active') && !!p && !p.closest('.x-hide-display'); };
   async function addZeichenNeu(nr) {
-    if (busy) { log(`${nr}: „Ihr Zeichen“ wartet auf den laufenden Abgleich …`, 'debug'); await waitFor(() => !busy, 15000, 50); } // auch Refresh/Burst
+    if (busy) { log(`${nr}: „Ihr Zeichen“ wartet auf den laufenden Abgleich …`, 'debug'); await waitFor(() => !busy, 15000, 50); } // auch laufender Refresh
     if (busy) { log('Gerade läuft eine Annahme – Doppelklick bitte gleich noch einmal.', 'err'); return; }
     busy = true;
     const back = onPublishedTab();
@@ -1241,7 +1239,7 @@
     if (!e.isTrusted) return; // nur echte Klicks, nicht die des Scripts
     const panel = activeTabPanel();
     const btn = panel && findRefreshButton(panel);
-    if (btn && btn.contains(e.target)) { manualClickAt = Date.now(); startBurst('manueller Refresh'); }
+    if (btn && btn.contains(e.target)) { manualClickAt = Date.now(); followUpChecks(); }
   }, true);
 
 
@@ -1777,8 +1775,6 @@
             : `kein Treffer (PLZ ${o.plz || '?'} und Ort "${o.ort || '?'}" nicht in Ortsliste)`;
         log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, bl ? 'err' : matches(o) ? 'ok' : 'info');
       });
-      // Burst-Refresh läuft und es gibt einen Treffer → Burst beenden, jetzt annehmen (keine weiteren Refreshes)
-      if (hits.length && burstUntil > Date.now()) { burstUntil = 0; log('Burst-Refresh beendet – Treffer gefunden, wird angenommen.', 'ok'); }
       let n = 0;
       if (hits.length > 1) log(`Reihenfolge (${prioText()}): ${hits.map((o) =>
         `${o.nr || o.ref} (${grp(o).n > 1 ? `${grp(o).n} am Ort, zus. ${fmtEuro(grp(o).sum)}, ` : ''}${o.preis || 'ohne Preis'})`).join(' → ')}`);
@@ -1862,17 +1858,12 @@
     if (!box || box.style.display === 'none') return;
     const [st, col] = !cfg.enabled ? ['■ GESTOPPT', '#c62828'] : onPublishedTab() ? ['● AKTIV', '#2e7d32'] : ['⏸ PAUSIERT', '#b26a00'];
     const s = document.getElementById('tamauto-mini-state'); s.textContent = st; s.style.color = col;
-    // nächster Refresh: laufender Burst, sonst der frühere von eigenem Auto-Refresh und TAM-Aktualisierung
+    // nächster Refresh: der frühere von eigenem Auto-Refresh und TAM-Aktualisierung
     const t = tamNext();
     let next = !t.enabled ? 'TAM-Aktualisierung aus' : 'nach der nächsten TAM-Aktualisierung';
-    if (burstUntil > now) next = `⚡ Burst läuft – noch ${fmtDur(burstUntil - now)}`;
-    else {
-      // mit Auto-Refresh nur dessen Countdown (jeder Refresh setzt TAMs Timer zurück), sonst TAM
-      const cands = [];
-      if (arActive()) cands.push(['Auto-Refresh', Math.max(0, lastAnyRefreshAt + cfg.intervalSec * 1000 - now)]);
-      else if (t.enabled && t.at) cands.push(['TAM', t.at - now]);
-      if (cands.length) { const [w, ms] = cands.sort((a, b) => a[1] - b[1])[0]; next = `in ${fmtDur(ms)} (${w})`; }
-    }
+    // mit Auto-Refresh nur dessen Countdown (jeder Refresh setzt TAMs Timer zurück), sonst TAM
+    if (arActive()) next = `in ${fmtDur(Math.max(0, lastAnyRefreshAt + cfg.intervalSec * 1000 - now))} (Auto-Refresh)`;
+    else if (t.enabled && t.at) next = `in ${fmtDur(t.at - now)} (TAM)`;
     document.getElementById('tamauto-mini-next').textContent = next;
     const book = GM_getValue('orderbook', []);
     const last = [...book].reverse().find((e) => !e.zu) || book[book.length - 1];
@@ -1911,14 +1902,11 @@
       txt = `⏾ Außerhalb der Arbeitszeit (${cfg.schedFrom}–${cfg.schedTo}): Auto-Refresh und Silent Reload pausiert · ${txt}`;
     }
     if (cfg.pushOn) txt += /verbunden/.test(pushState) ? ' · Push-Signal ✓' : ' · Push-Signal getrennt';
-    if (burstUntil > now) txt = `⚡ Burst-Refresh läuft – noch ${fmtDur(burstUntil - now)} · ${txt}`;
     el.textContent = txt;
-    const bs = document.getElementById("tamauto-burst-state");
-    if (bs) bs.textContent = burstUntil > now ? `⚡ läuft – noch ${fmtDur(burstUntil - now)}` : "";
   }
 
   // Einmal refreshen (Refresh-Pfeil) und danach abgleichen – gemeinsam genutzt von Auto-Refresh,
-  // Tabwechsel und Burst-Refresh
+  // Tabwechsel, Silent Reload und Push-Signal
   async function refreshAndCheck(reason) {
     if (busy || !onPublishedTab()) return false;
     busy = true; // eigene Tabellenänderungen beim Refresh nicht doppelt auswerten
@@ -1999,10 +1987,10 @@
   }
   async function silentPoll() {
     const now = Date.now();
-    if (!cfg.silentOn || !cfg.enabled || !license || busy || silentFetching || !onPublishedTab() || burstUntil > now) return;
+    if (!cfg.silentOn || !cfg.enabled || !license || busy || silentFetching || !onPublishedTab()) return;
     if (!inSchedule()) { if (!/Arbeitszeit/.test(silentState)) { silentState = `pausiert – außerhalb der Arbeitszeit (${cfg.schedFrom}–${cfg.schedTo})`; renderSilent(); } return; }
     if (now - lastSilentAt < cfg.silentSec * 1000) return;
-    // Versetzt zum Refresh: direkt nach einem Refresh (Auto-Refresh, TAM, Burst, manuell) ist die Tabelle frisch –
+    // Versetzt zum Refresh: direkt nach einem Refresh (Auto-Refresh, TAM, manuell) ist die Tabelle frisch –
     // Abfrage erst nach der Hälfte des kürzeren Intervalls → liegt mittig zwischen zwei Refreshes
     const gapMs = Math.min(cfg.silentSec, arActive() ? cfg.intervalSec : cfg.silentSec) * 500;
     if (now - lastAnyRefreshAt < gapMs) return;
@@ -2170,33 +2158,43 @@
     return fresh.length ? `neuer Auftrag ${fresh.slice(0, 3).join(', ')} – nicht angenommen (Ortsliste/vergeben, siehe Log)`
       : 'Tabelle aktualisiert – kein neuer Auftrag';
   }
-  async function pushQuery(from, entry) {
-    if (busy) { log('Push-Signal: Annahme läuft gerade – danach wird ohnehin neu geprüft.', 'debug'); recheck = true; setPushResult(entry, 'Annahme lief gerade – danach neu geprüft'); return; }
-    const beforeNrs = pushFound.size;
-    if (!tamLoadReq || silentFetching) { // ohne übernommene Anfrage: einmal Refresh
-      await refreshAndCheck(`Push-Signal (${from})`); setPushResult(entry, pushOutcome(entry, beforeNrs)); return;
+  // Einmal still bei TAM nachfragen (mitgeschnittene TAM-Anfrage); nur bei neuen Daten Tabelle aktualisieren und
+  // abgleichen. Genutzt von Push-Signal und den Nachfragen nach einem Refresh von Hand.
+  // fallback: ohne übernommene TAM-Anfrage einmal normal aktualisieren. Ergebnis { s: busy|skip|refresh|nothing|new|error }
+  async function silentCheck(reason, { fallback = true } = {}) {
+    if (busy) return { s: 'busy' };
+    if (!tamLoadReq || silentFetching) {
+      if (!fallback) return { s: 'skip' };
+      await refreshAndCheck(reason); return { s: 'refresh' };
     }
     silentFetching = true;
     try {
       const q = await silentQuery();
       const cells = gridTexts(visibleGrid());
       const fresh = [...q.tokens].filter((x) => !cells.has(x) && !silentIgnore.has(x));
-      if (!fresh.length) { log(`Push-Signal: TAM meldet nichts Neues (Abfrage ${q.ms} ms) – Tabelle ist aktuell.`, 'debug'); setPushResult(entry, `nichts Neues bei TAM (${q.ms} ms)`); return; }
-      log(`Push-Signal: neue Daten in TAM (${silentLabel(fresh)})${silentPlzInfo(q.tokens)} → Tabelle aktualisieren`, 'ok');
-      setPushResult(entry, 'neue Daten – Tabelle wird geladen …');
+      if (!fresh.length) return { s: 'nothing', ms: q.ms };
+      log(`${reason}: neue Daten in TAM (${silentLabel(fresh)})${silentPlzInfo(q.tokens)} → Tabelle aktualisieren`, 'ok');
       silentFetching = false;
       const before = silentFoundCount;
-      if (await refreshAndCheck(`Push-Signal (${from})`)) {
+      if (await refreshAndCheck(reason)) {
         silentSeen = q.tokens;
         if (silentFoundCount === before) fresh.forEach((x) => silentIgnore.add(x));
       }
-      setPushResult(entry, pushOutcome(entry, beforeNrs));
+      return { s: 'new', ms: q.ms };
     } catch (e) {
-      log(`Push-Signal: Abfrage fehlgeschlagen (${e.message}) – einmal normal aktualisieren.`, 'err');
       silentFetching = false;
-      await refreshAndCheck(`Push-Signal (${from})`);
-      setPushResult(entry, `Fehler bei der Abfrage (${e.message}) – normal aktualisiert`);
+      log(`${reason}: Abfrage fehlgeschlagen (${e.message}) – einmal normal aktualisieren.`, 'err');
+      await refreshAndCheck(reason);
+      return { s: 'error', err: e.message };
     } finally { silentFetching = false; }
+  }
+  async function pushQuery(from, entry) {
+    const beforeNrs = pushFound.size;
+    const r = await silentCheck(`Push-Signal (${from})`);
+    if (r.s === 'busy') { log('Push-Signal: Annahme läuft gerade – danach wird ohnehin neu geprüft.', 'debug'); recheck = true; setPushResult(entry, 'Annahme lief gerade – danach neu geprüft'); return; }
+    if (r.s === 'nothing') { log(`Push-Signal: TAM meldet nichts Neues (Abfrage ${r.ms} ms) – Tabelle ist aktuell.`, 'debug'); setPushResult(entry, `nichts Neues bei TAM (${r.ms} ms)`); return; }
+    if (r.s === 'error') { setPushResult(entry, `Fehler bei der Abfrage (${r.err}) – normal aktualisiert`); return; }
+    setPushResult(entry, pushOutcome(entry, beforeNrs));
   }
   function renderPush() {
     renderPushPage();
@@ -2207,28 +2205,17 @@
     }
   }
 
-  // ---- Burst-Refresh: gezielt für kurze Zeit jede Sekunde aktualisieren (Auftragswellen), statt dauerhaft
-  // Last zu erzeugen. Auslöser: NUR ein manueller Klick auf den Refresh-Pfeil der Website (falls an) oder der
-  // Button „⚡ Burst“ im Reiter Bedienung (Erweiterte Einstellungen: an/aus + Dauer in s, Standard 3 s).
-  let burstUntil = 0;
-  let burstRunning = false;
-  async function startBurst(reason) {
-    if (!license) return;
-    burstUntil = Date.now() + cfg.burstSec * 1000;
-    log(`Burst-Refresh (${reason}): ${cfg.burstSec} s lang jede Sekunde aktualisieren.`, 'ok');
-    if (burstRunning) return; // läuft schon → nur verlängert
-    burstRunning = true;
-    try {
-      if (reason === 'manueller Refresh') await sleep(1000); // der Klick hat gerade selbst aktualisiert
-      while (Date.now() < burstUntil && onPublishedTab()) {
-        const t0 = Date.now();
-        if (!busy) await refreshAndCheck('Burst-Refresh');
-        await sleep(Math.max(100, 1000 - (Date.now() - t0))); // höchstens 1 Refresh pro Sekunde
-      }
-    } finally { burstRunning = false; burstUntil = 0; }
+  // Nach einem Refresh von Hand (Refresh-Pfeil auf der Website): nach 1 s und 2 s je einmal still bei TAM nachfragen –
+  // fängt Aufträge, die TAM kurz nach dem Laden veröffentlicht, ohne die Tabelle weiter neu zu laden.
+  function followUpChecks() {
+    [1000, 2000].forEach((ms) => setTimeout(async () => {
+      if (!cfg.enabled || !license || !onPublishedTab()) return;
+      const r = await silentCheck('Silent nach Refresh', { fallback: false });
+      if (r.s === 'nothing') log(`Silent nach Refresh: nichts Neues (${r.ms} ms).`, 'debug');
+    }, ms));
   }
 
-  // Wechsel zurück in "Veröffentlichte Aufträge": immer genau EINMAL aktualisieren (kein Burst),
+  // Wechsel zurück in "Veröffentlichte Aufträge": immer genau EINMAL aktualisieren,
   // damit bei Auftragswellen sofort der aktuelle Stand da ist. Einmal pro Wechsel genügt.
   let wasOnPublished = false;
   let enterPending = false;
@@ -2243,7 +2230,7 @@
   function onEnterPublished() {
     enterPending = false;
     if (!license) return;
-    setTimeout(() => refreshAndCheck('Tabwechsel-Refresh'), 300); // Tabwechsel: immer genau EIN Refresh (kein Burst)
+    setTimeout(() => refreshAndCheck('Tabwechsel-Refresh'), 300); // Tabwechsel: immer genau EIN Refresh
   }
 
   async function tick() {
@@ -2258,7 +2245,7 @@
       hookAllConsoles(); // später geladene TAM-iframes ebenfalls mitlesen
     }
     renderSync(now);
-    if (busy || !onPublishedTab() || burstUntil > now) return; // während Burst-Refresh übernimmt dieser
+    if (busy || !onPublishedTab()) return;
     if (arActive()) {
       if (!ownRefreshDue(now)) return;
       await refreshAndCheck('Refresh');
@@ -2343,7 +2330,7 @@
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-sched"> <b>Arbeitszeit</b></label>
               von <input id="tamauto-sched-from" type="time" style="margin:0;width:78px">
               bis <input id="tamauto-sched-to" type="time" style="margin:0;width:78px">
-              <span class="tamauto-help" title="Nur in dieser Zeit laufen Auto-Refresh und Silent Reload. Außerhalb werden beide pausiert – die Einstellungen (an/aus, Intervall) bleiben erhalten und gelten ab Beginn der Arbeitszeit automatisch wieder. Die Annahme selbst (Abgleich bei TAM-Aktualisierung, Push-Signal, manueller Refresh, Burst) läuft weiter. Standard: an, 07:30–18:15.">?</span>
+              <span class="tamauto-help" title="Nur in dieser Zeit laufen Auto-Refresh und Silent Reload. Außerhalb werden beide pausiert – die Einstellungen (an/aus, Intervall) bleiben erhalten und gelten ab Beginn der Arbeitszeit automatisch wieder. Die Annahme selbst (Abgleich bei TAM-Aktualisierung, Push-Signal, manueller Refresh) läuft weiter. Standard: an, 07:30–18:15.">?</span>
             </span>
             <div id="tamauto-sched-state" style="color:#555;font-size:11px;margin-top:2px"></div>
           </div>
@@ -2572,12 +2559,6 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
             alle <input id="tamauto-int" type="number" min="10" style="width:48px;margin:0" value="${cfg.intervalSec}"> s
             <span class="tamauto-help" title="Auto-Refresh lädt die Tabelle schneller neu, um neue Aufträge früher zu finden. Ein niedrigerer Wert bedeutet eine höhere Auslastung und sollte mit Bedacht gewählt werden, um Auffälligkeiten zu vermeiden. Standard: 60 s (aus), Minimum: 10 s. Am TAM-Takt ausgerichtet: Das Script liest mit, wann TAM selbst neu lädt (Einstellung „Automatisch alle … Minuten“), und lässt den eigenen Refresh aus, wenn TAM gleich ohnehin aktualisiert. Über 60 s schaltet sich der Auto-Refresh ab – der Abgleich läuft dann nur mit der TAM-eigenen Aktualisierung.">?</span>
           </span>
-          <span class="tamauto-chk">
-            <button id="tamauto-burst-go" title="Burst-Refresh jetzt starten: für die eingestellte Zeit jede Sekunde aktualisieren – z. B. wenn eine Auftragswelle erwartet wird. Erneut klicken = wieder volle Zeit.">⚡ Burst</button>
-            <input id="tamauto-burst-sec" type="number" min="3" max="120" title="Dauer des Burst-Refresh in Sekunden" style="width:44px;margin:0"> s
-            <span class="tamauto-help" title="Burst-Refresh: für die eingestellte Zeit (Standard 3 s) jede Sekunde aktualisieren – ideal bei Auftragswellen, ohne dauerhaft Last zu erzeugen. Auslösen: über diesen Button ODER direkt auf der TAM-Website über den Refresh-Pfeil ⟳ unten in der Blätterleiste der Tabelle. Beim Tabwechsel zurück in „Veröffentlichte Aufträge“ wird dagegen immer nur EINMAL aktualisiert.">?</span>
-            <span id="tamauto-burst-state" style="color:#555"></span>
-          </span>
           <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">
             <div><b>Ortsliste aus Excel <span id="tamauto-ol-count"></span></b>
               <span class="tamauto-help" title="PLZ/Orte aus dem Excel-Blatt „annehmen“. Aufträge mit diesen PLZ (bzw. Orten) werden angenommen – „44***“ = alle PLZ, die mit 44 beginnen. Ändern nur im Excel, danach „Neu laden“.">?</span>
@@ -2738,12 +2719,6 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
       $('tamauto-body').prepend(w);
     }
 
-    // Button "⚡ Burst" (Reiter Bedienung): Burst sofort starten – funktioniert auch bei ausgeschalteter Checkbox
-    $('tamauto-burst-go').onclick = () => {
-      if (!onPublishedTab()) { log('Burst-Refresh: bitte zuerst den Reiter „Veröffentlichte Aufträge“ öffnen.', 'err'); return; }
-      startBurst('Button');
-    };
-
     // Bildschirm anlassen (Screen Wake Lock): hält den Bildschirm an, solange TAM sichtbar ist.
     // Der Browser gibt die Sperre frei, sobald die Seite unsichtbar wird → beim Zurückkehren neu anfordern.
     const nav = (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).navigator;
@@ -2861,13 +2836,6 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     renderPrio();
     renderSilent();
 
-    // Burst-Refresh: nur die Dauer ist einstellbar (Auslöser: Button "⚡ Burst" oder manueller Refresh auf der Website)
-    $('tamauto-burst-sec').value = cfg.burstSec;
-    $('tamauto-burst-sec').onchange = (e) => {
-      cfg.burstSec = Math.round(Math.min(120, Math.max(3, +e.target.value || 3)));
-      e.target.value = cfg.burstSec; GM_setValue('burstSecV2', cfg.burstSec);
-    };
-
     // Console Log: Protokoll des Scripts ein-/ausblenden (keine Ausgaben in die Browser-Konsole)
     const renderConsole = () => { $('tamauto-consolelog').checked = cfg.consoleLog; $('tamauto-log').style.display = cfg.consoleLog ? '' : 'none'; };
     $('tamauto-consolelog').onchange = (e) => { cfg.consoleLog = e.target.checked; GM_setValue('consoleLogV2', cfg.consoleLog); renderConsole(); };
@@ -2879,7 +2847,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
       // nur die letzten 80 Zeilen (älteste zuerst) – reicht für eine Fehlermeldung; mehr lieber gezielt markieren
       const lines = logHistory.slice(-COPY_LINES);
       const settings = `Einstellungen: Auto-Refresh ${cfg.autoRefresh ? `alle ${cfg.intervalSec} s` : 'aus'} · Silent Reload ` +
-        `${cfg.silentOn ? `alle ${cfg.silentSec} s` : 'aus'} · Burst ${cfg.burstSec} s · Verzögerung ` +
+        `${cfg.silentOn ? `alle ${cfg.silentSec} s` : 'aus'} · Verzögerung ` +
         `${cfg.delayOn ? `${cfg.delaySec} s${cfg.delayRandom ? ` + bis ${cfg.delayRandomMs} ms` : ''}` : 'aus'} · Ortsliste ` +
         `${places.plz.length} PLZ / ${places.orte.length} Orte · Sperrliste ${(places.block || { plz: [] }).plz.length} PLZ` +
         ` · Priorität ${prioText()}`;
@@ -3132,7 +3100,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     new MutationObserver((muts) => {
       if (muts.some((m) => m.type === 'attributes' && m.target.tagName === 'LI' && (m.target.id || '').includes('__'))) {
         updateTabStatus();
-        checkTabEnter(); // zurück in "Veröffentlichte Aufträge" → einmal aktualisieren / Burst-Refresh
+        checkTabEnter(); // zurück in "Veröffentlichte Aufträge" → einmal aktualisieren
       }
       // TAM-Fenster zur Terminvergabe nach einer Annahme sofort wegklicken (ohne Verzögerung)
       // Meldungen sofort schließen: neu eingefügt oder (wiederverwendetes Fenster) per style wieder eingeblendet

@@ -91,7 +91,13 @@ function startTam(opts = {}) {
   w.HTMLCanvasElement.prototype.getContext = () => null; // kein WebGL in jsdom
   w.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   const fetches = [];
-  w.fetch = async (url, o) => { fetches.push({ url, o }); return { ok: true, status: 200, text: async () => '', json: async () => ({}) }; };
+  // fetch: TAM-Abfrage (GWT-RPC, Silent Reload/Push) liefert tam.rpc, alles andere leer
+  w.fetch = async (url, o) => {
+    fetches.push({ url, o });
+    const body = /\/gwt-rpc\//.test(url) ? tam.rpc : '';
+    return { ok: true, status: 200, text: async () => body, json: async () => ({}) };
+  };
+  w.XMLHttpRequest.prototype.send = function () {}; // kein Netz im Test (das Script schneidet TAMs Anfrage beim Senden mit)
   const sources = [];
   w.EventSource = class {
     constructor(url) { this.url = url; this.readyState = 0; this.ls = {}; sources.push(this); }
@@ -105,7 +111,7 @@ function startTam(opts = {}) {
   w.setInterval = (...a) => { const id = si.apply(w, a); timers.add(id); return id; };
 
   // ---- TAM-Verhalten
-  const tam = { accepted: [], closed: [], dblclicks: [], sources, fetches, requests, store, window: w, document: d };
+  const tam = { accepted: [], closed: [], dblclicks: [], sources, fetches, requests, store, window: w, document: d, rpc: '//OK[]' };
 
   // Reiterwechsel: Klick auf einen Reiter der Hauptleiste
   const panels = () => [...d.querySelectorAll('li[id*="__"]')].filter((li) => d.getElementById(li.id.split('__').pop()) &&
@@ -128,6 +134,9 @@ function startTam(opts = {}) {
   const refreshBtn = bar && bar.querySelectorAll('.x-btn')[4];
   if (refreshBtn) refreshBtn.addEventListener('click', () => {
     tam.refreshes++;
+    // wie TAM: Liste per GWT-RPC laden (das Script übernimmt diese Anfrage für Silent Reload/Push)
+    const x = new w.XMLHttpRequest(); x.open('POST', 'https://tam.tuvsud.com/tam/gwt-rpc/auftrag');
+    x.send('7|0|9|https://tam.tuvsud.com/tam/|ABC|de.tomcom.tam.client.AuftragService|loadTeilauftraege|1|2|');
     const m = d.createElement('div'); m.className = 'ext-el-mask x-mask-loading'; pub.appendChild(m);
     setTimeout(() => m.remove(), 150);
   });

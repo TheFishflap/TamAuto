@@ -760,22 +760,6 @@ describe('Ihr Zeichen „neu“ per Doppelklick im Auftragsbuch', { skip: !hasFi
   });
 });
 
-describe('Burst-Refresh', { skip }, () => {
-  it('Treffer während des Bursts → Burst beendet, Auftrag angenommen, keine weiteren Refreshes', async () => {
-    tam = startTam({ gm: { places: KOELN, burstSecV2: 20 } });
-    await tam.ready();
-    tam.document.getElementById('tamauto-burst-go').click();
-    assert.ok(await until(() => tam.refreshes >= 2, 5000), 'Burst läuft nicht');
-    tam.addOrder(ORDER);
-    assert.ok(await until(() => tam.accepted.includes(ORDER.nr), 15000), tam.logs().join('\n'));
-    assert.ok(tam.logs().some((l) => /Burst-Refresh beendet – Treffer/.test(l)));
-    await sleep(2500);
-    const n = tam.refreshes;
-    await sleep(2500);
-    assert.equal(tam.refreshes, n, 'Burst refresht nach dem Treffer weiter');
-  });
-});
-
 describe('Angenommene Zeile lokal ausblenden', { skip }, () => {
   const rowOf = (nr) => [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')].find((r) => r.textContent.includes(nr));
   const terminLess = (t, title, body) => setTimeout(() => t.showMessage(title, body), 300);
@@ -804,5 +788,35 @@ describe('Angenommene Zeile lokal ausblenden', { skip }, () => {
     assert.ok(await until(() => tam.accepted.length, 15000));
     await sleep(1000);
     assert.ok(!rowOf(ORDER.nr).classList.contains('tamauto-gone'));
+  });
+});
+
+// Stille Abfrage bei TAM (gemeinsam für Push-Signal und Nachfragen nach einem Refresh von Hand)
+describe('Stille Abfrage (Push-Signal)', { skip }, () => {
+  const PUSH = 'tam-zrd6g634b4wej7aqhsycc9qm';
+  async function ready() {
+    tam = startTam({ gm: { places: KOELN, pushOnV3: true } });
+    await tam.ready();
+    // einmal von TAM aktualisieren lassen → Script übernimmt TAMs Anfrage
+    const bar = [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-toolbar')].find((x) => /Einträge pro Seite/.test(x.textContent));
+    bar.querySelectorAll('.x-btn')[4].querySelector('button').click();
+    await until(() => tam.refreshes === 1, 2000);
+    await sleep(1500);
+    return tam.refreshes;
+  }
+  it('TAM meldet neuen Auftrag → Tabelle wird aktualisiert', async () => {
+    const r0 = await ready();
+    tam.rpc = '//OK["com.extjs.gxt.ui.client.data.BasePagingLoadResult/496878394","MW3199999","50825","Köln"]';
+    tam.ntfy(PUSH, { v: 1, src: 'Test-Tablet', ts: Date.now() });
+    assert.ok(await until(() => tam.refreshes > r0, 4000), tam.logs().slice(-5).join('\n'));
+    assert.ok(tam.logs().some((l) => /neue Daten in TAM/.test(l)));
+  });
+  it('TAM meldet nichts Neues → keine Aktualisierung', async () => {
+    const r0 = await ready();
+    tam.rpc = '//OK["com.extjs.gxt.ui.client.data.BasePagingLoadResult/496878394"]';
+    tam.ntfy(PUSH, { v: 1, src: 'Test-Tablet', ts: Date.now() });
+    assert.ok(await until(() => tam.fetches.some((f) => /gwt-rpc/.test(f.url)), 4000), 'keine stille Abfrage');
+    await sleep(1000);
+    assert.equal(tam.refreshes, r0);
   });
 });

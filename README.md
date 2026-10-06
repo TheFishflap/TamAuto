@@ -27,7 +27,6 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Priorität** | Mehrere passende Aufträge gleichzeitig → Reihenfolge nach **Stufe 1, 2, 3** frei wählbar (Anzahl am Ort, Summe am Ort, Einzelpreis) mit automatischer Zuordnung; Standard: Anzahl → Summe → Preis |
 | **Fern-Lizenzierung** | „Lizenz anfragen“ direkt im Script → Freischaltung in der Lizenzverwaltung von IB Thomée → das Script **aktiviert sich selbst**; Verlängerung per Klick (Reiter Info); signierte **Sperrliste** zum Entziehen (7 Tage offline erlaubt) |
 | **Verzögerung** | Standard an: 0,12 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0–0,5 s |
-| **Burst-Refresh** | Für x Sekunden jede Sekunde aktualisieren; endet, sobald ein passender Auftrag gefunden ist |
 | **Termin offen** | Terminvereinbarung nach der Annahme weggeklickt und SLA-Ende (laut „Angenommene Aufträge“) in ≤ 2 h → **rote 1** im Auftragsbuch |
 | **„Ihr Zeichen“ neu** | Optional (Erweiterte Einstellungen): Doppelklick auf den Auftrag im Auftragsbuch hängt in TAM bei „Ihr Zeichen“ **neu** an |
 
@@ -35,7 +34,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 | | |
 |---|---|
 | **Tabwechsel-Refresh** | Beim Zurückwechseln in „Veröffentlichte Aufträge“ wird genau einmal aktualisiert |
-| **Burst-Refresh** | Nach manuellem Refresh oder per Button „⚡ Burst“ für 3 s jede Sekunde aktualisieren – ideal bei Auftragswellen |
+| **Nachfragen nach Refresh** | Nach einem manuellen Refresh fragt das Script nach 1 s und 2 s je einmal still bei TAM nach – lädt nur bei neuen Aufträgen neu |
 | **Auto-Refresh** | Optional (Standard aus, 60 s), am TAM-Takt ausgerichtet – kein doppeltes Laden |
 | **TAM-Takt mitlesen** | Ohne Auto-Refresh wird die nächste TAM-Aktualisierung aus TAM selbst gelesen („laut TAM“); mit Auto-Refresh zeigt die Statuszeile nur dessen Countdown |
 
@@ -268,23 +267,19 @@ in dem TAM ein Fenster einfügt oder ein vorhandenes wieder einblendet – und s
 Erfasst werden TAM-Fenster, Info-Einblendungen, Tooltips und Dialoge. Reagiert eine Meldung nicht auf den Klick,
 wird sie direkt ausgeblendet. Im Log (Console Log) steht jede geschlossene Meldung mit Text und Aufbau.
 
-## Tabwechsel-Refresh und Burst-Refresh (gezielt statt dauerhaft)
+## Tabwechsel-Refresh und Nachfragen nach einem Refresh (gezielt statt dauerhaft)
 
 Statt die Tabelle dauerhaft im Sekundentakt neu zu laden, aktualisiert das Script **gezielt dann, wenn es darauf ankommt**:
 
 - **Tabwechsel-Refresh:** Beim Wechsel **zurück** in „Veröffentlichte Aufträge“ (z. B. aus „Angenommene Aufträge“
   oder nach einer Annahme) wird **genau einmal** aktualisiert – so ist bei Auftragswellen sofort der aktuelle Stand da.
-- **Burst-Refresh** (Dauer im Reiter „Bedienung“ neben dem Button, Standard **3 s**): für die eingestellte Zeit **jede Sekunde**
-  aktualisieren. Auslösen auf zwei Wegen:
-  - Button **„⚡ Burst“** im Reiter „Bedienung“, oder
-  - **manueller Klick** auf den Refresh-Pfeil **⟳** der TAM-Website (Blätterleiste unten an der Tabelle).
-
-  Ein Tabwechsel löst keinen Burst aus. Erneutes Auslösen startet wieder die volle Zeit.
-  Im Bedienfeld steht „⚡ Burst-Refresh läuft – noch 2 s“.
+- **Nachfragen nach einem Refresh von Hand:** Nach einem Klick auf den Refresh-Pfeil **⟳** der TAM-Website (Blätterleiste
+  unten an der Tabelle) fragt das Script nach **1 s und 2 s je einmal still** bei TAM nach (wie der Silent Reload). Nur wenn
+  dabei ein neuer Auftrag auftaucht, wird die Tabelle neu geladen und abgeglichen.
 
 ## Auto-Refresh (ausgerichtet an der TAM-Aktualisierung)
 
-Der Auto-Refresh ist **standardmäßig aus** (Intervall 60 s) – Tabwechsel- und Burst-Refresh decken die
+Der Auto-Refresh ist **standardmäßig aus** (Intervall 60 s) – Tabwechsel-Refresh und die Nachfragen decken die
 wichtigen Momente ab und erzeugen weniger Last. Wird er eingeschaltet, gilt:
 
 TAM lädt die Tabelle selbst neu („☑ Automatisch alle [x] Minuten aktualisieren“ – bleibt immer an) und startet
@@ -401,6 +396,8 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 ## Changelog
 
 ### 1.20.3 – 2026-10-06
+- **Burst-Refresh entfernt** (Button und Dauerfeld). Stattdessen fragt das Script nach einem Refresh von Hand nach 1 s und
+  2 s je einmal still bei TAM nach und lädt nur bei neuen Aufträgen neu.
 - Farbige TAM-Einträge: gesperrte Aufträge (Excel „nicht annehmen“) **braun** wie die Sperrliste im Bedienfeld (statt rot);
   gerade angenommene Aufträge werden **ausgeblendet**, bis TAM die Tabelle neu lädt (meldet TAM danach „bereits vergeben“,
   erscheinen sie wieder).
