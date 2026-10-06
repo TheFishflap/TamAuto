@@ -84,6 +84,8 @@ function startTam(opts = {}) {
   subtle.verify = async (alg, ...r) => (alg && alg.name === 'ECDSA' ? sigValid : webcrypto.subtle.verify(alg, ...r));
   Object.defineProperty(w, 'crypto', { configurable: true, value: { getRandomValues: (a) => webcrypto.getRandomValues(a), subtle } });
   w.TextEncoder = util.TextEncoder; w.TextDecoder = util.TextDecoder;
+  // wie im Browser: echte Excel-Dateien sind komprimiert – das Script entpackt sie mit diesen APIs
+  w.Blob = globalThis.Blob; w.Response = globalThis.Response; w.DecompressionStream = globalThis.DecompressionStream;
   w.CSS = { escape: (s) => String(s).replace(/[^\w-]/g, (c) => `\\${c}`) };
   // Gerät (für den Geräte-Fingerabdruck): Prozessorkerne, Plattform, Touch-Punkte, Bildschirm, Pixeldichte
   const dev = { hardwareConcurrency: 8, platform: 'MacIntel', maxTouchPoints: 0, width: 1512, height: 982, dpr: 2, ...(opts.device || {}) };
