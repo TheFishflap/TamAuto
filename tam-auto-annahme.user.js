@@ -456,10 +456,12 @@
   const slaMs = (s) => { const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})/.exec(String(s || '')); return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5]).getTime() : null; };
   // <zeichen-parser>
   // „Ihr Zeichen“ als Tour lesen: Kürzel, Datum und Uhrzeit in beliebiger Reihenfolge und Schreibweise
-  // (MK 12.10 10:00 · 12.10 MK 10 Uhr · mk 12/10. 9.30 · PM Okt 07 10 T). status: leer | tour | ohneDatum | ohneKuerzel | unklar
+  // (MK 12.10 10:00 · 12.10 MK 10 Uhr · mk 12/10. 9.30 · PM Okt 07 10 T). status: leer | tour | ohneDatum | ohneKuerzel | unklar.
+  // Kontaktstatus als einzelner Buchstabe (Groß-/Kleinschreibung zählt): T = telefonisch bestätigt, t = nur Telefonversuch,
+  // M = Mail bestätigt, m = nur Mailversuch.
   function parseTourzeichen(raw, kuerzelListe = [], now = new Date()) {
     const s = String(raw == null ? '' : raw).trim();
-    const out = { status: 'leer', raw: s, kuerzel: '', bekannt: false, datum: null, zeit: null, vergangen: false };
+    const out = { status: 'leer', raw: s, kuerzel: '', bekannt: false, datum: null, zeit: null, vergangen: false, kontakt: '', bestaetigt: false, versuch: false };
     if (!s) return out;
     const MONATE = { jan: 1, feb: 2, mär: 3, mar: 3, maer: 3, apr: 4, mai: 5, jun: 6, jul: 7, aug: 8, sep: 9, okt: 10, nov: 11, dez: 12 };
     let rest = ` ${s} `, datum = null, zeit = null;
@@ -477,7 +479,12 @@
     // 3) Zahlen mit Trennzeichen: 12.10 / 12.10.26 / 12/10 / 12-10 – als Datum, wenn gültig; sonst (9.30, 10.00) als Uhrzeit
     rest = rest.replace(/(?<![\d.:])(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\.?(?![\d:])/g, (all, a, b, y) =>
       ((!y && setDate(+a, +b)) || (y && setDate(+a, +b, +y)) || (!y && setTime(+a, +b)) ? ' ' : all));
-    // 4) Kürzel: erstes bekanntes Wort, sonst das erste 2–4-stellige Wort (ohne Füllwörter wie „neu“, „erl“)
+    // 4) Kontaktstatus: einzelner Buchstabe T/t/M/m; danach eine einzelne Zahl neben gültigem Datum = volle Stunde
+    const kt = /(?<![A-Za-zÄÖÜäöüß])([TtMm])(?![A-Za-zÄÖÜäöüß])/.exec(rest);
+    if (kt) { out.kontakt = kt[1]; rest = rest.slice(0, kt.index) + ' ' + rest.slice(kt.index + 1); }
+    if (datum && !zeit) rest = rest.replace(/(?<![\d.:])(\d{1,2})(?![\d.:])/, (all, h) => (setTime(+h, 0) ? ' ' : all));
+    out.bestaetigt = out.kontakt === 'T' || out.kontakt === 'M'; out.versuch = out.kontakt === 't' || out.kontakt === 'm';
+    // 5) Kürzel: erstes bekanntes Wort, sonst das erste 2–4-stellige Wort (ohne Füllwörter wie „neu“, „erl“)
     const SKIP = /^(neu|erl|uhr|tour|tel|ok|am|um)$/i;
     const words = (rest.match(/[A-Za-zÄÖÜäöüß]{2,4}(?![A-Za-zÄÖÜäöüß])/g) || []).filter((w) => !SKIP.test(w));
     const known = new Set((kuerzelListe || []).map((k) => String(k).toUpperCase()));
@@ -490,6 +497,7 @@
       if (!datum.y && heute - c > 180 * 864e5) { y++; c = new Date(y, datum.m - 1, datum.d); }
       datum.y = y; out.vergangen = c < heute;
     }
+    out.zeit = zeit;
     out.status = out.kuerzel && datum ? 'tour' : out.kuerzel ? 'ohneDatum' : (datum || zeit) ? 'ohneKuerzel' : 'unklar';
     return out;
   }

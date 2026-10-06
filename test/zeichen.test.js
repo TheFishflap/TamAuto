@@ -43,6 +43,22 @@ describe('Tourzeichen', () => {
     ok(p('MK 12. Okt 10:00'), 'MK', 12, 10, 10, 0);
     ok(p('MK 12 Oktober 10:00'), 'MK', 12, 10, 10, 0);
   });
+  it('Kontaktstatus am Ende: T/M = bestätigt, t/m = nur Versuch (Groß-/Kleinschreibung zählt)', () => {
+    const r = p('PM Okt 07 10 T');
+    assert.equal(r.kuerzel, 'PM'); assert.deepEqual([r.datum.d, r.datum.m], [7, 10]); assert.deepEqual([r.zeit.h, r.zeit.m], [10, 0]);
+    assert.equal(r.kontakt, 'T'); assert.equal(r.bestaetigt, true); assert.equal(r.versuch, false);
+    for (const [s, k, b] of [['MK 12.10 10:00 T', 'T', true], ['MK 12.10 10:00 t', 't', false], ['MK 12.10 10:00 M', 'M', true], ['MK 12.10 10:00 m', 'm', false], ['T MK 12.10 10:00', 'T', true]]) {
+      const x = p(s); assert.equal(x.kuerzel, 'MK', s); assert.equal(x.kontakt, k, s); assert.equal(x.bestaetigt, b, s); assert.equal(x.versuch, !b, s);
+    }
+    const o = p('MK 12.10 10:00'); assert.equal(o.kontakt, ''); assert.equal(o.bestaetigt, false); assert.equal(o.versuch, false);
+  });
+  it('einzelne Zahl neben dem Datum ist die volle Stunde (10 → 10:00)', () => {
+    ok(p('MK 12.10 10'), 'MK', 12, 10, 10, 0);
+    ok(p('MK 12.10 8 T'), 'MK', 12, 10, 8, 0);
+    assert.equal(p('MK 12.10 25').zeit, null);   // keine gültige Stunde
+    assert.equal(p('MK 31.02 10').zeit, null);   // ohne gültiges Datum keine Stunde aus losen Zahlen
+  });
+  it('Kontaktbuchstabe wird nie als Kürzel genommen', () => { const r = p('T'); assert.equal(r.kuerzel, ''); assert.equal(r.kontakt, 'T'); assert.equal(r.status, 'unklar'); });
   it('nur Kürzel → Datum fehlt', () => { const r = p('MK'); assert.equal(r.status, 'ohneDatum'); assert.equal(r.kuerzel, 'MK'); });
   it('Kürzel mit Zeit, aber ohne Datum → Datum fehlt', () => { assert.equal(p('MK 10:00').status, 'ohneDatum'); });
   it('Datum ohne Kürzel → Kürzel fehlt', () => { const r = p('12.10 10:00'); assert.equal(r.status, 'ohneKuerzel'); assert.equal(r.kuerzel, ''); });
