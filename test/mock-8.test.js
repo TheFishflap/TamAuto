@@ -111,12 +111,6 @@ describe('Ihr Zeichen still setzen (Auftragsbuch)', { skip }, () => {
     await sleep(500);
   }
 
-  it('Eingabefeld: höchstens 20 Zeichen, Standard „neu“', async () => {
-    await setup();
-    assert.equal($('tamauto-zeichen-text').maxLength, 20);
-    assert.equal($('tamauto-zeichen-text').value, 'neu');
-  });
-
   it('Preis aus „Angenommene Aufträge“ ins Auftragsbuch übernommen', async () => {
     tam = startTam({ gm: { places: KOELN, orderbook: [{ ts: today, nr: 'MW3190203', plz: '50825', ort: 'Köln', preis: null }] } });
     await tam.ready();
@@ -129,37 +123,6 @@ describe('Ihr Zeichen still setzen (Auftragsbuch)', { skip }, () => {
     await setup();
     assert.ok(await until(() => bookRow('MW3190202') && bookRow('MW3190202').textContent.includes('PM'), 2000));
     assert.equal(bookRow('MW3190202').style.background, 'rgb(238, 238, 238)');
-  });
-
-  it('auswählen und übernehmen → still gespeichert (ID kodiert wie TAM), belegte Aufträge übersprungen', async () => {
-    await setup();
-    $('tamauto-zeichen-on').click();
-    bookRow('MW3190201').click();
-    bookRow('MW3190202').click(); // grau/belegt → nicht auswählbar
-    assert.match($('tamauto-zeichen-go').textContent, /\(1\)/);
-    $('tamauto-zeichen-go').click();
-    assert.ok(await until(() => tam.saves.length, 3000), tam.logs().slice(-4).join('\n'));
-    assert.equal(tam.saves.length, 1);
-    assert.match(tam.saves[0], /\|saveMerkmal\|java\.lang\.Long\/4227064769\|java\.lang\.String\/2004016611\|neu\|1\|2\|3\|4\|2\|5\|6\|5\|OImP\|7\|$/);
-    assert.ok(await until(() => (tam.store.get('orderbook').find((e) => e.nr === 'MW3190201') || {}).zeichen === 'neu', 2000));
-    assert.equal(tam.store.get('orderbook').find((e) => e.nr === 'MW3190202').zeichen, 'PM');
-  });
-
-  it('TAM meldet Fehler → Zeichen nicht übernommen', async () => {
-    await setup();
-    tam.rpcSave = '//EX[1,["com.google.gwt.user.client.rpc.SerializationException"]]';
-    $('tamauto-zeichen-on').click();
-    bookRow('MW3190201').click();
-    $('tamauto-zeichen-go').click();
-    assert.ok(await until(() => tam.saves.length, 3000));
-    await sleep(300);
-    assert.ok(!tam.store.get('orderbook').find((e) => e.nr === 'MW3190201').zeichen);
-  });
-
-  it('ausgeschaltet (Standard): Klick wählt nichts aus', async () => {
-    await setup();
-    bookRow('MW3190201').click();
-    assert.equal($('tamauto-zeichen-go').disabled, true);
   });
 });
 

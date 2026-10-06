@@ -180,7 +180,6 @@ describe('MA-Management (Reiter)', { skip }, () => {
     tam = startTam({ gm: { places: { ...KOELN, ma: MAS, kontakte: KON, gebiete: G }, orderbook: BOOK().map((e) => (e.nr === 'MW3190402' ? { ...e, zeichen: '' } : e)) } });
     await tam.ready(); open();
     assert.match($('tamauto-ma-rows').textContent, /MW3190401/);
-    $('tamauto-ma-nurohne').click();
     assert.doesNotMatch($('tamauto-ma-rows').textContent, /MW3190402/, 'Essen gehört PM, nicht MK');
     assert.match($('tamauto-ma-unz').textContent, /99999 Nirgendwo/);
   });
@@ -195,9 +194,9 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.match($('tamauto-ma-rows').textContent, /🔴/); // SLA in 1 h
   });
 
-  it('„nur ohne Tour“ aus → auch Aufträge mit Tour, Tour lesbar angezeigt', async () => {
+  it('andere Bausteine (z. B. „Tour ergänzen“) listen auch Aufträge mit Tour, Tour lesbar angezeigt', async () => {
     await setup();
-    $('tamauto-ma-nurohne').click();
+    $('tamauto-ma-baustein').value = 'tour'; $('tamauto-ma-baustein').onchange();
     assert.match($('tamauto-ma-rows').textContent, /MK 12\.10\. 10:00 T ✓/);
   });
 
@@ -241,7 +240,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
     const x = new tam.window.XMLHttpRequest(); x.open('POST', 'https://tam.tuvsud.com/tam/gwt-rpc/auftrag'); x.send('7|0|3|u|a|loadTeilauftraege|1|2|3|');
     tam.selectTab('AgentVeroeffentlichteAuftraege');
     tam.rpc = '//OK[1,2,3,1,4,5,' + JSON.stringify(['x.model.auftraege.Teilauftrag/1', 'MW3190401', 'Frau Muster\n0171 1234567\nE-Mail: m@x.de', 'MW3190402', 'Herr Sixt\nE-Mail: s@x.de']) + ',0,7]';
-    $('tamauto-ma-nurohne').click(); // auch MW3190402 (Sixt, mit Tour)
+    $('tamauto-ma-baustein').value = 'tour'; $('tamauto-ma-baustein').onchange(); // auch MW3190402 (Sixt, mit Tour)
     $('tamauto-ma-load').click();
     assert.ok(await until(() => /Kontakte: 2/.test($('tamauto-ma-loadstate').textContent), 3000), $('tamauto-ma-hint').textContent);
     assert.match($('tamauto-ma-body').value, /Frau Muster, Tel\. 0171 1234567/);
@@ -306,8 +305,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
 
   it('Zeichen „?“ wird als „ungeklärt“ angezeigt', async () => {
     await setup();
-    $('tamauto-ma-nurohne').click(); $('tamauto-ma-nurohne').click();
-    tam.addAccepted('MW3190403', '', { id: '3705403', zeichen: '?' });
+        tam.addAccepted('MW3190403', '', { id: '3705403', zeichen: '?' });
     tam.addAccepted('MW3190404', '', { id: '3705404', zeichen: '?' });
     tam.selectTab('AgentEigeneAuftraege'); await sleep(500); tam.selectTab('AgentVeroeffentlichteAuftraege'); await sleep(300);
     $('tamauto-ma-sel').value = 'MK'; $('tamauto-ma-sel').onchange({ target: $('tamauto-ma-sel') });

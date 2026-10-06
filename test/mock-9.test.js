@@ -54,15 +54,45 @@ describe('Zuständigkeit und Zeichen aus dem Marktgebiet', { skip }, () => {
     assert.match(bookRow('MW3190602').textContent, /🟡/);
   });
 
-  it('Dropdown wählen → Zeichen „PM neu“ wird still gesetzt', async () => {
-    await setup();
+  it('Dropdown wählen schreibt nichts; erst „Kurzzeichen setzen“ schreibt „PM neu“ (ID kodiert wie TAM)', async () => {
+    const b = BOOK(); b[1].tid = '3705231';
+    await setup({ orderbook: b });
     const sel = bookRow('MW3190602').querySelector('select');
     sel.value = 'PM'; sel.dispatchEvent(new tam.window.Event('change', { bubbles: true }));
-    assert.ok(await until(() => tam.saves.length === 1, 3000), tam.logs().slice(-4).join('\n'));
-    assert.match(tam.saves[0], /\|PM neu\|/);
+    await sleep(600);
+    assert.equal(tam.saves.length, 0, 'Dropdown darf nicht schreiben');
+    assert.equal(book().find((e) => e.nr === 'MW3190602').zustSel, 'PM');
+    assert.equal(bookRow('MW3190602').querySelector('select').value, 'PM');
+    const go = $('tamauto-zeichen-go');
+    assert.match(go.textContent, /Kurzzeichen setzen \(2\)/); // GS (eindeutig) + PM (gewählt)
+    go.click();
+    assert.ok(await until(() => tam.saves.length === 2, 4000), tam.logs().slice(-4).join('\n'));
+    assert.ok(tam.saves.some((x) => /\|PM neu\|1\|2\|3\|4\|2\|5\|6\|5\|OImP\|7\|$/.test(x)), tam.saves.join('\n'));
+    assert.ok(tam.saves.some((x) => /\|GS neu\|/.test(x)));
     assert.ok(await until(() => book().find((e) => e.nr === 'MW3190602').zeichen === 'PM neu', 2000));
   });
 
+  it('Kurzzeichen setzen: Mischgebiet ohne Auswahl bleibt unberührt; Fehler von TAM → nichts übernommen', async () => {
+    await setup();
+    tam.rpcSave = '//EX[1,["com.google.gwt.user.client.rpc.SerializationException"]]';
+    assert.match($('tamauto-zeichen-go').textContent, /\(1\)/); // nur MW3190601 (eindeutig)
+    $('tamauto-zeichen-go').click();
+    assert.ok(await until(() => tam.saves.length, 3000));
+    await sleep(300);
+    assert.ok(!book().find((e) => e.nr === 'MW3190601').zeichen);
+    assert.equal(tam.saves.length, 1);
+  });
+
+  it('Zeitraum: Gestern bis Vor 7 Tagen wählen genau diesen Tag', async () => {
+    const day = (n) => new Date(new Date().setHours(12, 0, 0, 0) - n * 864e5).toISOString();
+    const b = BOOK(); b[0].ts = day(1); b[1].ts = day(3);
+    await setup({ orderbook: b });
+    const rng = $('tamauto-ob-range');
+    assert.deepEqual([...rng.options].map((o) => o.textContent).slice(0, 8), ['Heute', 'Gestern', 'Vorgestern', 'Vor 3 Tagen', 'Vor 4 Tagen', 'Vor 5 Tagen', 'Vor 6 Tagen', 'Vor 7 Tagen']);
+    const pick = (v) => { rng.value = v; rng.onchange(); };
+    pick('d1'); assert.ok(bookRow('MW3190601')); assert.ok(!bookRow('MW3190602'));
+    pick('d3'); assert.ok(!bookRow('MW3190601')); assert.ok(bookRow('MW3190602'));
+  });
   it('Automatik (Schalter an): nach dem Schreiben ins Auftragsbuch gebündelt „GS neu“ nur bei eindeutigem Gebiet', async () => {
     await setup({ zeichenAuto: true, zeichenAutoSec: 1 });
     tam.addOrder({ nr: 'MW3190603', plz: '44141', ort: 'Dortmund', id: '3706003' }); // Annahme schreibt ins Auftragsbuch
