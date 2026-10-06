@@ -1065,3 +1065,20 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.match($('tamauto-ma-hint').textContent, /Blatt „MA“ fehlt/);
   });
 });
+
+// Vorrang der Ortsliste: Marktgebiete/MA dürfen die Annahme nie beeinflussen
+describe('Ortsliste hat Vorrang vor Marktgebieten', { skip }, () => {
+  const G = [['44', 'dortmund', 'GS'], ['45', 'essen', 'PM'], ['50', 'koeln', 'PM']].map(([plz, ort, ma]) => ({ plz, orte: [ort], nurPlz: '', nurWort: '', sixt: false, ma: [ma] }));
+  it('MA zugeordnet, aber nicht in „annehmen“ → keine Annahme; in „nicht annehmen“ → keine Annahme; nur „annehmen“ ohne Sperre → Annahme', async () => {
+    const places = { v: 2, plz: ['50825', '44'], orte: [], block: { plz: ['44141'], orte: [] }, loadedAt: new Date().toISOString(), source: 'T',
+      gebiete: G, ma: [{ k: 'GS', name: 'G', mail: '', gebiet: [] }, { k: 'PM', name: 'P', mail: '', gebiet: [] }] };
+    tam = startTam({ gm: { places } });
+    await tam.ready();
+    tam.addOrder({ nr: 'MW3190501', plz: '44141', ort: 'Dortmund', onOpen: () => {} }); // in „annehmen“ (44), aber gesperrt (44141), MA vorhanden
+    tam.addOrder({ nr: 'MW3190502', plz: '45127', ort: 'Essen', onOpen: () => {} });    // MA vorhanden, aber nicht in „annehmen“
+    tam.addOrder({ nr: 'MW3190503', plz: '50825', ort: 'Köln' });                       // „annehmen“ → wird angenommen
+    assert.ok(await until(() => tam.accepted.includes('MW3190503'), 15000), tam.logs().join('\n'));
+    await sleep(1000);
+    assert.deepEqual(tam.dblclicks, ['MW3190503']);
+  });
+});
