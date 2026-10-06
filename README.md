@@ -28,7 +28,7 @@ anhand der Ortsliste der IB Thomée GmbH.
 | **Fern-Lizenzierung** | „Lizenz anfragen“ direkt im Script → Freischaltung in der Lizenzverwaltung von IB Thomée → das Script **aktiviert sich selbst**; Verlängerung per Klick (Reiter Info); signierte **Sperrliste** zum Entziehen (7 Tage offline erlaubt) |
 | **Verzögerung** | Standard an: 0,12 s + Randomizer (bis 80 ms) vor jedem Klickschritt, einstellbar 0–0,5 s |
 | **Termin offen** | Terminvereinbarung nach der Annahme weggeklickt und SLA-Ende (laut „Angenommene Aufträge“) in ≤ 2 h → **rote 1** im Auftragsbuch |
-| **MA-Management** | Eigener Reiter: Mitarbeiter wählen, ihre Aufträge nach Marktgebiet (Excel, Blatt „Marktgebiete“), Tour aus „Ihr Zeichen“ gelesen (Kürzel, Datum, Uhrzeit beliebig; T/t/M/m), SLA-Ampel, nicht zugeordnete Aufträge, Mail-Entwurf mit Bausteinen, Cc-Auswahl und Absender. Hat keinen Einfluss auf die Annahme |
+| **MA-Management** | Eigener Reiter, nur eine Logik: **offene Terminvereinbarungen** (Aufträge ab 150 € bzw. Status „Terminvereinbarung“, Kürzel des MA steht in „Ihr Zeichen“, noch keine Tour mit Datum), nach FIN sortiert, mit Kontakt/Telefon. Eine Mail „Neue Terminvereinbarung <Auftragsart> in <Ort> (x)“ an den MA; Absender und Cc aus den Backoffice-Zeilen. Excel-Blatt „MA“: Kürzel \| Name \| E-Mail \| Backoffice (Haken). |
 | **Ihr Zeichen** | Im Auftragsbuch: Haken „Ihr Zeichen setzen“, Text (max. 20 Zeichen wie in TAM), Aufträge anklicken, „In TAM übernehmen“ – still gespeichert, ohne Fenster; belegte Felder (grau) werden nicht überschrieben |
 
 ### 🔄 Aktualisierung – gezielt statt dauerhaft
@@ -395,6 +395,14 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 **Veränderung, Weitergabe und Vervielfältigung des Codes sind nicht gestattet.** Siehe [LICENSE](LICENSE).
 
 ## Changelog
+
+### 1.23.0 – 2026-10-06
+Noch weiter ausgedünnt:
+- **Marktgebiete entfallen** (Blatt und Zuordnung nach Ort/PLZ; Excel von Hand zu füllen war nicht sinnvoll). Ein Auftrag gehört dem MA, dessen **Kürzel in „Ihr Zeichen“** steht. Die Spalte „Zuständig“ im Auftragsbuch entfällt.
+- **Blatt „Kontakte“ und „MA“ sind eins:** Spalten Kürzel | Name | E-Mail | **Backoffice** (Haken: x, ja, ✓, 1 …). Backoffice-Zeilen sind Absender und Cc der Mails.
+- **MA-Management nur noch eine Logik** (ab 150 €): Liste der offenen Terminvereinbarungen, „Nicht zugeordnet“ und die übrigen Anzeigen entfallen; ein Hinweis nennt die Terminaufträge ohne Kürzel.
+- **Mail-Titel:** „Neue Terminvereinbarung <Auftragsart> in <Ort> (x)“. Die Tabelle bekommt die Spalte **FIN** und ist **nach FIN sortiert** (gleiche Fahrzeuge zusammen). Neben „Als Tabelle kopieren“ steht ein blaues Fragezeichen: erst „Mail öffnen“ klicken (legt die schöne Tabelle in die Zwischenablage), dann im Mailfenster an der Marke einfügen.
+- **Rote 1 nur im Auftragsbuch** und nur, wenn die Reservierung (Ende aus dem Terminfenster) innerhalb der nächsten 2 Stunden aus der SLA fällt (oder schon abgelaufen ist); die Zeile ist dann rosa markiert. Die Anzeige wandert mit der Zeit (minütliche Aktualisierung).
 
 ### 1.22.0 – 2026-10-06
 Aufgeräumt: **eine einheitliche Logik, weniger Code.**

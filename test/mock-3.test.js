@@ -193,68 +193,76 @@ describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
   });
 });
 
-// MA-Management: Reiter mit Mitarbeiter-Auswahl, Aufträgen nach Marktgebiet, „nicht zugeordnet“ und Mail-Entwurf
+// MA-Management (ausgedünnt): Mitarbeiter-Auswahl, offene Terminvereinbarungen (ab 150 €, Kürzel im Zeichen, ohne Tour), eine Mail
 describe('MA-Management (Reiter)', { skip }, () => {
   const today = new Date().toISOString();
   const inH = (h) => { const d = new Date(Date.now() + h * 3600000), p = (n) => String(n).padStart(2, '0'); return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
-  const MAS = [{ k: 'MK', name: 'Markus Kirschbaum', mail: 'mk@example.com', gebiet: ['44', '45'] }, { k: 'PM', name: 'Petra M.', mail: 'pm@example.com', gebiet: ['45'] }];
-  const KON = [{ name: 'Backoffice (Postfach)', mail: 'auftrag@example.com', cc: 'an', rolle: 'Postfach' }, { name: 'Silke', mail: 'silke@example.com', cc: 'an', rolle: 'Backoffice-Kraft' },
-    { name: 'Louis', mail: 'louis@example.com', cc: 'aus', rolle: 'Backoffice-Kraft' }, { name: 'Leonie Struve', mail: '', cc: 'aus', rolle: 'Backoffice-Kraft' }];
+  const MAS = [{ k: 'MK', name: 'Markus Kirschbaum', mail: 'mk@example.com', backoffice: false }, { k: 'PM', name: 'Petra M.', mail: 'pm@example.com', backoffice: false },
+    { k: 'BO', name: 'Backoffice Postfach', mail: 'auftrag@example.com', backoffice: true }, { k: 'SI', name: 'Silke', mail: 'silke@example.com', backoffice: true },
+    { k: 'LS', name: 'Leonie Struve', mail: '', backoffice: true }];
   const BOOK = () => [
-    { ts: today, nr: 'MW3190401', plz: '44141', ort: 'Dortmund', dienst: 'Standard', strasse: 'Hauptstr. 5', sla: inH(1), preis: 200, zeichen: '' },
-    { ts: today, nr: 'MW3190402', plz: '45127', ort: 'Essen', dienst: 'Sixt Rückgabe', preis: 180, zeichen: 'MK 12.10 10:00 T' },
-    { ts: today, nr: 'MW3190403', plz: '99999', ort: 'Nirgendwo', dienst: 'Standard', preis: 200, zeichen: '' },
-    { ts: today, nr: 'MW3190404', plz: '44141', ort: 'Dortmund', dienst: 'Kennzeichenversand', zeichen: '' },
+    { ts: today, nr: 'MW3190401', plz: '44141', ort: 'Dortmund', dienst: 'Sixt Rückgabe', ref: 'WVWZZZ000B', strasse: 'Hauptstr. 5', sla: inH(1), preis: 200, zeichen: 'MK' },
+    { ts: today, nr: 'MW3190402', plz: '45127', ort: 'Essen', dienst: 'Standard', ref: 'WVWZZZ000A', preis: 180, zeichen: 'MK 12.10 10:00 T' }, // hat schon eine Tour
+    { ts: today, nr: 'MW3190403', plz: '99999', ort: 'Nirgendwo', dienst: 'Standard', preis: 200, zeichen: '' },                          // noch kein Kürzel
+    { ts: today, nr: 'MW3190404', plz: '44141', ort: 'Dortmund', dienst: 'Kennzeichenversand', ref: 'WVWZZZ000B', preis: 20, zeichen: '' }, // gehört zu 401 (gleiche FIN)
+    { ts: today, nr: 'MW3190405', plz: '50667', ort: 'Köln', dienst: 'Standard', ref: 'WVWZZZ000A', preis: 150, zeichen: 'MK neu' },          // ab 150 €, Kürzel MK
+    { ts: today, nr: 'MW3190406', plz: '50667', ort: 'Köln', dienst: 'Standard', preis: 69, zeichen: 'MK' },                                     // unter 150 €
+    { ts: today, nr: 'MW3190407', plz: '50667', ort: 'Köln', dienst: 'Standard', preis: 300, zeichen: 'PM' },                                    // anderer MA
   ];
   const $ = (id) => tam.document.getElementById(id);
   const open = () => { tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-ma"]').click(); $('tamauto-ma-sel').value = 'MK'; $('tamauto-ma-sel').onchange({ target: $('tamauto-ma-sel') }); };
   const mailto = () => decodeURIComponent($('tamauto-ma-open').getAttribute('href'));
-  async function setup() {
-    tam = startTam({ gm: { places: { ...KOELN, ma: MAS, kontakte: KON }, orderbook: BOOK() } });
+  async function setup(gm = {}) {
+    tam = startTam({ gm: { places: { ...KOELN, ma: MAS }, orderbook: BOOK(), ...gm } });
     await tam.ready(); open();
   }
 
-  it('mit Blatt „Marktgebiete“: Zuordnung nach Ort; nicht zugeordnet = „PLZ Ort“', async () => {
-    const G = [{ plz: '44', orte: ['dortmund'], nurPlz: '', nurWort: '', sixt: false, ma: ['MK'] }, { plz: '45', orte: ['essen'], nurPlz: '', nurWort: '', sixt: false, ma: ['PM'] }];
-    tam = startTam({ gm: { places: { ...KOELN, ma: MAS, kontakte: KON, gebiete: G }, orderbook: BOOK().map((e) => (e.nr === 'MW3190402' ? { ...e, zeichen: '' } : e)) } });
-    await tam.ready(); open();
-    assert.match($('tamauto-ma-rows').textContent, /MW3190401/);
-    assert.doesNotMatch($('tamauto-ma-rows').textContent, /MW3190402/, 'Essen gehört PM, nicht MK');
-    assert.match($('tamauto-ma-unz').textContent, /99999 Nirgendwo/);
-  });
-
-  it('Reiter zeigt die Aufträge des Marktgebiets (ohne Tour), nicht zugeordnete PLZ extra', async () => {
+  it('Liste: nur Terminpflicht (ab 150 €), Kürzel des MA im Zeichen, noch ohne Tour; nach FIN sortiert; Kennzeichenversand unter dem Hauptauftrag', async () => {
     await setup();
     const rows = $('tamauto-ma-rows').textContent;
-    assert.match(rows, /MW3190401/); assert.match(rows, /MW3190404/);
-    assert.doesNotMatch(rows, /MW3190402/, 'hat schon eine bestätigte Tour');
-    assert.doesNotMatch(rows, /MW3190403/, 'anderes Gebiet');
-    assert.match($('tamauto-ma-unz').textContent, /99999/);
-    assert.match($('tamauto-ma-rows').textContent, /🔴/); // SLA in 1 h
+    assert.match(rows, /MW3190401/); assert.match(rows, /MW3190405/); assert.match(rows, /MW3190404/);
+    assert.doesNotMatch(rows, /MW3190402/, 'hat schon eine Tour'); assert.doesNotMatch(rows, /MW3190403/, 'kein Kürzel');
+    assert.doesNotMatch(rows, /MW3190406/, 'unter 150 €'); assert.doesNotMatch(rows, /MW3190407/, 'anderer MA');
+    assert.ok(rows.indexOf('MW3190405') < rows.indexOf('MW3190401'), 'FIN WVWZZZ000A vor WVWZZZ000B');
+    assert.match($('tamauto-ma-rows').textContent, /🔴/); // Reservierung in 1 h
+    assert.match($('tamauto-ma-hint').textContent, /1 Aufträge mit Terminpflicht haben noch kein Kürzel/);
   });
 
-  it('Mail: Empfänger, Cc nach „an/aus“, Kennzeichenversand nur benannt', async () => {
+  it('Mail: Titel „Neue Terminvereinbarung <Auftragsart> in <Ort> (x)“, Empfänger, Cc = Backoffice mit E-Mail, FIN-Spalte, Kennzeichenversand nur benannt', async () => {
     await setup();
     const m = mailto();
     assert.match(m, /^mailto:mk@example\.com\?cc=auftrag@example\.com,silke@example\.com&subject=/);
-    assert.doesNotMatch(m, /louis@example\.com/);
-    assert.match($('tamauto-ma-body').value, /\+ Kennzeichenversand MW3190404/);
-    assert.equal(($('tamauto-ma-body').value.match(/MW3190404/g) || []).length, 1);
-    assert.match($('tamauto-ma-subject').value, /Neue Terminvereinbarung \(1\)/);
+    assert.equal($('tamauto-ma-subject').value, 'Neue Terminvereinbarung Standard, Sixt Rückgabe in Köln, Dortmund (2)');
+    const b = $('tamauto-ma-body').value;
+    assert.match(b, /^Auftrag\s+\| FIN\s+\| PLZ \/ Ort\s+\| Auftragsart\s+\| Reservierung bis\s+\| Kontakt$/m);
+    assert.match(b, /\+ Kennzeichenversand MW3190404/); assert.equal((b.match(/MW3190404/g) || []).length, 1);
+    assert.match(b, /Die Reservierung läuft zu den angegebenen Zeiten aus/);
   });
 
-  it('Cc abwählbar, Absender wählbar und gemerkt (Signatur „Liebe Grüße“)', async () => {
+  it('Cc abwählbar, Absender = Backoffice-Zeilen, gemerkt (Signatur „Liebe Grüße“)', async () => {
     await setup();
-    const box = [...tam.document.querySelectorAll('#tamauto-ma-cc input')].find((i) => i.dataset.mail === 'silke@example.com');
-    box.click();
+    assert.deepEqual([...$('tamauto-ma-absender').options].map((o) => o.value), ['', 'Backoffice Postfach', 'Silke', 'Leonie Struve']);
+    [...tam.document.querySelectorAll('#tamauto-ma-cc input')].find((i) => i.dataset.mail === 'silke@example.com').click();
     assert.doesNotMatch(mailto(), /silke@example\.com/);
     $('tamauto-ma-absender').value = 'Leonie Struve'; $('tamauto-ma-absender').onchange({ target: $('tamauto-ma-absender') });
     assert.match($('tamauto-ma-body').value, /Liebe Grüße\nLeonie Struve$/);
     assert.equal(tam.store.get('maSender'), 'Leonie Struve');
   });
 
+  it('Zahl in Klammern beim MA = offene Terminvereinbarungen (Summe = Reiter)', async () => {
+    await setup();
+    const lab = (k) => [...$('tamauto-ma-sel').options].find((o) => o.value === k).textContent;
+    assert.match(lab('MK'), /\(3\)$/); assert.match(lab('PM'), /\(1\)$/); assert.doesNotMatch(lab('SI'), /\(\d+\)$/);
+    assert.match(tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-ma"]').textContent, /\(4\)/);
+  });
+
+  it('keine Marktgebiete, kein „nicht zugeordnet“, keine Baustein-Auswahl', async () => {
+    await setup();
+    assert.equal($('tamauto-ma-unz'), null); assert.equal($('tamauto-ma-baustein'), null);
+  });
+
   it('Hinweis „keine E-Mail-Adresse“ steht in der Überschriftszeile der Mail und nennt das Kürzel', async () => {
-    tam = startTam({ gm: { places: { ...KOELN, ma: [{ k: 'MK', name: 'Markus', mail: '', gebiet: ['44'] }], kontakte: KON }, orderbook: BOOK() } });
+    tam = startTam({ gm: { places: { ...KOELN, ma: [{ k: 'MK', name: 'Markus', mail: '', backoffice: false }] }, orderbook: BOOK() } });
     await tam.ready(); open();
     const st = $('tamauto-ma-mailstate');
     assert.match(st.textContent, /Keine E-Mail-Adresse für MK/);
@@ -262,28 +270,16 @@ describe('MA-Management (Reiter)', { skip }, () => {
   });
 
   it('Kontakte laden: Telefon in Liste und Mail; Sixt ohne Nummer → leere Zeile', async () => {
-    tam = startTam({ gm: { places: { ...KOELN, ma: MAS, kontakte: KON }, orderbook: BOOK().map((e) => (e.nr === 'MW3190402' ? { ...e, zeichen: '' } : e)) } });
-    await tam.ready(); open();
+    await setup();
     tam.selectTab('AgentEigeneAuftraege');
     const x = new tam.window.XMLHttpRequest(); x.open('POST', 'https://tam.tuvsud.com/tam/gwt-rpc/auftrag'); x.send('7|0|3|u|a|loadTeilauftraege|1|2|3|');
     tam.selectTab('AgentVeroeffentlichteAuftraege');
-    tam.rpc = '//OK[1,2,3,1,4,5,' + JSON.stringify(['x.model.auftraege.Teilauftrag/1', 'MW3190401', 'Frau Muster\n0171 1234567\nE-Mail: m@x.de', 'MW3190402', 'Herr Sixt\nE-Mail: s@x.de']) + ',0,7]';
+    tam.rpc = '//OK[1,2,3,1,4,5,' + JSON.stringify(['x.model.auftraege.Teilauftrag/1', 'MW3190405', 'Frau Muster\n0171 1234567\nE-Mail: m@x.de', 'MW3190401', 'Herr Sixt\nE-Mail: s@x.de']) + ',0,7]';
     $('tamauto-ma-load').click();
     assert.ok(await until(() => /Kontakte: 2/.test($('tamauto-ma-loadstate').textContent), 3000), $('tamauto-ma-hint').textContent);
     assert.match($('tamauto-ma-body').value, /Frau Muster, Tel\. 0171 1234567/);
-    assert.match($('tamauto-ma-body').value, /^MW3190402[^\n]*\| Tel\.\s*$/m);
+    assert.match($('tamauto-ma-body').value, /^MW3190401[^\n]*\| Tel\.\s*$/m);
     assert.match($('tamauto-ma-rows').textContent, /0171 1234567/);
-  });
-
-  it('„Nicht zugeordnet“ ist klappbar (zu Beginn offen) und merkt den Zustand', async () => {
-    await setup();
-    const box = () => $('tamauto-ma-unz').style.display;
-    assert.equal(box(), 'flex');
-    $('tamauto-ma-unzhead').click();
-    assert.equal(box(), 'none'); assert.equal(tam.store.get('maUnzOpen'), false);
-    assert.match($('tamauto-ma-unzcount').textContent, /\(1\)/); // Anzahl bleibt sichtbar
-    $('tamauto-ma-unzhead').click();
-    assert.equal(box(), 'flex');
   });
 
   it('„Mail öffnen“ öffnet als Popup, TAM bleibt im selben Tab', async () => {
@@ -296,20 +292,14 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.match(calls[0][0], /^mailto:mk@example\.com\?/); assert.equal(calls[0][1], '_blank'); assert.match(calls[0][2], /popup=yes/);
   });
 
-  it('Mail: Tabelle mit SLA-Flagge; im Mailtext steht an ihrer Stelle ein Platzhalter (Tabelle liegt in der Zwischenablage)', async () => {
+  it('Mail: Tabelle mit SLA-Flagge; im Mailtext steht an ihrer Stelle ein Platzhalter (Tabelle liegt in der Zwischenablage); Erklärung am Knopf', async () => {
     await setup();
     const a = $('tamauto-ma-open');
     assert.ok(a.dataset.tabelle.startsWith('<table'), 'HTML-Tabelle fehlt');
     const href = decodeURIComponent(a.getAttribute('href'));
     assert.match(href, /Tabelle hier einfügen/); assert.doesNotMatch(href, /PLZ \/ Ort/);
-    assert.doesNotMatch($('tamauto-ma-body').value, /\((rot|gelb)\)/);
-  });
-
-  it('Backoffice-Kräfte sind automatisch Mitarbeiter (Kürzel aus den Initialen oder aus „Kürzel“)', async () => {
-    await setup();
-    const opts = [...$('tamauto-ma-sel').options].map((o) => o.textContent);
-    assert.ok(opts.some((o) => /^LS – Leonie Struve \(Backoffice\)$/.test(o)), opts.join('|'));
-    assert.ok(opts.some((o) => /^SI – Silke \(Backoffice\)$/.test(o)) || opts.some((o) => /Silke \(Backoffice\)/.test(o)), opts.join('|'));
+    const help = $('tamauto-ma-copyhtml').nextElementSibling;
+    assert.ok(help.classList.contains('tamauto-help')); assert.match(help.title, /zuerst „Mail öffnen“/);
   });
 
   it('„Kontakte laden“ lädt auch die Excel einmal neu', async () => {
@@ -320,34 +310,13 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.ok(await until(() => n() > before, 3000), 'Excel nicht neu geladen');
   });
 
-  it('„zurück LH“ im Zeichen → Rückgabe: bei den Rückgaben, nicht mehr unter „neue Aufträge“', async () => {
+  it('„zurück LH“ im Zeichen → Rückgabe: bei den Rückgaben, nicht mehr in der Liste', async () => {
     await setup();
-    tam.addAccepted('MW3190401', '', { id: '3705401', zeichen: 'zurück LH' });
+    tam.addAccepted('MW3190401', '', { id: '3705401', zeichen: 'MK zurück', preis: '200,00 €' });
     tam.selectTab('AgentEigeneAuftraege');
     assert.ok(await until(() => ((tam.store.get('returnsToday') || { items: {} }).items || {}).MW3190401, 3000), JSON.stringify(tam.store.get('returnsToday')));
     tam.selectTab('AgentVeroeffentlichteAuftraege');
     await sleep(300);
     assert.doesNotMatch($('tamauto-ma-rows').textContent, /MW3190401/);
-  });
-
-  it('Zeichen „?“ wird als „ungeklärt“ angezeigt', async () => {
-    await setup();
-    tam.addAccepted('MW3190401', '', { id: '3705401', zeichen: '?', preis: '200,00 €' });
-    tam.selectTab('AgentEigeneAuftraege'); await sleep(500); tam.selectTab('AgentVeroeffentlichteAuftraege'); await sleep(300);
-    $('tamauto-ma-sel').value = 'MK'; $('tamauto-ma-sel').onchange({ target: $('tamauto-ma-sel') });
-    assert.match($('tamauto-ma-rows').textContent, /ungeklärt/);
-  });
-
-  it('Kontakte laden ohne bekannte TAM-Anfrage → Hinweis statt Fehler', async () => {
-    await setup();
-    $('tamauto-ma-load').click();
-    assert.ok(await until(() => /Angenommene Aufträge/.test($('tamauto-ma-hint').textContent), 2000));
-  });
-
-  it('ohne Blatt „MA“ → Hinweis', async () => {
-    tam = startTam({ gm: { places: { ...KOELN }, orderbook: BOOK() } });
-    await tam.ready();
-    tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-ma"]').click();
-    assert.match($('tamauto-ma-hint').textContent, /Blatt „MA“ fehlt/);
   });
 });

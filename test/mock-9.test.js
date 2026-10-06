@@ -14,64 +14,26 @@ afterEach(() => { if (tam) tam.close(); tam = null; });
 
 // P1 Sixt: Auftrag passt, wird aber als „bereits bearbeitet“ übersprungen (done dauerhaft verunreinigt)
 
-// Auftragsbuch: ✓ statt Zeichentext, Zuständig nur als Text; MA-Mail „neue Terminvereinbarung“
-describe('Auftragsbuch: Zeichen als Haken, Zuständig; MA-Mail', { skip }, () => {
-  const G = (ort, ma, plz) => ({ plz, orte: [ort], nurPlz: '', nurWort: '', sixt: false, ma });
-  const GEB = [G('dortmund', ['GS'], '44'), G('duesseldorf', ['MB', 'PM'], '40')];
-  const MAS = ['GS', 'MB', 'PM'].map((k) => ({ k, name: `${k} Name`, mail: `${k.toLowerCase()}@example.com`, gebiet: [] }));
+// Auftragsbuch: ✓ statt Zeichentext, keine Spalte „Zuständig“, nichts mehr zum Schreiben
+describe('Auftragsbuch: Zeichen als Haken', { skip }, () => {
   const today = new Date().toISOString();
   const BOOK = () => [
     { ts: today, nr: 'MW3190601', plz: '44141', ort: 'Dortmund', dienst: 'Standard', preis: 200, zeichen: '' },
     { ts: today, nr: 'MW3190602', plz: '40213', ort: 'Düsseldorf', dienst: 'Sixt Rückgabe', preis: 180, zeichen: 'PM 12.10 10:00 T' },
-    { ts: today, nr: 'MW3190603', plz: '44141', ort: 'Dortmund', dienst: 'Standard', preis: 60, zeichen: '' },
   ];
-  const $ = (id) => tam.document.getElementById(id);
   const bookRow = (nr) => [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.textContent.includes(nr));
-  async function setup(gm = {}) {
-    tam = startTam({ gm: { places: { ...KOELN, plz: ['50825', '44'], gebiete: GEB, ma: MAS, kontakte: [] }, orderbook: BOOK(), ...gm } });
+
+  it('„Ihr Zeichen“ nur als ✓ (Text im Tooltip); sieben Spalten; kein Schreiben (kein Knopf, Dropdown, Haken, Automatik)', async () => {
+    tam = startTam({ gm: { places: KOELN, orderbook: BOOK() } });
     await tam.ready();
     tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-book"]').click();
-  }
-  const openMa = (k) => { tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-ma"]').click(); $('tamauto-ma-sel').value = k; $('tamauto-ma-sel').onchange({ target: $('tamauto-ma-sel') }); };
-
-  it('„Ihr Zeichen“ nur als ✓ (Text im Tooltip); Zuständig als Text; kein Schreiben mehr (kein Knopf, kein Dropdown, kein Haken)', async () => {
-    await setup();
     assert.equal(bookRow('MW3190601').children[5].textContent, '');
     assert.equal(bookRow('MW3190602').children[5].textContent, '✓');
     assert.equal(bookRow('MW3190602').children[5].title, 'PM 12.10 10:00 T');
-    assert.equal(bookRow('MW3190601').children[7].textContent, 'GS');
-    assert.equal(bookRow('MW3190602').children[7].textContent, 'MB/PM');
+    assert.equal(bookRow('MW3190602').children.length, 7);
     assert.equal(tam.document.querySelectorAll('#tamauto-ob-rows select, #tamauto-ob-rows input, #tamauto-zeichen-go').length, 0);
     assert.equal(tam.document.getElementById('tamauto-zeichenauto'), null);
-  });
-
-  it('MA-Management: eine Mail „neue Terminvereinbarung“ nur für Aufträge ab 150 €, kein Baustein-Auswahlfeld', async () => {
-    await setup();
-    assert.equal($('tamauto-ma-baustein'), null);
-    openMa('GS');
-    const t = $('tamauto-ma-body').value;
-    assert.match($('tamauto-ma-subject').value, /Neue Terminvereinbarung \(1\)/);
-    assert.match(t, /MW3190601/); assert.doesNotMatch(t, /MW3190603/, 'unter 150 €');
-    assert.match(t, /für dich ist ein Standard Auftrag angenommen worden/); assert.match(t, /Terminvereinbarung/);
-  });
-
-  it('Mischgebiet: Auftrag ohne Zeichen sehen alle Zuständigen; mit Kürzel im Zeichen nur dieser MA (dann mit Tour: gar nicht)', async () => {
-    const b = BOOK(); b[1].zeichen = '';
-    await setup({ orderbook: b });
-    openMa('MB'); assert.match($('tamauto-ma-body').value, /MW3190602/);
-    openMa('PM'); assert.match($('tamauto-ma-body').value, /MW3190602/);
-    b[1].zeichen = 'PM'; tam.store.set('orderbook', b);
-    openMa('MB'); assert.doesNotMatch($('tamauto-ma-body').value, /MW3190602/);
-    openMa('PM'); assert.match($('tamauto-ma-body').value, /MW3190602/);
-  });
-
-  it('Zahl in Klammern beim MA = offene Terminvereinbarungen; Summe steht am Reiter', async () => {
-    const b = BOOK(); b[1].zeichen = '';
-    await setup({ orderbook: b });
-    openMa('GS');
-    const lab = (k) => [...$('tamauto-ma-sel').options].find((o) => o.value === k).textContent;
-    assert.match(lab('GS'), /\(1\)$/); assert.match(lab('MB'), /\(1\)$/); assert.match(lab('PM'), /\(1\)$/);
-    assert.match(tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-ma"]').textContent, /\(3\)/);
+    assert.ok(![...tam.document.querySelectorAll('#tamauto-page-book th')].some((th) => /Zuständig/.test(th.textContent)));
   });
 });
 

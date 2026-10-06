@@ -92,39 +92,36 @@ describe('Auftragsbuch: rote 1 (Terminfenster weggeklickt, Reservierungsende aus
   const inH = (h) => { const d = new Date(Date.now() + h * 3600000), p = (n) => String(n).padStart(2, '0');
     return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
   const red = () => [...tam.document.querySelectorAll('#tamauto-ob-rows td span.tamauto-termin')];
-  async function acceptWithTermin(extra = {}) {
+  async function acceptWithTermin({ ende = ENDE, ...extra } = {}) {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();
-    tam.addOrder({ ...ORDER, ...extra, afterAccept: (t) => setTimeout(() => terminWin(t), 200) });
+    tam.addOrder({ ...ORDER, ...extra, afterAccept: (t) => setTimeout(() => terminWin(t, ende), 200) });
     assert.ok(await until(() => tam.closed.includes('Terminvereinbarung'), 5000), 'nicht weggeklickt');
     assert.ok(await until(() => (tam.store.get('orderbook') || []).length, 5000));
     await sleep(3000); // Nachkontrolle vorbei
   }
 
-  it('Fenster mit „Ende: …“ weggeklickt → sofort rote 1 (auch beim Warenkorb-Auftrag), Reservierungsende gemerkt', async () => {
-    await acceptWithTermin({ nearby: [{ nr: 'MW3000001', km: 0 }] });
+  it('Fenster mit „Ende“ in ≤ 2 h → rote 1 (auch beim Warenkorb-Auftrag), Zeile markiert, Reservierungsende gemerkt', async () => {
+    const ende = inH(1);
+    await acceptWithTermin({ nearby: [{ nr: 'MW3000001', km: 0 }], ende });
     assert.equal(red().length, 2, JSON.stringify(tam.store.get('orderbook')));
     assert.equal(red()[0].textContent, '1');
-    assert.match(red()[0].title, /02\.10\.2099 15:13/);
-    assert.ok(tam.store.get('orderbook').every((e) => e.resEnde === ENDE));
+    assert.ok(tam.store.get('orderbook').every((e) => e.resEnde === ende));
     const row = [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.textContent.includes(ORDER.nr));
-    assert.equal(row.style.background, 'rgb(255, 235, 238)'); // Zeile markiert
+    assert.equal(row.style.background, 'rgb(255, 235, 238)');
   });
 
-  it('rote 1 bleibt stehen, auch wenn später ein Zeichen eingetragen wird (Zeile dann grau)', async () => {
-    await acceptWithTermin();
-    tam.addAccepted(ORDER.nr, '', { zeichen: 'GS 12.10 10:00 T' });
-    tam.selectTab('AgentEigeneAuftraege');
-    assert.ok(await until(() => (tam.store.get('orderbook')[0] || {}).zeichen === 'GS 12.10 10:00 T', 3000));
+  it('Ende erst in 5 h → noch keine rote 1', async () => {
+    await acceptWithTermin({ ende: inH(5) });
+    assert.equal(red().length, 0);
+  });
+
+  it('Ende schon überschritten → rote 1; Fenster ohne lesbares Ende → keine rote 1', async () => {
+    await acceptWithTermin({ ende: inH(-3) });
     assert.equal(red().length, 1);
-  });
-
-  it('Fenster ohne lesbares Ende → trotzdem rote 1', async () => {
-    tam = startTam({ gm: { places: KOELN } });
-    await tam.ready();
-    tam.addOrder({ ...ORDER, afterAccept: (t) => setTimeout(() => terminWin(t, ''), 200) });
-    assert.ok(await until(() => tam.closed.includes('Terminvereinbarung'), 5000));
-    assert.ok(await until(() => red().length === 1, 5000));
+    tam.close();
+    await acceptWithTermin({ ende: '' });
+    assert.equal(red().length, 0);
   });
 
   it('ohne weggeklickte Terminvereinbarung → keine rote 1, auch bei knapper SLA', async () => {
@@ -139,41 +136,36 @@ describe('Auftragsbuch: rote 1 (Terminfenster weggeklickt, Reservierungsende aus
   });
 });
 
-// Excel: Blatt „MA“ (Mitarbeiter mit Marktgebiet) und „Kontakte“ (Cc/Absender für Mails)
-describe('Excel „MA“ und „Kontakte“', { skip }, () => {
+// Excel: Blatt „MA“ (Kürzel | Name | E-Mail | Backoffice) – Mitarbeiter und Backoffice (Absender/Cc der Mails) in einem Blatt
+describe('Excel „MA“ mit Backoffice-Haken', { skip }, () => {
   const { makeXlsx, revocationList } = require('./harness');
   const xlsx = makeXlsx({
     annehmen: [['PLZ', 'Ort'], ['50825', 'Köln']],
     'nicht annehmen': [['PLZ', 'Ort']],
-    MA: [['Kürzel', 'Name', 'E-Mail', 'Marktgebiet'], ['mk', 'Markus Kirschbaum', 'mk@example.com', '44, 45; 58*'], ['PM', 'Petra M.', 'pm@example.com', '45 46'], ['XX', 'Ohne Gebiet', '', '']],
-    Marktgebiete: [['PLZ', 'Ort', 'MA'], ['40', 'Düsseldorf', 'MB PM'], ['42', 'Wuppertal - nur 42106', 'MK'], ['', 'ohne PLZ', '']],
-    Kontakte: [['Bezeichnung', 'E-Mail', 'Cc', 'Rolle', 'Kürzel'], ['Backoffice (Postfach)', 'auftrag@example.com', 'an', 'Postfach', ''], ['Leonie Struve', '', 'aus', 'Backoffice-Kraft', 'lst'], ['Silke', 'silke@example.com', 'Pflicht', 'Backoffice-Kraft', '']],
+    MA: [['Kürzel', 'Name', 'E-Mail', 'Backoffice'], ['mk', 'Markus Kirschbaum', 'mk@example.com', ''], ['LS', 'Leonie Struve', 'ls@example.com', 'x'], ['SI', 'Silke', 'silke@example.com', 'ja'], ['XX', 'Ohne', '', 'nein'], ['BO', 'Postfach', 'auftrag@example.com', '✓']],
+    Marktgebiete: [['PLZ', 'Ort', 'MA'], ['40', 'Düsseldorf', 'MB PM']], // wird nicht mehr gelesen
   });
   const xhr = (o) => o.url.includes('IQBmSNFRkXF5') ? { status: 200, responseText: revocationList() } : o.url.includes('IQDymsXIGo99') ? { status: 200, response: xlsx } : { error: true };
 
-  it('Mitarbeiter mit Marktgebiet (PLZ-Anfänge, Komma/Semikolon/Leerzeichen, Sternchen) und Kontakte', async () => {
+  it('Kürzel groß, Backoffice per Haken (x, ja, ✓; leer/nein = nein); Blatt Marktgebiete wird ignoriert', async () => {
     tam = startTam({ gm: { places: { plz: [], orte: [] } }, xhr });
     await tam.ready();
     assert.ok(await until(() => (tam.store.get('places').ma || []).length, 5000), JSON.stringify(tam.store.get('places')));
     const p = tam.store.get('places');
-    assert.deepEqual(p.ma.map((x) => x.k), ['MK', 'PM', 'XX']);
-    assert.deepEqual(p.ma[0], { k: 'MK', name: 'Markus Kirschbaum', mail: 'mk@example.com', gebiet: ['44', '45', '58'] });
-    assert.deepEqual(p.ma[1].gebiet, ['45', '46']);
-    assert.deepEqual(p.ma[2].gebiet, []);
-    assert.deepEqual(p.gebiete.map((g) => [g.plz, g.orte[0], g.ma.join('+'), g.nurPlz]), [['40', 'duesseldorf', 'MB+PM', ''], ['42', 'wuppertal', 'MK', '42106']]);
-    assert.deepEqual(p.kontakte.map((x) => x.k), ['', 'LST', '']);
-    assert.deepEqual(p.kontakte.map((x) => [x.name, x.mail, x.cc]), [['Backoffice (Postfach)', 'auftrag@example.com', 'an'], ['Leonie Struve', '', 'aus'], ['Silke', 'silke@example.com', 'Pflicht']]);
+    assert.deepEqual(p.ma.map((x) => [x.k, x.backoffice]), [['MK', false], ['LS', true], ['SI', true], ['XX', false], ['BO', true]]);
+    assert.deepEqual(p.ma[0], { k: 'MK', name: 'Markus Kirschbaum', mail: 'mk@example.com', backoffice: false });
+    assert.equal(p.gebiete, undefined); assert.equal(p.kontakte, undefined);
   });
-  it('ohne diese Blätter (alte Excel) → leer, nichts kaputt', async () => {
+  it('ohne Blatt MA (alte Excel) → leer, nichts kaputt', async () => {
     const alt = makeXlsx({ annehmen: [['PLZ', 'Ort'], ['50825', 'Köln']], 'nicht annehmen': [['PLZ', 'Ort']] });
     tam = startTam({ gm: { places: { plz: [], orte: [] } }, xhr: (o) => o.url.includes('IQDymsXIGo99') ? { status: 200, response: alt } : o.url.includes('IQBmSNFRkXF5') ? { status: 200, responseText: revocationList() } : { error: true } });
     await tam.ready();
     assert.ok(await until(() => (tam.store.get('places').plz || []).length, 5000));
-    assert.deepEqual([tam.store.get('places').ma, tam.store.get('places').kontakte, tam.store.get('places').gebiete], [[], [], []]);
+    assert.deepEqual(tam.store.get('places').ma, []);
   });
 });
 
-// Nach einem Update fehlen im gespeicherten Stand die neuen Excel-Blätter (MA, Kontakte, Marktgebiete) → sofort neu laden
+// Nach einem Update fehlen im gespeicherten Stand die neuen Excel-Blätter (MA) → sofort neu laden
 describe('Excel nach Update sofort neu laden', { skip }, () => {
   const { makeXlsx, revocationList } = require('./harness');
   const xlsx = makeXlsx({ annehmen: [['PLZ', 'Ort'], ['50825', 'Köln']], 'nicht annehmen': [['PLZ', 'Ort']], MA: [['Kürzel', 'Name', 'E-Mail'], ['MK', 'Markus', 'mk@example.com']] });
@@ -185,7 +177,7 @@ describe('Excel nach Update sofort neu laden', { skip }, () => {
     assert.ok(await until(() => (tam.store.get('places').ma || []).length === 1, 5000), JSON.stringify(Object.keys(tam.store.get('places'))));
   });
   it('Stand mit MA-Daten, frisch geladen → kein erneutes Laden', async () => {
-    const places = { v: 2, plz: ['50825'], orte: [], block: { plz: [], orte: [] }, ma: [], kontakte: [], gebiete: [], blockAddr: [], loadedAt: new Date().toISOString(), source: 'neu' };
+    const places = { v: 2, plz: ['50825'], orte: [], block: { plz: [], orte: [] }, ma: [], blockAddr: [], loadedAt: new Date().toISOString(), source: 'neu' };
     tam = startTam({ gm: { places }, xhr });
     await tam.ready();
     await sleep(800);

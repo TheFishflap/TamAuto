@@ -1,4 +1,4 @@
-// MA-Management: Zuordnung zum Marktgebiet, SLA-Ampel, Kontaktzeile, Kennzeichenversand, Mail-Entwurf (reine Logik).
+// MA-Management: SLA-Ampel, Kontaktzeile, Kennzeichenversand, Mail-Entwurf (reine Logik).
 'use strict';
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -7,21 +7,11 @@ const path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tam-auto-annahme.user.js'), 'utf8');
 const a = src.indexOf('// <ma-logik>'), b = src.indexOf('// </ma-logik>');
 if (a < 0 || b < 0) throw new Error('Marker <ma-logik> fehlt im Script');
-const L = new Function(`${src.slice(a, b)}; return { maFuerPlz, ampel, kontaktText, gruppiere, baueMail, istKennzeichen, parseGebiet, maFuerAuftrag };`)();
+const L = new Function(`${src.slice(a, b)}; return { ampel, kontaktText, gruppiere, baueMail, istKennzeichen };`)();
 
 const NOW = new Date(2026, 9, 6, 15, 0); // 06.10.2026 15:00
 const MA = [{ k: 'MK', name: 'Markus Kirschbaum', mail: 'mk@x.de', gebiet: ['44', '45'] }, { k: 'PM', name: 'Petra M.', mail: 'pm@x.de', gebiet: ['45', '46'] }, { k: 'XX', name: 'Ohne', mail: '', gebiet: [] }];
 const o = (nr, plz, extra = {}) => ({ nr, plz, ort: 'Ort', strasse: '', dienst: 'Standard', status: '', sla: '', ref: '', kontakt: null, ...extra });
-
-describe('Marktgebiet', () => {
-  it('PLZ-Anfang → alle zuständigen MA (geteilte Gebiete)', () => {
-    assert.deepEqual(L.maFuerPlz('44141', MA).map((m) => m.k), ['MK']);
-    assert.deepEqual(L.maFuerPlz('45127', MA).map((m) => m.k), ['MK', 'PM']);
-    assert.deepEqual(L.maFuerPlz('99999', MA), []);
-    assert.deepEqual(L.maFuerPlz('', MA), []);
-  });
-  it('genaue PLZ als Gebiet', () => { assert.equal(L.maFuerPlz('22559', [{ k: 'A', gebiet: ['22559'] }]).length, 1); assert.equal(L.maFuerPlz('22560', [{ k: 'A', gebiet: ['22559'] }]).length, 0); });
-});
 
 describe('SLA-Ampel (Endtermin Agent)', () => {
   it('rot ≤ 2 h oder überfällig, gelb ≤ 24 h, sonst nichts', () => {
@@ -84,19 +74,20 @@ describe('Mail „neue Terminvereinbarung“', () => {
   const mail = L.baueMail({ ma: MA[0], orders, absender: 'Leonie Struve', cc: ['auftrag@x.de', 'silke@x.de'], now: NOW });
   it('Empfänger, Cc und Betreff', () => {
     assert.equal(mail.to, 'mk@x.de'); assert.deepEqual(mail.cc, ['auftrag@x.de', 'silke@x.de']);
-    assert.match(mail.subject, /Neue Terminvereinbarung/); assert.match(mail.subject, /\(3\)/); // MW2 ist Kennzeichenversand unter MW1
+    assert.match(mail.subject, /^Neue Terminvereinbarung .* in .* \(3\)$/); assert.match(mail.subject, /Sixt Rückgabe/); assert.match(mail.subject, /Dortmund/); // MW2 ist Kennzeichenversand unter MW1
   });
   it('Tabelle: Auftrag · PLZ/Ort · Auftragsart · Reservierung bis · Kontakt; Reservierungsende (Fenster vor Endtermin) mit Flagge und Stunden', () => {
-    const lines = mail.body.split('\n'), hi = lines.findIndex((l) => /^Auftrag\s+\| PLZ \/ Ort\s+\| Auftragsart\s+\| Reservierung bis\s+\| Kontakt$/.test(l));
+    const lines = mail.body.split('\n'), hi = lines.findIndex((l) => /^Auftrag\s+\| FIN\s+\| PLZ \/ Ort\s+\| Auftragsart\s+\| Reservierung bis\s+\| Kontakt$/.test(l));
     assert.ok(hi >= 0, mail.body);
     assert.match(lines[hi + 1], /^-+(-\+-)-*/);
     assert.equal(lines[hi + 5], '');
     const r1 = lines.slice(hi + 2, hi + 5).find((l) => l.startsWith('MW1'));
-    assert.match(r1, /MW1 \+ Kennzeichenversand MW2\s+\| 44141 Dortmund, Hauptstr\. 5\s+\| Sixt Rückgabe\s+\| 🔴 06\.10\.2026 16:00 \(in 1 h\)\s+\| Frau Muster, Tel\. 0171 1234567$/);
+    assert.match(r1, /MW1 \+ Kennzeichenversand MW2\s+\|\s*\| 44141 Dortmund, Hauptstr\. 5\s+\| Sixt Rückgabe\s+\| 🔴 06\.10\.2026 16:00 \(in 1 h\)\s+\| Frau Muster, Tel\. 0171 1234567$/);
   });
-  it('rot vor gelb vor Rest; Kennzeichenversand nur benannt', () => {
-    const b = mail.body; assert.ok(b.indexOf('MW1') < b.indexOf('MW4') && b.indexOf('MW4') < b.indexOf('MW3'), b);
-    assert.equal((b.match(/MW2/g) || []).length, 1); assert.match(b, /🟡/);
+  it('nach FIN sortiert (dann Reservierungsende); Kennzeichenversand nur benannt', () => {
+    const ms = L.baueMail({ ma: MA[0], orders: [o('MWB', '44141', { ref: 'FIN2', sla: '06.10.2026 16:00' }), o('MWA', '45127', { ref: 'FIN1', sla: '09.10.2026 09:00' }), o('MWC', '44309', { sla: '07.10.2026 09:00' })], absender: '', cc: [], now: NOW }).body;
+    assert.ok(ms.indexOf('MWA') < ms.indexOf('MWB') && ms.indexOf('MWB') < ms.indexOf('MWC'), ms); // ohne FIN zuletzt
+    const b = mail.body; assert.equal((b.match(/MW2/g) || []).length, 1); assert.match(b, /🟡/);
   });
   it('ein Auftrag: Satz mit Auftragsart und „Die Reservierung läuft in x Stunden aus …“', () => {
     const m = L.baueMail({ ma: MA[0], orders: [orders[1]], absender: '', cc: [], now: NOW });
@@ -116,47 +107,5 @@ describe('Mail „neue Terminvereinbarung“', () => {
   it('Anrede und Signatur; ohne Absender keine Namenszeile', () => {
     assert.match(mail.body, /^Hallo Markus,/); assert.match(mail.body, /Liebe Grüße\nLeonie Struve$/);
     assert.doesNotMatch(L.baueMail({ ma: MA[0], orders, absender: '', cc: [], now: NOW }).body, /Liebe Grüße\n\S/);
-  });
-});
-
-// Marktgebiete nach Ort (Blatt „Marktgebiete“: PLZ-Anfang | Ort mit Hinweisen | MA-Kürzel) – echte Zeilen aus der Ortsliste
-describe('Marktgebiete nach Ort', () => {
-  const rows = [['40', 'Düsseldorf', 'MB PM'], ['40', 'Gladbeck', 'MK'], ['41', 'Neuss', 'MB MN PM'], ['42', 'SIXT Wupper, Soling, Leverkusen', 'LU'],
-    ['42', 'Wuppertal - nur 42106', 'MK'], ['44', 'Dortmund, Preußische Straße', 'GS'], ['45', 'Mülheim', 'MK'], ['45', 'Hattingen mit 40€ nicht', 'MK'],
-    ['50', 'Köln', 'PM'], ['51', 'Köln, Taunusstraße', 'LU'], ['58', 'Hagen nur Choice', 'GS'], ['50', 'Erftstadt, Theodor-Heuss-Str', 'MB'], ['67', 'Rodenbach, Gartenstraße', 'JHO']]
-    .map(([plz, ort, ma]) => L.parseGebiet({ plz, ort, ma }));
-  const z = (plz, ort, dienst = 'Standard') => L.maFuerAuftrag({ plz, ort, dienst }, rows);
-  it('Ort und PLZ-Anfang zusammen; geteilte Gebiete → mehrere Kürzel', () => {
-    assert.deepEqual(z('40213', 'Düsseldorf'), ['MB', 'PM']);
-    assert.deepEqual(z('41460', 'Neuss'), ['MB', 'MN', 'PM']);
-    assert.deepEqual(z('40764', 'Mettmann'), []); // Ort nicht in der Liste
-  });
-  it('gleicher PLZ-Anfang, verschiedene Orte → verschiedene MA', () => {
-    assert.deepEqual(z('40213', 'Düsseldorf'), ['MB', 'PM']);
-    assert.deepEqual(z('45966', 'Gladbeck'), []); // echte PLZ 45966, in der Excel steht 40 → „nicht zugeordnet“ (Excel korrigieren)
-    assert.deepEqual(z('40999', 'Gladbeck'), ['MK']);
-  });
-  it('Straßen- und Hinweisteile werden ignoriert (Dortmund, Preußische Straße → Dortmund)', () => {
-    assert.deepEqual(z('44141', 'Dortmund'), ['GS']);
-    assert.deepEqual(z('50321', 'Erftstadt'), ['MB']);
-    assert.deepEqual(z('67688', 'Rodenbach'), ['JHO']);
-    assert.deepEqual(z('45525', 'Hattingen'), ['MK']); // „mit 40€ nicht“ ist nur ein Hinweis
-  });
-  it('„nur 42106“: nur diese PLZ', () => { assert.deepEqual(z('42106', 'Wuppertal'), ['MK']); assert.deepEqual(z('42289', 'Wuppertal'), []); });
-  it('„nur Choice“: nur für Aufträge dieser Dienstleistung', () => {
-    assert.deepEqual(z('58095', 'Hagen', 'Choice - Minderwertgutachten'), ['GS']);
-    assert.deepEqual(z('58095', 'Hagen', 'Standard'), []);
-  });
-  it('Zeile mit SIXT: nur für Sixt-Aufträge, mehrere Orte, PLZ egal', () => {
-    assert.deepEqual(z('51379', 'Leverkusen', 'Sixt Rückgabe'), ['LU']);
-    assert.deepEqual(z('51379', 'Leverkusen', 'Standard'), []);
-    assert.deepEqual(z('42651', 'Solingen', 'Sixt Rückgabe'), ['LU']);
-    assert.deepEqual(z('42106', 'Wuppertal', 'Sixt Rückgabe'), ['LU', 'MK']);
-  });
-  it('Ortsnamen mit Zusatz zählen, andere Orte mit gleichem Anfang nicht', () => {
-    assert.deepEqual(z('45468', 'Mülheim an der Ruhr'), ['MK']);
-    assert.deepEqual(z('56218', 'Mülheim-Kärlich'), []);
-    assert.deepEqual(z('50667', 'Köln'), ['PM']);
-    assert.deepEqual(z('51063', 'Köln'), ['LU']);
   });
 });
