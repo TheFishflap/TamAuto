@@ -55,3 +55,24 @@ describe('Listenantwort lesen (echter Mitschnitt „Angenommene Aufträge“)', 
     assert.ok(e > m.size * 0.97, `${e} von ${m.size} eindeutig`);
   });
 });
+
+// Seitengröße der mitgeschnittenen TAM-Anfrage erhöhen (TAM zeigt 500 je Seite; es gibt über 700 Aufträge)
+describe('Limit der Listenanfrage', () => {
+  const lim = new Function(`${src.slice(a, b)}; return mitLimit;`)();
+  const req = (n) => `7|0|8|https://x/|ABC|svc|loadTeilauftraege|offset|limit|java.lang.Integer/1|java.util.Date/2|1|2|3|4|2|5|7|0|6|7|${n}|8|`;
+  it('ersetzt die Zahl hinter „limit“, nichts sonst', () => {
+    assert.equal(lim(req(500), 1500), req(1500));
+  });
+  it('ohne „limit“ oder bei unerwartetem Aufbau: unverändert', () => {
+    assert.equal(lim('7|0|2|a|b|1|2|', 1500), '7|0|2|a|b|1|2|');
+    assert.equal(lim('Quatsch', 1500), 'Quatsch');
+  });
+  const fx2 = path.join(__dirname, 'fixtures', 'mitschnitt-angenommen-liste.json');
+  it('echte Anfrage von TAM: 500 → 1500', { skip: !fs.existsSync(fx2) && 'Mitschnitt fehlt' }, () => {
+    const r = JSON.parse(fs.readFileSync(fx2, 'utf8')).find((x) => /loadTeilauftraege/.test(x.req) && x.res.length > 1000).req;
+    const n = lim(r, 1500);
+    assert.notEqual(n, r);
+    assert.equal(n.split('|').length, r.split('|').length);
+    assert.deepEqual(r.split('|').filter((x, i) => x !== n.split('|')[i]), ['500']);
+  });
+});
