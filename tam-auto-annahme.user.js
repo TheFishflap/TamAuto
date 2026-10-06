@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.23.1
+// @version      1.23.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -619,14 +619,15 @@
     const rows = list.map((o) => {
       const e = endeStr(o), h = stundenBis(e, now);
       return [`${o.nr}${o.nurVersand ? ' (nur Versand)' : ''}${o.extra.length ? ` + Kennzeichenversand ${o.extra.map((x) => x.nr).join(', ')}` : ''}`, o.ref || '', `${o.plz} ${o.ort}${o.strasse ? `, ${o.strasse}` : ''}`, o.dienst || '',
-        e ? `${{ rot: '🔴', gelb: '🟡' }[ampel(e, now)] || ''} ${e}${h !== null ? ` (in ${h} h)` : ''}`.trim() : '', kontaktText(o)];
+        e ? `${{ rot: '🔴', gelb: '🟡' }[ampel(e, now)] || ''}${o.terminWeg && ampel(e, now) === 'rot' ? ' 1' : ''} ${e}${h !== null ? ` (in ${h} h)` : ''}`.trim() : '', kontaktText(o)];
     });
     const kopf = ['Auftrag', 'FIN', 'PLZ / Ort', 'Auftragsart', 'Reservierung bis', 'Kontakt'];
     const breite = kopf.map((h, c) => Math.max(h.length, ...rows.map((r) => r[c].length)));
     const zeile = (r) => r.map((x, c) => (c === r.length - 1 ? x : x.padEnd(breite[c]))).join(' | ').trimEnd();
-    const lines = list.length ? [zeile(kopf), breite.slice(0, -1).map((w) => '-'.repeat(w)).join('-+-') + '-+-' + '-'.repeat(Math.max(breite[breite.length - 1], 7)), ...rows.map(zeile)] : [];
+    const legende = rows.some((r) => /🔴|🟡/.test(r[4])) ? '🔴 = Reservierung läuft in ≤ 2 h aus oder ist abgelaufen · 🟡 = in ≤ 24 h · 1 = Terminfenster nach der Annahme war schon offen' : '';
+    const lines = list.length ? [zeile(kopf), breite.slice(0, -1).map((w) => '-'.repeat(w)).join('-+-') + '-+-' + '-'.repeat(Math.max(breite[breite.length - 1], 7)), ...rows.map(zeile), ...(legende ? ['', legende] : [])] : [];
     const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const tabelle = list.length ? `<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><tr>${kopf.map((h) => `<th align="left" style="background:#e8f0fb">${esc(h)}</th>`).join('')}</tr>${rows.map((r) => `<tr>${r.map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</table>` : '';
+    const tabelle = list.length ? `<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><tr>${kopf.map((h) => `<th align="left" style="background:#e8f0fb">${esc(h)}</th>`).join('')}</tr>${rows.map((r) => `<tr>${r.map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</table>${legende ? `<p style="font-size:11px;color:#555">${esc(legende)}</p>` : ''}` : '';
     const vor = String(ma.name || '').split(/\s+/)[0] || ma.k;
     const einzeln = list.length === 1, h1 = einzeln ? stundenBis(endeStr(list[0]), now) : null;
     const text = einzeln ? `für dich ist ein ${list[0].dienst || 'neuer'} Auftrag angenommen worden:` : 'für dich sind Aufträge angenommen worden:';
@@ -686,7 +687,7 @@
       if (slaMs(a.sla) !== null && e.sla !== a.sla) { e.sla = a.sla; changed++; }
       ['status', 'ref', 'strasse'].forEach((k) => { if (a[k] && e[k] !== a[k]) { e[k] = a[k]; changed++; } });
     });
-    // „zurück …“ im Zeichen = Rückgabe: bei den Rückgaben eintragen (heute nicht erneut annehmen) und den anderen Geräten melden
+    // „zurück …“ im Zeichen = Rückgabe: bei den Rückgaben eintragen (48 h nicht erneut annehmen) und den anderen Geräten melden
     const known = (places.ma || []).map((m) => m.k), neuRet = [];
     book.forEach((e) => {
       if (!e.zeichen || e.zurueck === today() || !/\bzur(ü|ue)ck\b/i.test(e.zeichen) || parseTourzeichen(e.zeichen, known).status !== 'rueckgabe') return;
@@ -829,10 +830,18 @@
   // ---- Rückgaben (geräteübergreifend): Jedes Gerät meldet seine Annahmen (nur Auftragsnummern) an einen eigenen
   // ntfy-Kanal; alle Geräte merken sich „heute von IB Thomée angenommen“. Verschwindet so ein Auftrag aus
   // „Veröffentlichte Aufträge“ (mind. 60 s – direkt nach der Annahme steht die Zeile noch, bis TAM neu lädt) und
-  // taucht wieder auf, wurde er zurückgegeben → Tages-Blacklist (bis Mitternacht nicht annehmen) und Meldung an alle.
+  // taucht wieder auf, wurde er zurückgegeben → Tages-Blacklist (48 Stunden nicht annehmen) und Meldung an alle.
   const RET_TOPIC = 'tamret-ptau8ux3h4rq2ncm2jctcbb7a2al';
   const RET_MIN_GONE_MS = GM_getValue('retMinGoneSec', 60) * 1000;
-  const dayList = (key) => { const v = GM_getValue(key, null); return v && v.date === today() ? v : { date: today(), items: {} }; };
+  // „accToday“ = Kalendertag; die Rückgabe-Sperre („Tages-Blacklist“) gilt 48 Stunden rollierend – wer nachts arbeitet, verliert sie nicht um Mitternacht
+  const RET_KEEP_MS = 48 * 3600 * 1000;
+  const dayList = (key) => {
+    const v = GM_getValue(key, null);
+    if (key !== 'returnsToday') return v && v.date === today() ? v : { date: today(), items: {} };
+    const items = {}, von = Date.now() - RET_KEEP_MS;
+    Object.entries((v && v.items) || {}).forEach(([k, i]) => { if ((i.at || 0) >= von) items[k] = i; });
+    return { date: today(), items };
+  };
   const nrKey = (x) => String(x || '').toUpperCase().trim();
   function addToday(key, nrs, info) {
     const l = dayList(key); let added = 0;
@@ -911,22 +920,23 @@
     return out;
   }
   function onRetMessage(d, secure = false) {
-    if (!d || d.v !== 1 || !Array.isArray(d.nrs) || d.nrs.length > 20 || new Date(d.at || 0).toLocaleDateString('sv-SE') !== today()) return;
+    if (!d || d.v !== 1 || !Array.isArray(d.nrs) || d.nrs.length > 20) return;
+    if (d.t === 'ret' ? !(Date.now() - d.at <= RET_KEEP_MS && d.at <= Date.now() + 60e3) : new Date(d.at || 0).toLocaleDateString('sv-SE') !== today()) return; // Rückgaben 48 h, übrige Meldungen nur von heute
     if (d.t === 'scan') { GM_setValue('morgenScan', today()); log('Morgenroutine: von einem anderen Gerät schon erledigt.', 'debug'); return; }
     const nrs = d.nrs.map(nrKey).filter((x) => RET_NR.test(x));
     const info = { at: +d.at };
     if (d.t === 'acc') { addToday('accToday', nrs, info); addRemoteAccepts(nrs, String(d.by || '').slice(0, 40), +d.at, secure ? cleanDetails(d.det, nrs) : {}); }
     const known = dayList('accToday').items;
     if (d.t === 'ret' && addToday('returnsToday', nrs.filter((x) => known[x] || secure), info)) {
-      log(`Rückgabe gemeldet: ${nrs.filter((x) => known[x] || secure).join(', ')} – heute nicht annehmen.`, 'ok');
+      log(`Rückgabe gemeldet: ${nrs.filter((x) => known[x] || secure).join(', ')} – 48 h nicht annehmen.`, 'ok');
       renderReturns();
       if (cfg.enabled) scheduleCheck('Rückgabe gemeldet'); // Tabelle sofort einfärben
     }
   }
-  // Kanal hören: Verpasstes seit Mitternacht nachholen (doppelte Meldungen schaden nicht), dann live
+  // Kanal hören: Verpasstes nachholen (doppelte Meldungen schaden nicht), dann live
   function listenRet(topic, handle) {
     const catchUp = () => {
-      const since = Math.floor(new Date(new Date().toDateString()).getTime() / 1000);
+      const since = Math.floor((Date.now() - RET_KEEP_MS) / 1000); // Rückgaben 48 h; Annahmen filtert onRetMessage auf heute
       licFetch(`${LIC_NTFY}/${topic}/json?poll=1&since=${since}`).then((r) => r.text())
         .then((t) => t.split('\n').filter(Boolean).forEach(handle)).catch(() => {});
     };
@@ -966,7 +976,7 @@
     });
     if (!ret.length) return;
     ret.forEach((o) => addToday('returnsToday', [o.nr], { plz: o.plz, ort: o.ort }));
-    log(`Zurückgegeben (heute von IB Thomée angenommen, jetzt wieder veröffentlicht): ${ret.map((o) => `${o.nr} · ${o.plz} ${o.ort}`).join(', ')} – heute nicht annehmen, an alle Geräte gemeldet.`, 'err');
+    log(`Zurückgegeben (heute von IB Thomée angenommen, jetzt wieder veröffentlicht): ${ret.map((o) => `${o.nr} · ${o.plz} ${o.ort}`).join(', ')} – 48 h nicht annehmen, an alle Geräte gemeldet.`, 'err');
     retPost('ret', ret.map((o) => o.nr));
     renderReturns();
   }
@@ -2617,7 +2627,7 @@
     GM_getValue('orderbook', []).filter((e) => e.nr && new Date(e.ts).getTime() >= since).forEach((e) => seen.set(String(e.nr).toUpperCase(), e));
     const known = maListe().map((m) => m.k), now = new Date();
     return [...seen.values()].map((e) => ({ nr: e.nr, preis: typeof e.preis === 'number' ? e.preis : null, plz: e.plz || '', ort: e.ort || '', strasse: e.strasse || '', dienst: e.dienst || '', status: e.status || '',
-      sla: e.sla || '', ref: e.ref || '', zeichen: e.zeichen || '', resEnde: e.resEnde || '', tour: parseTourzeichen(e.zeichen, known, now), kontakt: maKontakte.map.get(String(e.nr).toUpperCase()) || null }));
+      sla: e.sla || '', ref: e.ref || '', zeichen: e.zeichen || '', resEnde: e.resEnde || '', terminWeg: e.terminWeg ? 1 : 0, tour: parseTourzeichen(e.zeichen, known, now), kontakt: maKontakte.map.get(String(e.nr).toUpperCase()) || null }));
   }
   // Aufträge eines MA für die Mail „neue Terminvereinbarung“: Termin ist Pflicht (ab 150 € bzw. Status), noch keine Tour mit Datum, keine Rückgabe,
   // sein Kürzel steht im Zeichen. Sortiert nach FIN (= Referenz), dann nach Reservierungsende.
@@ -2656,7 +2666,7 @@
       : ohneKz ? `${ohneKz} Aufträge mit Terminpflicht haben noch kein Kürzel im Zeichen – sie stehen bei niemandem.` : '');
     $('tamauto-ma-rows').innerHTML = mine.length ? mine.map((o) => {
       const e = endeStr(o), h = stundenBis(e), tel = o.kontakt && o.kontakt.telefon ? o.kontakt.telefon : '';
-      return `<tr><td>${{ rot: '🔴', gelb: '🟡' }[ampel(e)] || ''}</td><td>${escHtml(o.nr)}</td><td>${escHtml(o.ref)}</td><td>${escHtml(`${o.plz} ${o.ort}`)}</td><td>${escHtml(e ? `${e}${h !== null ? ` (in ${h} h)` : ''}` : '')}</td><td>${escHtml(tel)}</td></tr>`;
+      return `<tr><td>${{ rot: '🔴', gelb: '🟡' }[ampel(e)] || ''}${terminRed(o) ? '<b style="color:#c62828;margin-left:2px" title="Terminfenster nach der Annahme weggeklickt, Reservierung läuft in ≤ 2 h aus">1</b>' : ''}</td><td>${escHtml(o.nr)}</td><td>${escHtml(o.ref)}</td><td>${escHtml(`${o.plz} ${o.ort}`)}</td><td>${escHtml(e ? `${e}${h !== null ? ` (in ${h} h)` : ''}` : '')}</td><td>${escHtml(tel)}</td></tr>`;
     }).join('') : '<tr><td colspan="6" style="color:#555;padding:4px">Keine offenen Terminvereinbarungen (Aufträge der letzten 7 Tage, ab 150 €, Kürzel im Zeichen, noch ohne Tour).</td></tr>';
     $('tamauto-ma-loadstate').textContent = maKontakte.at ? `Kontakte: ${maKontakte.map.size} · ${hhmm(new Date(maKontakte.at))}` : 'Kontakte: nicht geladen';
     // Cc und Absender: die Backoffice-Zeilen im Blatt „MA“
@@ -3019,8 +3029,8 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
               <span style="color:#555">– Blatt „nicht annehmen“</span></div>
             <div id="tamauto-bl-excel" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
             <div style="margin-top:8px"><b>Heute zurückgegeben <span id="tamauto-ret-count"></span></b>
-              <span class="tamauto-help" title="Aufträge, die heute von einem Gerät der IB Thomée angenommen und danach zurückgegeben wurden (wieder in „Veröffentlichte Aufträge“). Sie werden auf allen Geräten bis Mitternacht nicht angenommen. Klick auf einen Eintrag gibt ihn auf diesem Gerät wieder frei.">?</span>
-              <span style="color:#555">– auf allen Geräten, bis Mitternacht</span></div>
+              <span class="tamauto-help" title="Aufträge, die von einem Gerät der IB Thomée angenommen und danach zurückgegeben wurden (oder „XX zurück“ im Zeichen haben) (wieder in „Veröffentlichte Aufträge“). Sie werden auf allen Geräten 48 Stunden lang nicht angenommen (auch über Mitternacht, z. B. bei Nachtarbeit). Klick auf einen Eintrag gibt ihn auf diesem Gerät wieder frei.">?</span>
+              <span style="color:#555">– auf allen Geräten, 48 Stunden</span></div>
             <div id="tamauto-ret" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
           </div>
           <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">

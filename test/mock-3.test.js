@@ -201,7 +201,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
     { k: 'BO', name: 'Backoffice Postfach', mail: 'auftrag@example.com', backoffice: true }, { k: 'SI', name: 'Silke', mail: 'silke@example.com', backoffice: true },
     { k: 'LS', name: 'Leonie Struve', mail: '', backoffice: true }];
   const BOOK = () => [
-    { ts: today, nr: 'MW3190401', plz: '44141', ort: 'Dortmund', dienst: 'Sixt Rückgabe', ref: 'WVWZZZ000B', strasse: 'Hauptstr. 5', sla: inH(1), preis: 200, zeichen: 'MK' },
+    { ts: today, nr: 'MW3190401', plz: '44141', ort: 'Dortmund', dienst: 'Sixt Rückgabe', ref: 'WVWZZZ000B', strasse: 'Hauptstr. 5', sla: inH(1), preis: 200, terminWeg: 1, zeichen: 'MK' },
     { ts: today, nr: 'MW3190402', plz: '45127', ort: 'Essen', dienst: 'Standard', ref: 'WVWZZZ000A', preis: 180, zeichen: 'MK 12.10 10:00 T' }, // hat schon eine Tour
     { ts: today, nr: 'MW3190403', plz: '99999', ort: 'Nirgendwo', dienst: 'Standard', preis: 200, zeichen: '' },                          // noch kein Kürzel
     { ts: today, nr: 'MW3190404', plz: '44141', ort: 'Dortmund', dienst: 'Kennzeichenversand', ref: 'WVWZZZ000B', preis: 20, zeichen: '' }, // gehört zu 401 (gleiche FIN)
@@ -225,6 +225,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.doesNotMatch(rows, /MW3190406/, 'unter 150 €'); assert.doesNotMatch(rows, /MW3190407/, 'anderer MA');
     assert.ok(rows.indexOf('MW3190405') < rows.indexOf('MW3190401'), 'FIN WVWZZZ000A vor WVWZZZ000B');
     assert.match($('tamauto-ma-rows').textContent, /🔴/); // Reservierung in 1 h
+    assert.ok([...tam.document.querySelectorAll('#tamauto-ma-rows b')].some((b) => b.textContent === '1'), 'rote 1 fehlt in der Liste'); // Terminfenster weggeklickt + Reservierung in 1 h
     assert.match($('tamauto-ma-hint').textContent, /1 Aufträge mit Terminpflicht haben noch kein Kürzel/);
   });
 
@@ -237,6 +238,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.match(b, /^Auftrag\s+\| FIN\s+\| PLZ \/ Ort\s+\| Auftragsart\s+\| Reservierung bis\s+\| Kontakt$/m);
     assert.match(b, /\+ Kennzeichenversand MW3190404/); assert.equal((b.match(/MW3190404/g) || []).length, 1);
     assert.match(b, /Die Reservierung läuft zu den angegebenen Zeiten aus/);
+    assert.match(b, /🔴 1 \d{2}\.\d{2}\.\d{4} \d{2}:\d{2} \(in 1 h\)/); assert.match(b, /🔴 = Reservierung läuft in ≤ 2 h aus.*1 = Terminfenster/);
   });
 
   it('Cc abwählbar, Absender = Backoffice-Zeilen, gemerkt (Signatur „Liebe Grüße“)', async () => {

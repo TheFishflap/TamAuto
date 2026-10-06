@@ -104,4 +104,12 @@ describe('„XX zurück“ und Morgenroutine', { skip }, () => {
     tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-ma"]').click();
     assert.ok(await until(() => (tam.store.get('orderbook').find((e) => e.nr === 'MW3190803') || {}).zeichen === 'GS 12.10 10:00 T', 15000), tam.logs().slice(-5).join('\n'));
   });
+
+  it('Tages-Blacklist gilt 48 Stunden rollierend (über Mitternacht), danach fällt der Eintrag weg', async () => {
+    const h = (n) => Date.now() - n * 3600e3, yesterday = new Date(Date.now() - 864e5).toLocaleDateString('sv-SE');
+    tam = startTam({ gm: { places: KOELN, returnsToday: { date: yesterday, items: { MW3190810: { at: h(30) }, MW3190811: { at: h(50) } } } } });
+    await tam.ready();
+    const chips = () => tam.document.getElementById('tamauto-ret').textContent;
+    assert.match(chips(), /MW3190810/); assert.doesNotMatch(chips(), /MW3190811/);
+  });
 });
