@@ -1424,7 +1424,7 @@
       const k = [...triedNrs.keys()].find((x) => up.includes(x));
       if (!k || k === currentAcceptNr) return;
       closeWindow(w);
-      if (!strayLogged.has(w)) { strayLogged.add(w); log(`Wächter: Fenster „${t}“ stand noch im Vordergrund – geschlossen.`, 'err'); }
+      if (!strayLogged.has(w)) { strayLogged.add(w); log(`Hinweis: Fenster „${t}“ stand noch im Vordergrund – vom Wächter geschlossen.`); }
     });
   }
 
