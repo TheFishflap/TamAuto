@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.23.0
+// @version      1.23.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -787,12 +787,13 @@
     rows.forEach((e) => {
       const tr = document.createElement('tr');
       const d = new Date(e.ts);
-      [`${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`,
-        `${{ rot: '🔴', gelb: '🟡' }[ampel(e.sla)] || ''}${e.zu ? `↳ ${e.nr}` : e.nr}`, e.plz, e.ort, e.preis == null ? '–' : fmtEuro(e.preis), e.zeichen ? '✓' : '', e.by || ''].forEach((v, i) => {
+      const uhr = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), einTag = range === 'today' || nTage > 0; // einzelner Tag: nur die Uhrzeit
+      [einTag ? uhr : `${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${uhr}`, e.by || '',
+        `${{ rot: '🔴', gelb: '🟡' }[ampel(e.sla)] || ''}${e.zu ? `↳ ${e.nr}` : e.nr}`, e.ort, e.preis == null ? '–' : fmtEuro(e.preis), e.zeichen ? '✓' : ''].forEach((v, i) => {
         const td = document.createElement('td');
         td.textContent = v;
-        if (i === 1 && ampel(e.sla)) td.title = `SLA (Endtermin Agent) ${e.sla}: ${ampel(e.sla) === 'rot' ? 'überfällig oder in ≤ 2 h' : 'in ≤ 24 h'}`;
-        if (i === 1 && terminRed(e)) { // rote 1: Terminfenster weggeklickt und Reservierung läuft in ≤ 2 h aus
+        if (i === 2 && ampel(e.sla)) td.title = `SLA (Endtermin Agent) ${e.sla}: ${ampel(e.sla) === 'rot' ? 'überfällig oder in ≤ 2 h' : 'in ≤ 24 h'}`;
+        if (i === 2 && terminRed(e)) { // rote 1: Terminfenster weggeklickt und Reservierung läuft in ≤ 2 h aus
           const t = document.createElement('span');
           t.className = 'tamauto-termin'; t.textContent = '1'; t.title = `Reservierung läuft ${e.resEnde || e.sla} aus (in ≤ 2 h) – Termin vereinbaren`;
           Object.assign(t.style, { color: '#c62828', fontWeight: 'bold', marginLeft: '4px' });
@@ -807,7 +808,7 @@
       else if (e.zeichen) tr.style.background = '#eeeeee'; // Ihr Zeichen eingetragen = grau
       tbody.appendChild(tr);
     });
-    if (!rows.length) tbody.innerHTML = '<tr><td colspan="7" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
+    if (!rows.length) tbody.innerHTML = '<tr><td colspan="6" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
     // Unten: Anzahl Aufträge, Anzahl PLZ (mit Aufträgen je PLZ), Summe Euro
     const perPlz = {};
     rows.forEach((e) => { perPlz[e.plz] = (perPlz[e.plz] || 0) + 1; });
@@ -2969,9 +2970,9 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
           <div style="max-height:180px;overflow:auto;margin-top:4px;border:1px solid #ddd">
             <table style="border-collapse:collapse;width:100%;font-size:11px">
               <thead><tr style="background:#e8f0fb;position:sticky;top:0">
-                <th style="text-align:left;padding:2px 4px">Datum</th><th style="text-align:left;padding:2px 4px">AuftragsNr</th>
-                <th style="text-align:left;padding:2px 4px">PLZ</th><th style="text-align:left;padding:2px 4px">Ort</th>
-                <th style="text-align:right;padding:2px 4px">Euro</th><th style="text-align:left;padding:2px 4px" title="✓ = in TAM steht ein Zeichen (Text beim Darüberfahren)">Z.</th><th style="text-align:left;padding:2px 4px" title="Angenommen von einem anderen Gerät (Lizenzname); leer = dieses Gerät">Von</th></tr></thead>
+                <th style="text-align:left;padding:2px 4px" title="Bei einem einzelnen Tag nur die Uhrzeit">Datum</th><th style="text-align:left;padding:2px 4px" title="Angenommen von einem anderen Gerät (Lizenzname); leer = dieses Gerät">Von</th>
+                <th style="text-align:left;padding:2px 4px">AuftragsNr</th><th style="text-align:left;padding:2px 4px">Ort</th>
+                <th style="text-align:right;padding:2px 4px">Euro</th><th style="text-align:left;padding:2px 4px" title="✓ = in TAM steht ein Zeichen (Text beim Darüberfahren)">Z.</th></tr></thead>
               <tbody id="tamauto-ob-rows"></tbody>
             </table>
           </div>

@@ -23,17 +23,29 @@ describe('Auftragsbuch: Zeichen als Haken', { skip }, () => {
   ];
   const bookRow = (nr) => [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.textContent.includes(nr));
 
-  it('„Ihr Zeichen“ nur als ✓ (Text im Tooltip); sieben Spalten; kein Schreiben (kein Knopf, Dropdown, Haken, Automatik)', async () => {
+  it('„Ihr Zeichen“ nur als ✓ (Text im Tooltip); sechs Spalten; kein Schreiben (kein Knopf, Dropdown, Haken, Automatik)', async () => {
     tam = startTam({ gm: { places: KOELN, orderbook: BOOK() } });
     await tam.ready();
     tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-book"]').click();
     assert.equal(bookRow('MW3190601').children[5].textContent, '');
     assert.equal(bookRow('MW3190602').children[5].textContent, '✓');
     assert.equal(bookRow('MW3190602').children[5].title, 'PM 12.10 10:00 T');
-    assert.equal(bookRow('MW3190602').children.length, 7);
+    assert.equal(bookRow('MW3190602').children.length, 6);
     assert.equal(tam.document.querySelectorAll('#tamauto-ob-rows select, #tamauto-ob-rows input, #tamauto-zeichen-go').length, 0);
     assert.equal(tam.document.getElementById('tamauto-zeichenauto'), null);
-    assert.ok(![...tam.document.querySelectorAll('#tamauto-page-book th')].some((th) => /Zuständig/.test(th.textContent)));
+    assert.ok(![...tam.document.querySelectorAll('#tamauto-page-book th')].some((th) => /Zuständig|PLZ/.test(th.textContent)));
+    assert.deepEqual([...tam.document.querySelectorAll('#tamauto-page-book thead th')].map((th) => th.textContent), ['Datum', 'Von', 'AuftragsNr', 'Ort', 'Euro', 'Z.']);
+  });
+
+  it('Datum: bei einem einzelnen Tag nur die Uhrzeit, sonst Datum und Uhrzeit', async () => {
+    tam = startTam({ gm: { places: KOELN, orderbook: BOOK() } });
+    await tam.ready();
+    tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-book"]').click();
+    const cell = () => bookRow('MW3190601').children[0].textContent;
+    const rng = tam.document.getElementById('tamauto-ob-range');
+    assert.match(cell(), /^\d{2}:\d{2}$/); // Heute
+    rng.value = 'week'; rng.onchange();
+    assert.match(cell(), /^\d{2}\.\d{2}\. \d{2}:\d{2}$/);
   });
 });
 

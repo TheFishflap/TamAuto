@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.23.1 – 2026-10-06
+- **Auftragsbuch:** Spalte PLZ entfällt; „Von“ (angenommen von) steht jetzt links neben der AuftragsNr; bei einem einzelnen Tag (Heute, Gestern … Vor 7 Tagen) zeigt „Datum“ nur die Uhrzeit.
+
 ### 1.23.0 – 2026-10-06
 Noch weiter ausgedünnt:
 - **Marktgebiete entfallen** (Blatt und Zuordnung nach Ort/PLZ; Excel von Hand zu füllen war nicht sinnvoll). Ein Auftrag gehört dem MA, dessen **Kürzel in „Ihr Zeichen“** steht. Die Spalte „Zuständig“ im Auftragsbuch entfällt.
