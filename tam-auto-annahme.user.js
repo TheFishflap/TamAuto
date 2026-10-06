@@ -48,6 +48,8 @@
     // Autohaus-Regeln: einzelne Adressen sperren (PLZ + Straße [+ Hausnr.]), nicht die ganze PLZ. Eigenes Blatt, damit
     // ältere Versionen (lesen nur „nicht annehmen“ und würden daraus die ganze PLZ sperren) unberührt bleiben.
     blockAddrSheet: 'nicht annehmen Adresse',
+    maSheet: 'MA',            // Mitarbeiter: Kürzel | Name | E-Mail | Marktgebiet (PLZ-Anfänge)
+    contactSheet: 'Kontakte', // Cc-/Absender-Kontakte für Mails: Bezeichnung | E-Mail | Cc (Pflicht/an/aus) | Rolle
     placesReloadMin: 30,          // Excel alle 30 min neu laden (Sperrliste zeitnah aktuell)
     intervalSec: 60,          // Auto-Refresh-Intervall (Sekunden), Standard 60
     enabled: false,
@@ -285,6 +287,29 @@
   }
   // Regel ohne Hausnummer sperrt die ganze Straße, mit Hausnummer nur diese (erste Nummer, z. B. 241 bei „241-251“)
   const streetMatch = (rule, street) => { const k = streetKey(street); return !!k.name && k.name === rule.key.name && (!rule.key.nr || rule.key.nr === k.nr); };
+  // Mitarbeiter (Blatt „MA“): Kürzel | Name | E-Mail | Marktgebiet – Gebiet = PLZ-Anfänge wie in der Ortsliste
+  function extractMa(rows) {
+    const hIdx = rows.findIndex((r) => r.some((c) => /^k(ü|ue)rzel$/i.test(String(c).trim())));
+    if (hIdx < 0) return [];
+    const head = rows[hIdx].map((c) => norm(c));
+    const col = (re) => head.findIndex((h) => re.test(h));
+    const ck = col(/^kuerzel$/), cn = col(/^name$/), cm = col(/^e-?mail$/), cg = col(/^marktgebiet$/);
+    if (ck < 0) return [];
+    return rows.slice(hIdx + 1).map((r) => ({
+      k: String(r[ck] || '').trim().toUpperCase(), name: cn >= 0 ? String(r[cn] || '').trim() : '', mail: cm >= 0 ? String(r[cm] || '').trim() : '',
+      gebiet: cg >= 0 ? [...new Set(String(r[cg] || '').split(/[\s,;]+/).map(normPlz).filter((x) => x.length >= 2))] : [] })).filter((x) => x.k);
+  }
+  // Kontakte (Blatt „Kontakte“): Bezeichnung | E-Mail | Cc (Pflicht / an / aus) | Rolle
+  function extractKontakte(rows) {
+    const hIdx = rows.findIndex((r) => r.some((c) => /^bezeichnung$/i.test(String(c).trim())));
+    if (hIdx < 0) return [];
+    const head = rows[hIdx].map((c) => norm(c));
+    const col = (re) => head.findIndex((h) => re.test(h));
+    const cb = col(/^bezeichnung$/), cm = col(/^e-?mail$/), cc = col(/^cc$/), cr = col(/^rolle$/);
+    return rows.slice(hIdx + 1).map((r) => ({
+      name: String(r[cb] || '').trim(), mail: cm >= 0 ? String(r[cm] || '').trim() : '',
+      cc: /^pflicht$/i.test(String(r[cc] || '').trim()) ? 'Pflicht' : /^an$/i.test(String(r[cc] || '').trim()) ? 'an' : 'aus', rolle: cr >= 0 ? String(r[cr] || '').trim() : '' })).filter((x) => x.name);
+  }
   function extractAddr(rows) {
     const hIdx = rows.findIndex((r) => r.some((c) => /^(plz|postleitzahl)$/i.test(String(c).trim())));
     if (hIdx < 0) return [];
@@ -380,7 +405,9 @@
             p.block = { plz: b.plz, orte: b.orte };
             const ba = await readXlsxSheet(res.response, cfg.blockAddrSheet, true);
             p.blockAddr = ba ? extractAddr(ba.rows) : [];
-            const changed = JSON.stringify([p.plz, p.orte, p.block, p.blockAddr]) !== JSON.stringify([places.plz, places.orte, places.block, places.blockAddr]);
+            const ma = await readXlsxSheet(res.response, cfg.maSheet, true), ko = await readXlsxSheet(res.response, cfg.contactSheet, true);
+            p.ma = ma ? extractMa(ma.rows) : []; p.kontakte = ko ? extractKontakte(ko.rows) : [];
+            const changed = JSON.stringify([p.plz, p.orte, p.block, p.blockAddr, p.ma, p.kontakte]) !== JSON.stringify([places.plz, places.orte, places.block, places.blockAddr, places.ma, places.kontakte]);
             places = p; GM_setValue('places', places);
             const summary = `Ortsliste "${name}": ${places.plz.length} PLZ, ${places.orte.length} Orte · ` +
               `Sperrliste "${cfg.blockSheet}": ${b.plz.length} PLZ, ${b.orte.length} Orte` + (bl ? '' : ' (Blatt nicht gefunden)') +
@@ -502,6 +529,46 @@
     return out;
   }
   // </zeichen-parser>
+  // <liste-parser>
+  // TAMs Listenantwort (GWT-RPC loadTeilauftraege) lesen: je Auftragsnummer Ansprechpartner, Telefon und E-Mail.
+  // Aufbau: //OK[ Zahlenstrom ,["Stringtabelle"], 0, 7 ]. Jeder Auftrag (Teilauftrag) beginnt im Zahlenstrom mit dem
+  // Verweis auf seinen Typ; im Datensatz stehen Verweise auf Strings: AuftragsNr und Kontaktblock („Name\nTelefon\nE-Mail: …“).
+  function gwtUnescape(s) {
+    return s.replace(/\\(?:x([0-9a-fA-F]{2})|u([0-9a-fA-F]{4})|(.))/g, (all, h, u, c) =>
+      (h ? String.fromCharCode(parseInt(h, 16)) : u ? String.fromCharCode(parseInt(u, 16)) : ({ n: '\n', t: '\t', r: '\r' }[c] ?? c)));
+  }
+  function parseListeKontakte(txt) {
+    if (!/^\/\/OK\[/.test(txt)) throw new Error(`TAM meldet ${String(txt).slice(0, 40)}`);
+    const i = txt.indexOf(',["');
+    if (i < 0) return new Map();
+    const nums = txt.slice(5, i).split(',').map(Number);
+    const table = []; const re = /"((?:[^"\\]|\\.)*)"/g; const tail = txt.slice(i + 1); let m;
+    while ((m = re.exec(tail))) table.push(gwtUnescape(m[1]));
+    const typ = table.findIndex((t) => /\.model\.auftraege\.Teilauftrag\//.test(t)) + 1;
+    const out = new Map();
+    if (!typ) return out;
+    const isNr = (t) => /^(MW\d{6,9}|[A-Z]{2}\d{6}|\d{8,10})(-\d{1,3})?$/.test(t); // 12-stellige Vertragsnummern sind keine AuftragsNr
+    const phoneRe = /^\+?\d[\d\s/\-().]{5,}\d$/;
+    const kontakt = (t) => {
+      const lines = t.split('\n').map((l) => l.trim()).filter(Boolean);
+      const mail = (lines.find((l) => /^E-Mail:/i.test(l)) || '').replace(/^E-Mail:\s*/i, '');
+      const tel = lines.find((l) => phoneRe.test(l)) || '';
+      const name = lines.find((l) => !/^E-Mail:/i.test(l) && !phoneRe.test(l)) || '';
+      return { name, telefon: tel, mail };
+    };
+    const starts = []; nums.forEach((v, p) => { if (v === typ) starts.push(p); });
+    starts.forEach((p, k) => {
+      const seg = nums.slice(p, k + 1 < starts.length ? starts[k + 1] : nums.length);
+      const strs = [...new Set(seg.filter((v) => Number.isInteger(v) && v >= 1 && v <= table.length).map((v) => table[v - 1]))];
+      const kon = strs.find((t) => t.includes('\n') && (/E-Mail:/i.test(t) || t.split('\n').some((l) => phoneRe.test(l.trim()))));
+      strs.filter(isNr).forEach((nr) => {
+        const key = nr.toUpperCase(), info = Object.assign(kontakt(kon || ''), { eindeutig: true });
+        if (out.has(key)) out.get(key).eindeutig = false; else out.set(key, info);
+      });
+    });
+    return out;
+  }
+  // </liste-parser>
   const terminRed = (e) => { const t = slaMs(e.sla); return !!e.terminWeg && !e.zeichen && t !== null && t - new Date(e.ts).getTime() <= SLA_SOON_MS; };
   const terminPending = new Set();
   function markTermin(nrs) {

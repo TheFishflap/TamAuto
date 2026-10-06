@@ -931,3 +931,34 @@ describe('Kontoprüfung beim Start auf der Anmeldeseite', { skip }, () => {
     assert.equal(tam.posts('-status').filter((m) => m.t === 'fremdkonto').length, 0);
   });
 });
+
+// Excel: Blatt „MA“ (Mitarbeiter mit Marktgebiet) und „Kontakte“ (Cc/Absender für Mails)
+describe('Excel „MA“ und „Kontakte“', { skip }, () => {
+  const { makeXlsx, revocationList } = require('./harness');
+  const xlsx = makeXlsx({
+    annehmen: [['PLZ', 'Ort'], ['50825', 'Köln']],
+    'nicht annehmen': [['PLZ', 'Ort']],
+    MA: [['Kürzel', 'Name', 'E-Mail', 'Marktgebiet'], ['mk', 'Markus Kirschbaum', 'mk@example.com', '44, 45; 58*'], ['PM', 'Petra M.', 'pm@example.com', '45 46'], ['XX', 'Ohne Gebiet', '', '']],
+    Kontakte: [['Bezeichnung', 'E-Mail', 'Cc', 'Rolle'], ['Backoffice (Postfach)', 'auftrag@example.com', 'an', 'Postfach'], ['Leonie Struve', '', 'aus', 'Backoffice-Kraft'], ['Silke', 'silke@example.com', 'Pflicht', 'Backoffice-Kraft']],
+  });
+  const xhr = (o) => o.url.includes('IQBmSNFRkXF5') ? { status: 200, responseText: revocationList() } : o.url.includes('IQDymsXIGo99') ? { status: 200, response: xlsx } : { error: true };
+
+  it('Mitarbeiter mit Marktgebiet (PLZ-Anfänge, Komma/Semikolon/Leerzeichen, Sternchen) und Kontakte', async () => {
+    tam = startTam({ gm: { places: { plz: [], orte: [] } }, xhr });
+    await tam.ready();
+    assert.ok(await until(() => (tam.store.get('places').ma || []).length, 5000), JSON.stringify(tam.store.get('places')));
+    const p = tam.store.get('places');
+    assert.deepEqual(p.ma.map((x) => x.k), ['MK', 'PM', 'XX']);
+    assert.deepEqual(p.ma[0], { k: 'MK', name: 'Markus Kirschbaum', mail: 'mk@example.com', gebiet: ['44', '45', '58'] });
+    assert.deepEqual(p.ma[1].gebiet, ['45', '46']);
+    assert.deepEqual(p.ma[2].gebiet, []);
+    assert.deepEqual(p.kontakte.map((x) => [x.name, x.mail, x.cc]), [['Backoffice (Postfach)', 'auftrag@example.com', 'an'], ['Leonie Struve', '', 'aus'], ['Silke', 'silke@example.com', 'Pflicht']]);
+  });
+  it('ohne diese Blätter (alte Excel) → leer, nichts kaputt', async () => {
+    const alt = makeXlsx({ annehmen: [['PLZ', 'Ort'], ['50825', 'Köln']], 'nicht annehmen': [['PLZ', 'Ort']] });
+    tam = startTam({ gm: { places: { plz: [], orte: [] } }, xhr: (o) => o.url.includes('IQDymsXIGo99') ? { status: 200, response: alt } : o.url.includes('IQBmSNFRkXF5') ? { status: 200, responseText: revocationList() } : { error: true } });
+    await tam.ready();
+    assert.ok(await until(() => (tam.store.get('places').plz || []).length, 5000));
+    assert.deepEqual([tam.store.get('places').ma, tam.store.get('places').kontakte], [[], []]);
+  });
+});
