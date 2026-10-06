@@ -43,8 +43,8 @@ anhand der Ortsliste der IB Thomée GmbH.
 | | |
 |---|---|
 | **Ortsliste** | Excel in SharePoint (Blatt „annehmen“), ohne Anmeldung, alle 30 min neu geladen |
-| **Sperrliste** | Excel-Blatt „nicht annehmen“ – diese PLZ werden nie angenommen (in der TAM-Tabelle **rot**); Blatt „nicht annehmen Adresse“ sperrt einzelne Adressen (PLZ + Straße) |
-| **Farbige TAM-Einträge** | Optional, Standard an: grün = wird angenommen, grau = nicht auf der Annahmeliste, rot = gesperrt, orange = zurückgegeben – nur lokale Anzeige |
+| **Sperrliste** | Excel-Blatt „nicht annehmen“ – diese PLZ werden nie angenommen (in der TAM-Tabelle **braun**); Blatt „nicht annehmen Adresse“ sperrt einzelne Adressen (PLZ + Straße) |
+| **Farbige TAM-Einträge** | Optional, Standard an: grün = wird angenommen, grau = nicht auf der Annahmeliste, braun = gesperrt, orange = zurückgegeben; gerade angenommene Aufträge ausgeblendet – nur lokale Anzeige |
 | **Rückgaben** | Heute angenommene und wieder zurückgegebene Aufträge werden auf **allen Geräten** bis Mitternacht nicht angenommen (in der TAM-Tabelle **orange**) |
 | **Tages-Annahmeliste** | Einzelne 5-stellige PLZ heute zusätzlich annehmen |
 
@@ -131,7 +131,7 @@ anderer Browser genutzt, ist dort eine eigene Aktivierung nötig („Lizenz anfr
 Gesperrt wird über das Excel-Blatt **„nicht annehmen“** (Sperrliste aus Excel, Anzeige im Reiter „Bedienung“,
 Anzahl im Kopf des Bedienfelds „Sperrliste: x“) und über **„Heute zurückgegeben“** (siehe unten).
 Gesperrte Treffer stehen im Protokoll („Treffer, aber gesperrt: … → nicht angenommen“) und sind in der TAM-Tabelle
-markiert: **rot** = Excel-Sperrliste, **orange** = heute zurückgegeben (Grund im Tooltip der Zeile).
+markiert: **braun** = Excel-Sperrliste, **orange** = heute zurückgegeben (Grund im Tooltip der Zeile).
 
 **Autohaus-Regeln – Blatt „nicht annehmen Adresse“** (Spalten **PLZ | Straße**): sperrt nur diese eine Adresse, nicht die
 ganze PLZ – z. B. `50825 | Maarweg 241` (nur Hausnummer 241) oder `50825 | Venloer Str.` (ganze Straße). Schreibweisen wie
@@ -401,6 +401,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 ## Changelog
 
 ### 1.20.3 – 2026-10-06
+- Farbige TAM-Einträge: gesperrte Aufträge (Excel „nicht annehmen“) **braun** wie die Sperrliste im Bedienfeld (statt rot);
+  gerade angenommene Aufträge werden **ausgeblendet**, bis TAM die Tabelle neu lädt (meldet TAM danach „bereits vergeben“,
+  erscheinen sie wieder).
 - Buttons **„Ortslisten laden“** und **„Liste einfügen“** (24-h-Zusatzliste) entfernt – „Neu laden“ bei der Ortsliste lädt
   alle Listen; für zusätzliche einzelne PLZ gibt es die Tages-Annahmeliste.
 
