@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.25.1
+// @version      1.26.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1286,6 +1286,27 @@
     b.title = `Neue Version ${ver} verfügbar (installiert: ${VERSION}) – klicken öffnet die Installation in Tampermonkey`;
     Object.assign(b.style, { color: '#fff', background: '#2e7d32', borderColor: '#2e7d32', fontWeight: 'bold' });
   }
+
+  // Smartes Neuladen nach einem Update: Tampermonkey installiert im eigenen Takt (nicht beeinflussbar), eine offene Seite behält aber den alten Code, bis sie
+  // neu geladen wird. Steht eine neuere Version bereit, lädt das Script die Seite in einer ruhigen Phase selbst neu: keine Annahme, kein Fenster, keine
+  // Eingabe (außerhalb der Arbeitszeit 2 min, in der Arbeitszeit 10 min; nach Klick auf „Update“ 20 s). Höchstens einmal je Stunde und dreimal je Version –
+  // ist nach dem Neuladen noch die alte Version aktiv, hat Tampermonkey noch nicht aktualisiert; der Update-Knopf bleibt dann stehen.
+  let lastInputAt = Date.now();
+  ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => document.addEventListener(ev, () => { lastInputAt = Date.now(); }, { capture: true, passive: true }));
+  function smartReload(now = Date.now()) {
+    if (!pendingUpdate || !license || busy || currentAcceptNr || accSyncing || startRunning || visibleWindows().length || now - lastAcceptAt < 60e3) return false;
+    const sr = GM_getValue('smartReload', null), mine = sr && sr.ver === pendingUpdate ? sr : { ver: pendingUpdate, n: 0, at: 0 };
+    if (mine.n >= 3 || now - mine.at < 3600e3) return false;
+    const geklickt = now - GM_getValue('updateClickedAt', 0) < 30 * 60e3;
+    const ruhig = (GM_getValue('smartReloadIdleSec', 0) * 1000) || (geklickt ? 20e3 : inSchedule() ? 600e3 : 120e3); // smartReloadIdleSec: nur für Tests
+    if (now - lastInputAt < ruhig) return false;
+    GM_setValue('smartReload', { ver: pendingUpdate, n: mine.n + 1, at: now });
+    log(`Neue Version ${pendingUpdate} bereit – Seite wird in der ruhigen Phase neu geladen (Versuch ${mine.n + 1}/3).`, 'ok');
+    setTimeout(() => location.reload(), 400);
+    return true;
+  }
+  // Nach dem Neuladen: Ziel erreicht → Schutzmarke löschen
+  { const sr = GM_getValue('smartReload', null); if (sr && !newerVersion(sr.ver, VERSION)) GM_setValue('smartReload', null); }
 
   // Version einer Quelle abfragen → { v } oder { err }
   function fetchVersion(url) {
@@ -2710,6 +2731,7 @@
       dismissTamErrors(); // technische TAM-Fehlerfenster (z. B. TypeError auf Android) schließen // liegengebliebene TAM-Meldungen (z. B. "bereits vergeben") wegklicken
       hookAllConsoles(); // später geladene TAM-iframes ebenfalls mitlesen
       scanAccepted();    // Auftragsbuch mit „Angenommene Aufträge“ abgleichen (nur wenn sichtbar und geändert)
+      smartReload(now); // neue Version bereit → in ruhiger Phase neu laden
       const bookPage = document.getElementById('tamauto-page-book');
       if (bookPage && bookPage.style.display !== 'none' && now - lastBookRenderAt > 60000) { lastBookRenderAt = now; renderOrderbook(); } // rote 1 wandert mit der Zeit
     }
@@ -3267,7 +3289,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     renderAr();
     // Ohne gefundenes Update: nach Updates suchen. Mit Update: als Link die Installation öffnen.
     $('tamauto-upd').onclick = () => {
-      if (pendingUpdate) { window.open(updateLink, '_blank'); log(`Update ${pendingUpdate}: Installation geöffnet.`); return; }
+      if (pendingUpdate) { GM_setValue('updateClickedAt', Date.now()); GM_setValue('smartReload', null); window.open(updateLink, '_blank'); log(`Update ${pendingUpdate}: Installation geöffnet – nach der Installation lädt sich die Seite in einer ruhigen Phase neu.`); return; }
       checkUpdate(true);
     };
     if (pendingUpdate) markUpdateButton(pendingUpdate); // Update wurde schon vor dem Aufbau des Bedienfelds gefunden

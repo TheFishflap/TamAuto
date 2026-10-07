@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.26.0 – 2026-10-07
+- **Smartes Neuladen nach einem Update:** Tampermonkey installiert Updates im eigenen Takt, eine offene TAM-Seite behält aber den alten Code, bis sie neu geladen wird. Steht eine neuere Version bereit (Prüfung beim Start, alle 6 h und bei einer Update-Meldung), lädt das Script die Seite in einer **ruhigen Phase** selbst neu: keine Annahme, kein offenes Fenster, keine Eingabe seit 2 min (in der Arbeitszeit 10 min; nach dem Klick auf „Update installieren“ 20 s). **Höchstens einmal je Stunde und dreimal je Version** – ist nach dem Neuladen noch die alte Version aktiv, hat Tampermonkey noch nicht aktualisiert; der grüne Update-Knopf bleibt dann stehen. Im Protokoll steht „Neue Version … bereit – Seite wird in der ruhigen Phase neu geladen“.
+
 ### 1.25.1 – 2026-10-07
 - **Silent Reload blieb bei „0 s“ stehen, die Liste aktualisierte nicht (Neuladen der Seite half):** Eine stille Abfrage ohne Antwort (hängende Verbindung) konnte den Silent Reload dauerhaft blockieren, weil sie kein Zeitlimit hatte. Jetzt bricht jede stille Abfrage nach 20 s mit „Zeitüberschreitung“ ab (steht im Protokoll), der nächste Durchlauf läuft normal weiter. Das gilt auch für das stille Laden der angenommenen Aufträge.
 - **Zusätzlich abgesichert:** Seit der Reiter „Angenommene Aufträge“ beim Start mitgeöffnet wird, aktualisiert TAM möglicherweise auch dessen Liste im Hintergrund. Die Liste wird deshalb jetzt am **Listentyp** der Anfrage erkannt (0 = Veröffentlichte, 1 = Angenommene), unabhängig vom aktiven Reiter – die Silent-Abfrage kann so nie die falsche Liste erwischen.

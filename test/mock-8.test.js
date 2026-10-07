@@ -211,3 +211,39 @@ describe('Stille Abfrage (Push-Signal)', { skip }, () => {
     assert.equal(tam.refreshes, r0);
   });
 });
+
+// Smartes Neuladen nach einem Update: nur in ruhigen Phasen, mit Schutz gegen Schleifen
+describe('Smartes Neuladen nach einem Update', { skip }, () => {
+  const { revocationList } = require('./harness');
+  const xhr = (o) => o.url.includes('IQBmSNFRkXF5') ? { status: 200, responseText: revocationList() }
+    : o.url.includes('raw.githubusercontent.com') ? { status: 200, responseText: '// ==UserScript==\n// @version      99.0.0\n// ==/UserScript==' } : { error: true };
+  const reloads = () => tam.logs().filter((l) => /Seite wird in der ruhigen Phase neu geladen/.test(l)).length;
+  const base = { places: KOELN, smartReloadIdleSec: 1 };
+
+  it('neuere Version bereit + ruhig → Seite wird neu geladen (Versuch 1/3), Schutzmarke gesetzt', async () => {
+    tam = startTam({ gm: base, xhr });
+    await tam.ready();
+    assert.ok(await until(() => reloads() === 1, 12000), tam.logs().slice(-5).join('\n'));
+    assert.deepEqual([tam.store.get('smartReload').ver, tam.store.get('smartReload').n], ['99.0.0', 1]);
+  });
+  it('höchstens einmal je Stunde und dreimal je Version', async () => {
+    tam = startTam({ gm: { ...base, smartReload: { ver: '99.0.0', n: 1, at: Date.now() - 600e3 } }, xhr });
+    await tam.ready(); await sleep(7000);
+    assert.equal(reloads(), 0, 'schon vor 10 min neu geladen');
+    tam.close();
+    tam = startTam({ gm: { ...base, smartReload: { ver: '99.0.0', n: 3, at: Date.now() - 7200e3 } }, xhr });
+    await tam.ready(); await sleep(7000);
+    assert.equal(reloads(), 0, 'dreimal reicht');
+  });
+  it('kein Neuladen, solange Eingaben kommen oder ein Fenster offen ist', async () => {
+    tam = startTam({ gm: { ...base, smartReloadIdleSec: 60 }, xhr });
+    await tam.ready(); await sleep(7000);
+    assert.equal(reloads(), 0, 'trotz kürzlicher Eingabe');
+  });
+  it('Ziel erreicht (installierte Version ≥ Marke) → Schutzmarke wird gelöscht', async () => {
+    tam = startTam({ gm: { places: KOELN, smartReload: { ver: '1.0.0', n: 1, at: Date.now() } } });
+    await tam.ready();
+    assert.equal(tam.store.get('smartReload'), null);
+  });
+});
+
