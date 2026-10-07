@@ -740,7 +740,7 @@
       zeichen: text(r.querySelector('td.x-grid3-td-zeichenAgent')), preis: parseEuro(text(r.querySelector('td.x-grid3-td-preis'))),
       plz: text(r.querySelector('td.x-grid3-td-besichtigungsPlz')), ort: text(r.querySelector('td.x-grid3-td-besichtigungsOrt')),
       dienst: text(r.querySelector('td.x-grid3-td-cst_projekt_dienstleistung_name')), status: text(r.querySelector('td.x-grid3-td-status')),
-      ref: text(r.querySelector('td.x-grid3-td-referenz')), strasse: text(r.querySelector('td.x-grid3-td-besichtigungsStrasse')), res: text(r.querySelector('td.x-grid3-td-reserviertBis')) }]));
+      ref: text(r.querySelector('td.x-grid3-td-referenz')), strasse: text(r.querySelector('td.x-grid3-td-besichtigungsStrasse')), res: ((/(\d{1,2}\.\d{1,2}\.\d{4}\s+\d{1,2}:\d{2})/.exec(text(r.querySelector('td.x-grid3-td-reserviertBis'))) || [])[1] || '') }])); // Zelle z. B. „Ende: 30.09.2026 10:15“ → nur Datum und Uhrzeit
     const book = GM_getValue('orderbook', []);
     let changed = 0;
     book.forEach((e) => {

@@ -139,12 +139,13 @@ describe('„XX zurück“, Start und stilles Laden', { skip }, () => {
       { ts, nr: 'MW3190901', plz: '44141', ort: 'Dortmund', zeichen: '' }, { ts, nr: 'MW3190902', plz: '44141', ort: 'Dortmund', zeichen: '' },
       { ts, nr: 'MW3190903', plz: '44141', ort: 'Dortmund', zeichen: '' }, { ts, nr: 'MW3190904', plz: '44141', ort: 'Dortmund', zeichen: '' }] } });
     await tam.ready();
-    tam.addAccepted('MW3190901', '', { id: '1', zeichen: '', reserviert: f(1.5) });   // läuft in 1,5 h ab → rote 1
+    tam.addAccepted('MW3190901', '', { id: '1', zeichen: '', reserviert: `Ende: ${f(1.5)}` });   // läuft in 1,5 h ab → rote 1
     tam.addAccepted('MW3190902', '', { id: '2', zeichen: '', reserviert: f(30) });    // erst in 30 h → keine
     tam.addAccepted('MW3190903', '', { id: '3', zeichen: 'GS 12.10 10:00 T', reserviert: f(1) }); // Termin steht → keine
     tam.addAccepted('MW3190904', '', { id: '4', zeichen: '', reserviert: f(-10) });   // seit 10 h abgelaufen → keine
     tam.selectTab('AgentEigeneAuftraege');
     assert.ok(await until(() => (book().find((e) => e.nr === 'MW3190901') || {}).resEnde, 4000), JSON.stringify(book()));
+    assert.equal(book().find((e) => e.nr === 'MW3190901').resEnde, f(1.5)); // „Ende: “ vor dem Datum wird abgeschnitten
     tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-book"]').click();
     const red = (nr) => !!row(nr).querySelector('.tamauto-termin');
     assert.equal(red('MW3190901'), true); assert.equal(red('MW3190902'), false); assert.equal(red('MW3190903'), false); assert.equal(red('MW3190904'), false);
