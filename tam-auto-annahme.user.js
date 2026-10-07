@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.29.1
+// @version      1.29.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -244,9 +244,27 @@
   setInterval(saveLogHistory, 15000);
   addEventListener('pagehide', saveLogHistory);
 
-  function log(msg, level = 'info') {
+  // <log-gruppen>
+  // Log-Gruppe = Feature, von dem die Zeile ausgeht (erste passende Regel; sonst „Annahme“). Explizit über log(msg, level, gruppe).
+  const LOG_GRUPPEN = [
+    ['Stille Annahme', /^Stille Annahme/],
+    ['MA-Management', /^MA-Management|^Mailtext|^Kontakte|Angenommene Aufträge \(still gelesen\)/],
+    ['Annahme', / → Abgleich: /],
+    ['Web-Analyse', /^(Silent|Push-Signal|Neue Zeile erkannt|Refresh \()|: neue Daten in TAM|: Abfrage fehlgeschlagen|nicht mehr veröffentlicht|wieder veröffentlicht/],
+    ['Auftragsbuch', /Auftragsbuch|^Von .+ angenommen:|^Meldung an die anderen Geräte/],
+    ['Rückgabe', /Rückgabe|^Zurückgegeben/],
+    ['Ortsliste', /Ortsliste|Tages-Annahmeliste|Sperrliste/],
+    ['Update', /^(Update|Neue Version|Kein Update)/],
+    ['Lizenz', /Lizenz|Kanal-Schlüssel|^Kontoprüfung/],
+    ['Start', /^Start:|Reiter|^Tab:/],
+    ['TAM-Fenster', /Fenster|^TAM-Meldung|^Sicherheitssperre/],
+    ['Einstellungen', /^(Priorität|Push-Kanal|Farbige|Intervall über|Test-Popup|Popup nicht|Achtung:)/],
+  ];
+  const logGruppe = (msg) => (LOG_GRUPPEN.find(([, re]) => re.test(msg)) || ['Annahme'])[0];
+  // </log-gruppen>
+  function log(msg, level = 'info', gruppe = '') {
     msg = String(msg).replace(/-?\d+[.,]\d+(?= ?ms\b)/g, (v) => String(Math.round(parseFloat(v.replace(',', '.'))))); // ms nur ganzzahlig
-    const line = `${new Date().toLocaleTimeString('de-DE')}  ${msg}`;
+    const line = `${new Date().toLocaleTimeString('de-DE')}  [${gruppe || logGruppe(msg)}] ${msg}`;
     logHistory.push(`${new Date().toLocaleDateString('de-DE')} ${line}${level === 'err' ? '  [Fehler]' : ''}`);
     if (logHistory.length > LOG_KEEP + 500) logHistory = logHistory.slice(-LOG_KEEP);
     const box = document.getElementById('tamauto-log');

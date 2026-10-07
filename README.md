@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.29.2 – 2026-10-07
+- **Log gruppiert:** Jede Zeile zeigt vorne das Feature, von dem sie ausgeht – z. B. `[Annahme]`, `[Web-Analyse]` (Silent Reload, Push-Signal, Tabellenbeobachtung), `[Auftragsbuch]`, `[MA-Management]`, `[Rückgabe]`, `[Ortsliste]`, `[Update]`, `[Lizenz]`, `[Start]`, `[TAM-Fenster]`, `[Stille Annahme]`, `[Einstellungen]`.
+
 ### 1.29.1 – 2026-10-07
 - **Senden bei Überlast (HTTP 429):** bis zu 5 Versuche mit längeren Pausen (Retry-After von ntfy, sonst 4/8/16/30 s). Das Log zeigt auch Erfolge: Abgleich angefordert (n bekannte Aufträge), Auftragsbuch gesendet bzw. „alle bekannt“, Einträge empfangen.
 
