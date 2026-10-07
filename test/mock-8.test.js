@@ -65,7 +65,7 @@ describe('Silent Reload', { skip }, () => {
   const state = () => tam.document.getElementById('tamauto-silent-state').textContent;
 
   it('Checkbox schaltet an/aus und wird gespeichert', async () => {
-    tam = startTam({ gm: { places: KOELN } });
+    tam = startTam({ gm: { places: KOELN, silentOn: 'default' } });
     await tam.ready();
     const cb = tam.document.getElementById('tamauto-silent-on');
     assert.equal(cb.checked, true, 'Standard: an (ersetzt den Auto-Refresh)');
@@ -105,14 +105,14 @@ describe('Silent Reload', { skip }, () => {
   });
 
   it('altes „alle 5 s“ (ohne Checkbox) bleibt an', async () => {
-    tam = startTam({ gm: { places: KOELN, silentSec: 5 } });
+    tam = startTam({ gm: { places: KOELN, silentOn: 'default', silentSec: 5 } });
     await tam.ready();
     assert.equal(tam.document.getElementById('tamauto-silent-on').checked, true);
   });
 });
 
-// „Ihr Zeichen“ im Auftragsbuch setzen: auswählen → „In TAM übernehmen“ → still per saveMerkmal (wie im Mitschnitt)
-describe('Ihr Zeichen still setzen (Auftragsbuch)', { skip }, () => {
+// Auftragsbuch: Preis aus „Angenommene Aufträge“, Bildschirm anlassen
+describe('Auftragsbuch und Bildschirm', { skip }, () => {
   const today = new Date().toISOString();
   const BOOK = [{ ts: today, nr: 'MW3190201', plz: '50825', ort: 'Köln', preis: 50 }, { ts: today, nr: 'MW3190202', plz: '50825', ort: 'Köln', preis: 60 }];
   const $ = (id) => tam.document.getElementById(id);
@@ -154,8 +154,8 @@ describe('Ihr Zeichen still setzen (Auftragsbuch)', { skip }, () => {
 // Stille Abfrage bei TAM (gemeinsam für Push-Signal und Nachfragen nach einem Refresh von Hand)
 describe('Stille Abfrage (Push-Signal)', { skip }, () => {
   const PUSH = 'tam-zrd6g634b4wej7aqhsycc9qm';
-  async function ready() {
-    tam = startTam({ gm: { places: KOELN, pushOnV3: true } });
+  async function ready(gm = {}) {
+    tam = startTam({ gm: { places: KOELN, pushOnV3: true, ...gm } });
     await tam.ready();
     // einmal von TAM aktualisieren lassen → Script übernimmt TAMs Anfrage
     const bar = [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-toolbar')].find((x) => /Einträge pro Seite/.test(x.textContent));
@@ -164,6 +164,24 @@ describe('Stille Abfrage (Push-Signal)', { skip }, () => {
     await sleep(1500);
     return tam.refreshes;
   }
+  it('TAM lädt im Hintergrund die Liste „Angenommene“ (Listentyp 1) → ersetzt nicht die Anfrage der veröffentlichten Liste (Silent Reload bleibt richtig)', async () => {
+    await ready();
+    const rpc = () => tam.fetches.filter((f) => /gwt-rpc/.test(f.url) && f.o && f.o.method === 'POST');
+    const x = new tam.window.XMLHttpRequest(); x.open('POST', 'https://tam.tuvsud.com/tam/gwt-rpc/auftrag'); // Hintergrund-Aktualisierung der angenommenen Liste, Veröffentlichte aktiv
+    x.send('7|0|5|https://tam.tuvsud.com/|ACC|de.tomcom.tam.client.rpc.gwt.IAuftragService|loadTeilauftraege|x.ListenTyp/1|1|2|3|4|5|1|');
+    await sleep(200);
+    tam.rpc = '//OK["com.extjs.gxt.ui.client.data.BasePagingLoadResult/496878394"]';
+    const n = rpc().length;
+    tam.ntfy(PUSH, { v: 1, src: 'Test-Tablet', ts: Date.now() });
+    assert.ok(await until(() => rpc().length > n, 4000), 'keine stille Abfrage');
+    assert.ok(!rpc().slice(n).some((f) => /\|ACC\|/.test(f.o.body)), 'Silent fragt die Liste der angenommenen Aufträge ab');
+  });
+  it('Kopfzeile (aufgeklappt) zeigt den Countdown „Silent in …“ und nichts zu Auto-Refresh', async () => {
+    await ready({ silentOn: true });
+    const t = () => tam.document.getElementById('tamauto-sync').textContent;
+    assert.ok(await until(() => /Silent in \d+ s/.test(t()), 3000), t());
+    assert.doesNotMatch(t(), /Auto-Refresh/);
+  });
   it('TAM meldet neuen Auftrag → Tabelle wird aktualisiert', async () => {
     const r0 = await ready();
     tam.rpc = '//OK["com.extjs.gxt.ui.client.data.BasePagingLoadResult/496878394","MW3199999","50825","Köln"]';

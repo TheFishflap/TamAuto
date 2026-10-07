@@ -60,7 +60,7 @@ describe('Listenantwort lesen (echter Mitschnitt „Angenommene Aufträge“)', 
 describe('Angenommene Aufträge still laden', () => {
   const za = src.indexOf('// <zeichen-parser>'), zb = src.indexOf('// </zeichen-parser>'), la = src.indexOf('// <liste-zeichen>'), lb = src.indexOf('// </liste-zeichen>');
   if (la < 0 || lb < 0) throw new Error('Marker <liste-zeichen> fehlt im Script');
-  const L = new Function(`${src.slice(za, zb)}\n${src.slice(a, b)}\n${src.slice(la, lb)}; return { acceptedBodyFromPublished, parseListeZeichen };`)();
+  const L = new Function(`${src.slice(za, zb)}\n${src.slice(a, b)}\n${src.slice(la, lb)}; return { acceptedBodyFromPublished, parseListeZeichen, listenTypOf };`)();
   const fx = path.join(__dirname, 'fixtures', 'mitschnitt-angenommen-liste.json');
 
   it('Anfrage: nur der Listentyp (0 → 1) ändert sich', () => {
@@ -76,6 +76,15 @@ describe('Angenommene Aufträge still laden', () => {
     assert.deepEqual(diff, [13, 40, 60]); // Sortfeld (erstelltAm → slaEndeAgent), Sortierrichtung, Listentyp – wie in TAMs Anfrage der angenommenen Liste
     [13, 40, 60].forEach((i) => assert.equal(r[i], acc[i]));
     assert.equal(r[3 + 20 - 0] === undefined, false);
+  });
+  it('Listentyp einer Anfrage erkennen: 0 = Veröffentlichte, 1 = Angenommene, sonst null', () => {
+    const mk = (n) => `7|0|5|M|S|Svc|loadTeilauftraege|x.ListenTyp/1|1|2|3|4|5|${n}|`;
+    assert.equal(L.listenTypOf(mk(0)), 0); assert.equal(L.listenTypOf(mk(1)), 1);
+    assert.equal(L.listenTypOf('7|0|3|M|S|loadTeilauftraege|1|2|3|'), null); assert.equal(L.listenTypOf('Quatsch'), null);
+  });
+  it('Listentyp in den echten Anfragen des Mitschnitts', { skip: !fs.existsSync(fx) && 'Mitschnitt fehlt' }, () => {
+    const j = JSON.parse(fs.readFileSync(fx, 'utf8'));
+    assert.equal(L.listenTypOf(j[0].req), 0); assert.equal(L.listenTypOf(j[1].req), 1);
   });
   it('Zeichen je Auftrag (synthetisch): bekanntes Kürzel, „zurück“, „?“; Ort, Kontakt und Nummern zählen nicht', () => {
     const T2 = 'x.model.auftraege.Teilauftrag/1';

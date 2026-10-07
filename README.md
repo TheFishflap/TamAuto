@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.25.1 – 2026-10-07
+- **Fehler behoben – Silent Reload blieb bei „0 s“ stehen, die Liste aktualisierte nicht:** Seit der Reiter „Angenommene Aufträge“ beim Start mitgeöffnet wird, aktualisiert TAM auch dessen Liste im Hintergrund. Das Script hielt diese Anfrage für die der „Veröffentlichten“ und fragte danach die falsche Liste ab. Jetzt wird die Liste am **Listentyp** der Anfrage erkannt (0 = Veröffentlichte, 1 = Angenommene), unabhängig davon, welcher Reiter gerade aktiv ist.
+- **Kopfzeile (aufgeklappt und minimiert):** nichts mehr zu „Auto-Refresh“; stattdessen der Countdown **„Silent in x s“**.
+
 ### 1.25.0 – 2026-10-06
 - **Auftragsbuch-Abgleich über den geheimen Kanal:** Ein neu gestartetes Gerät meldet sich mit „hi“; die anderen Geräte antworten (zeitversetzt, höchstens alle 10 min) mit den Aufträgen ihrer **letzten 7 Tage** samt Auftragsdaten (je 10 pro Meldung). Jedes Gerät kennt so dasselbe Auftragsbuch – auch über die 12 Stunden hinaus, die ntfy Meldungen vorhält – und das MA-Management zeigt auf allen Geräten dieselben Zahlen. Empfangene Angaben werden geprüft und gekürzt, ältere als 7 Tage verworfen; auf dem öffentlichen Kanal (Lizenzen ohne Kanal-Schlüssel) gibt es das nicht. **Voraussetzung: Kanal-Schlüssel in der Lizenz-App verteilt.**
 

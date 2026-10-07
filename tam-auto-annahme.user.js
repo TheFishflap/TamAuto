@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.25.0
+// @version      1.25.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -560,6 +560,16 @@
   // „Angenommene Aufträge“ ohne Reiterwechsel: Die Anfrage der Liste „Veröffentlichte Aufträge“ unterscheidet sich von der der angenommenen nur im
   // Listentyp (ListenTyp-Wert 0 → 1: eigene Aufträge); sortiert wird wie in TAMs Reiter nach „slaEndeAgent“ aufsteigend – Aufträge mit roter SLA stehen
   // zuerst, die Seitengröße (500) bleibt unverändert, mehr braucht es nicht.
+  // Listentyp einer loadTeilauftraege-Anfrage: 0 = Veröffentlichte, 1 = Angenommene (eigene) Aufträge; null = unbekannter Aufbau
+  function listenTypOf(body) {
+    const p = String(body).split('|'), n = +p[2];
+    if (!(n > 0) || p.length < 4 + n) return null;
+    const ti = p.slice(3, 3 + n).findIndex((t) => /\.ListenTyp\//.test(t)) + 1;
+    if (!ti) return null;
+    const nums = p.slice(3 + n);
+    let k = -1; nums.forEach((v, i) => { if (+v === ti && /^\d+$/.test(nums[i + 1] || '')) k = i; });
+    return k < 0 ? null : +nums[k + 1];
+  }
   function acceptedBodyFromPublished(body) {
     const p = String(body).split('|'), n = +p[2];
     if (!(n > 0) || p.length < 4 + n) return null;
@@ -1521,11 +1531,14 @@
       P.setRequestHeader = function (k, v) { if (this.__tamH) this.__tamH[k] = v; return setH.apply(this, arguments); };
       P.send = function (b) {
         try {
-          if (/\/gwt-rpc\/auftrag/i.test(this.__tamU || '') && typeof b === 'string' && /\|loadTeilauftraege\|/.test(b) && onAcceptedTab()) {
+          // Welche Liste ist es? Am Listentyp in der Anfrage erkennbar (TAM aktualisiert bei offenen Reitern auch die Liste des Hintergrund-Reiters);
+          // nur bei unbekanntem Aufbau entscheidet der aktive Reiter
+          const typ = typeof b === 'string' ? listenTypOf(b) : null;
+          if (/\/gwt-rpc\/auftrag/i.test(this.__tamU || '') && typeof b === 'string' && /\|loadTeilauftraege\|/.test(b) && (typ === 1 || (typ === null && onAcceptedTab()))) {
             tamAcceptedReq = { url: new URL(this.__tamU, location.href).href, body: b, headers: Object.assign({}, this.__tamH) };
           }
           if (!silentFetching && /\/gwt-rpc\/auftrag/i.test(this.__tamU || '') && typeof b === 'string' &&
-            /\|loadTeilauftraege\|/.test(b) && onPublishedTab()) {
+            /\|loadTeilauftraege\|/.test(b) && (typ === 0 || (typ === null && onPublishedTab()))) {
             const first = !tamLoadReq;
             tamLoadReq = { url: new URL(this.__tamU, location.href).href, body: b, headers: Object.assign({}, this.__tamH) };
             if (first && cfg.silentOn) log('Silent Reload: TAM-Anfrage übernommen – Hintergrund-Abfrage aktiv.', 'ok');
@@ -2262,8 +2275,8 @@
   function checkScheduleChange() { // Wechsel ins/aus dem Fenster einmal protokollieren
     const s = inSchedule();
     if (lastSchedState !== null && s !== lastSchedState) {
-      log(s ? `Arbeitszeit beginnt (${cfg.schedFrom}): Auto-Refresh${cfg.silentOn ? ` und Silent Reload (alle ${cfg.silentSec} s)` : ''} wieder aktiv.`
-        : `Arbeitszeit endet (${cfg.schedTo}): Auto-Refresh und Silent Reload pausiert bis ${cfg.schedFrom}.`, 'ok');
+      log(s ? `Arbeitszeit beginnt (${cfg.schedFrom}): Silent Reload${cfg.silentOn ? ` (alle ${cfg.silentSec} s)` : ''} wieder aktiv.`
+        : `Arbeitszeit endet (${cfg.schedTo}): Silent Reload pausiert bis ${cfg.schedFrom}.`, 'ok');
       silentState = ''; renderSilent();
     }
     lastSchedState = s;
@@ -2293,8 +2306,7 @@
     const s = document.getElementById('tamauto-mini-state'); s.textContent = st; s.style.color = col;
     // nächste Aktualisierung: eigener Auto-Refresh bzw. TAM, dazu der nächste Silent Reload
     const t = tamNext();
-    let next = arActive() ? `Auto-Refresh in ${fmtDur(Math.max(0, lastAnyRefreshAt + cfg.intervalSec * 1000 - now))}`
-      : t.enabled && t.at ? `TAM in ${fmtDur(t.at - now)}` : t.enabled ? 'TAM: nächste Aktualisierung' : 'TAM-Aktualisierung aus';
+    let next = t.enabled && t.at ? `TAM in ${fmtDur(t.at - now)}` : t.enabled ? 'TAM: nächste Aktualisierung' : 'TAM-Aktualisierung aus';
     if (cfg.silentOn) {
       next += !inSchedule() ? ' · Silent pausiert' : !tamLoadReq ? ' · Silent wartet auf Refresh'
         : ` · Silent in ${fmtDur(Math.max(0, lastSilentAt + cfg.silentSec * 1000 - now))}`;
@@ -2319,18 +2331,15 @@
     if (!el) return;
     const t = tamNext();
     let txt;
-    if (arActive()) {
-      // Mit Auto-Refresh nur dessen Countdown: jeder Refresh setzt auch TAMs eigenen Timer zurück
-      txt = `Auto-Refresh in ${fmtDur(Math.max(0, lastAnyRefreshAt + cfg.intervalSec * 1000 - now))} (alle ${cfg.intervalSec} s)`;
-    } else if (!t.enabled) {
+    if (!t.enabled) {
       txt = 'TAM-Aktualisierung aus';
     } else {
       const per = t.periodMs ? ` (alle ${fmtDur(t.periodMs)})` : '';
       txt = t.at ? `TAM in ${fmtDur(t.at - now)}${per}` : `TAM${per}: wartet auf ersten Refresh`;
     }
-    if (cfg.silentOn) txt += ` · Silent alle ${cfg.silentSec} s`;
+    if (cfg.silentOn) txt += !inSchedule() ? ' · Silent pausiert' : !tamLoadReq ? ' · Silent wartet auf Refresh' : ` · Silent in ${fmtDur(Math.max(0, lastSilentAt + cfg.silentSec * 1000 - now))}`;
     checkScheduleChange();
-    if (!inSchedule() && (cfg.autoRefresh || cfg.silentOn)) txt = `⏾ außerhalb der Arbeitszeit – Auto-Refresh/Silent pausiert · ${txt}`;
+    if (!inSchedule() && cfg.silentOn) txt = `⏾ außerhalb der Arbeitszeit – Silent pausiert · ${txt}`;
     el.textContent = txt;
   }
 
@@ -2928,7 +2937,7 @@
         <div id="tamauto-page-adv" style="display:none;margin:6px 0">
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk"><b>Arbeitszeit</b> fest 08:00–18:00
-              <span class="tamauto-help" title="Nur in dieser Zeit laufen Auto-Refresh und Silent Reload. Außerhalb werden beide pausiert – die Einstellungen (an/aus, Intervall) bleiben erhalten und gelten ab 08:00 automatisch wieder. Die Annahme selbst (Abgleich bei TAM-Aktualisierung, Push-Signal, manueller Refresh) läuft weiter. Die Zeit ist fest eingestellt.">?</span>
+              <span class="tamauto-help" title="Nur in dieser Zeit läuft der Silent Reload. Außerhalb wird er pausiert – die Einstellungen (an/aus, Intervall) bleiben erhalten und gelten ab 08:00 automatisch wieder. Die Annahme selbst (Abgleich bei TAM-Aktualisierung, Push-Signal, manueller Refresh) läuft weiter. Die Zeit ist fest eingestellt.">?</span>
             </span>
             <div id="tamauto-sched-state" style="color:#555;font-size:11px;margin-top:2px"></div>
           </div>
@@ -3373,7 +3382,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
 
     // Arbeitszeit-Fenster (fest): nur die Statuszeile
     const renderSched = () => {
-      $('tamauto-sched-state').textContent = inSchedule() ? `jetzt in der Arbeitszeit – Auto-Refresh${cfg.silentOn ? ' und Silent Reload' : ''} aktiv`
+      $('tamauto-sched-state').textContent = inSchedule() ? `jetzt in der Arbeitszeit – Silent Reload${cfg.silentOn ? '' : ' (aus)'} aktiv`
         : `jetzt außerhalb – pausiert bis ${cfg.schedFrom}`;
     };
     renderSched();

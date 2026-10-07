@@ -60,6 +60,7 @@ function startTam(opts = {}) {
   // ---- Tampermonkey / Browser-APIs
   const store = new Map(Object.entries({
     installId: INSTALL_ID, licenseKey: licenseKey(), delayOnV2: false, running: true,
+    silentOn: false, // Silent Reload (Standard im Script: an) läuft in der Arbeitszeit mit und würde die Tests von der Tageszeit abhängig machen; silentOn: 'default' = Standard des Scripts
     startTabs: false, // Start-Routine (beide Reiter öffnen) stört die übrigen Tests nicht; eigener Test setzt true
     accSyncAt: Date.now(), // MA-Management gleicht beim Öffnen mit TAM ab – in den übrigen Tests nicht
     places: { v: 2, plz: [], orte: [], block: { plz: [], orte: [] }, loadedAt: new Date().toISOString(), source: 'Test' },
@@ -68,6 +69,7 @@ function startTam(opts = {}) {
   // wie Tampermonkey: Werte werden als Kopie gespeichert und geliefert (keine geteilten Objekte zwischen Tests/Aufrufen)
   const copy = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
   store.forEach((v, k) => store.set(k, copy(v)));
+  if (store.get('silentOn') === 'default') store.delete('silentOn');
   w.GM_getValue = (k, def) => (store.has(k) ? copy(store.get(k)) : def);
   w.GM_setValue = (k, v) => store.set(k, copy(v));
   w.GM_info = { script: { version: (fs.readFileSync(SCRIPT_PATH, 'utf8').match(/@version\s+(\S+)/) || [])[1] } };
