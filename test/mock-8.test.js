@@ -176,6 +176,19 @@ describe('Stille Abfrage (Push-Signal)', { skip }, () => {
     assert.ok(await until(() => rpc().length > n, 4000), 'keine stille Abfrage');
     assert.ok(!rpc().slice(n).some((f) => /\|ACC\|/.test(f.o.body)), 'Silent fragt die Liste der angenommenen Aufträge ab');
   });
+  it('hängende stille Abfrage (keine Antwort) → Zeitüberschreitung, danach läuft der Silent Reload weiter (blockiert nicht dauerhaft)', async () => {
+    tam = startTam({ fakeHour: 12, gm: { places: KOELN, silentOn: true, silentSec: 1, silentTimeoutSec: 1 } });
+    await tam.ready();
+    const bar = [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-toolbar')].find((x) => /Einträge pro Seite/.test(x.textContent));
+    bar.querySelectorAll('.x-btn')[4].querySelector('button').click(); // TAM-Anfrage übernehmen
+    await sleep(1500);
+    const orig = tam.window.fetch;
+    tam.window.fetch = (u, o) => (/gwt-rpc/.test(u) ? new Promise((_, rej) => { if (o && o.signal) o.signal.addEventListener('abort', () => rej(new Error('The operation was aborted'))); }) : orig(u, o));
+    assert.ok(await until(() => tam.logs().some((l) => /Silent Reload: Abfrage fehlgeschlagen \(Zeitüberschreitung/.test(l)), 8000), tam.logs().slice(-5).join('\n'));
+    tam.window.fetch = orig; // Verbindung wieder da
+    const n = tam.fetches.filter((f) => /gwt-rpc/.test(f.url)).length;
+    assert.ok(await until(() => tam.fetches.filter((f) => /gwt-rpc/.test(f.url)).length > n, 8000), 'Silent Reload blieb nach der Zeitüberschreitung stehen');
+  });
   it('Kopfzeile (aufgeklappt) zeigt den Countdown „Silent in …“ und nichts zu Auto-Refresh', async () => {
     await ready({ silentOn: true });
     const t = () => tam.document.getElementById('tamauto-sync').textContent;

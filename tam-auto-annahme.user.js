@@ -2365,11 +2365,21 @@
   const pushFound = new Set();           // AuftragsNrn, die nach einem Push-Signal neu in der Tabelle standen
   const silentIgnore = new Set();        // Texte, die schon einmal einen Refresh ohne neuen Auftrag ausgelöst haben
   // Eine Hintergrund-Abfrage: liefert die AuftragsNrn, die TAM gerade als veröffentlicht meldet
+  // POST mit Zeitlimit: eine hängende Abfrage (Verbindung ohne Antwort) darf den Silent Reload nie dauerhaft blockieren
+  async function postText(req, ms = GM_getValue('silentTimeoutSec', 20) * 1000) {
+    const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window, c = typeof W.AbortController === 'function' ? new W.AbortController() : null;
+    const timer = setTimeout(() => { if (c) c.abort(); }, ms);
+    let timedOut = false;
+    try {
+      const guard = new Promise((_, rej) => setTimeout(() => { timedOut = true; rej(new Error('Zeitüberschreitung')); }, ms + 500)); // falls abort() nicht greift
+      const run = (async () => { const res = await W.fetch(req.url, Object.assign({ method: 'POST', credentials: 'include', headers: req.headers, body: req.body }, c ? { signal: c.signal } : {})); const txt = await res.text(); return { ok: res.ok, status: res.status, txt }; })();
+      run.catch(() => {});
+      return await Promise.race([run, guard]);
+    } catch (e) { throw new Error(timedOut || /abort/i.test(e.message) ? `Zeitüberschreitung nach ${Math.round(ms / 1000)} s` : e.message); } finally { clearTimeout(timer); }
+  }
   async function silentQuery() {
-    const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
     const t0 = Date.now();
-    const res = await W.fetch(tamLoadReq.url, { method: 'POST', credentials: 'include', headers: tamLoadReq.headers, body: tamLoadReq.body });
-    const txt = await res.text();
+    const res = await postText(tamLoadReq), txt = res.txt;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     if (!/^\/\/OK/.test(txt)) throw new Error(`TAM meldet ${txt.slice(0, 60)}`); // z. B. //EX = Sitzung abgelaufen
     // Alle Zeichenketten der Antwort (AuftragsNr, Adresse, Dienstleistung … – das Format der AuftragsNr ist
@@ -2762,10 +2772,8 @@
     const abgeleitet = !tamAcceptedReq && tamLoadReq ? acceptedBodyFromPublished(tamLoadReq.body) : null;
     const req = tamAcceptedReq || (abgeleitet ? { url: tamLoadReq.url, headers: tamLoadReq.headers, body: abgeleitet } : null);
     if (!req) throw new Error('TAM-Anfrage noch nicht übernommen („Veröffentlichte Aufträge“ einmal aktualisieren)');
-    const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
     const t0 = Date.now();
-    const res = await W.fetch(req.url, { method: 'POST', credentials: 'include', headers: req.headers, body: req.body });
-    const txt = await res.text();
+    const res = await postText(req), txt = res.txt;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     maKontakte = { map: parseListeKontakte(txt), at: Date.now() };
     const nz = wendeListenZeichenAn(parseListeZeichen(txt, (places.ma || []).map((m) => m.k)));

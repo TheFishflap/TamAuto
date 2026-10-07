@@ -397,7 +397,8 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 ## Changelog
 
 ### 1.25.1 – 2026-10-07
-- **Fehler behoben – Silent Reload blieb bei „0 s“ stehen, die Liste aktualisierte nicht:** Seit der Reiter „Angenommene Aufträge“ beim Start mitgeöffnet wird, aktualisiert TAM auch dessen Liste im Hintergrund. Das Script hielt diese Anfrage für die der „Veröffentlichten“ und fragte danach die falsche Liste ab. Jetzt wird die Liste am **Listentyp** der Anfrage erkannt (0 = Veröffentlichte, 1 = Angenommene), unabhängig davon, welcher Reiter gerade aktiv ist.
+- **Silent Reload blieb bei „0 s“ stehen, die Liste aktualisierte nicht (Neuladen der Seite half):** Eine stille Abfrage ohne Antwort (hängende Verbindung) konnte den Silent Reload dauerhaft blockieren, weil sie kein Zeitlimit hatte. Jetzt bricht jede stille Abfrage nach 20 s mit „Zeitüberschreitung“ ab (steht im Protokoll), der nächste Durchlauf läuft normal weiter. Das gilt auch für das stille Laden der angenommenen Aufträge.
+- **Zusätzlich abgesichert:** Seit der Reiter „Angenommene Aufträge“ beim Start mitgeöffnet wird, aktualisiert TAM möglicherweise auch dessen Liste im Hintergrund. Die Liste wird deshalb jetzt am **Listentyp** der Anfrage erkannt (0 = Veröffentlichte, 1 = Angenommene), unabhängig vom aktiven Reiter – die Silent-Abfrage kann so nie die falsche Liste erwischen.
 - **Kopfzeile (aufgeklappt und minimiert):** nichts mehr zu „Auto-Refresh“; stattdessen der Countdown **„Silent in x s“**.
 
 ### 1.25.0 – 2026-10-06
