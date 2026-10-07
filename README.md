@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.29.0 – 2026-10-07
+- **Auftragsbuch-Abgleich sendet nur noch das Fehlende:** Das „hi“ eines Geräts nennt die Nummern, die es in den letzten 7 Tagen schon kennt (Kurz-Hash, auf mehrere Nachrichten verteilt – reicht für 600+ Aufträge). Die anderen Geräte senden nur, was fehlt (bis 1000), und doppelt senden sie nichts, was ein anderes Gerät schon geschickt hat. „⇅ Abgleichen“ sendet zusätzlich die heutigen eigenen Aufträge. Ältere Script-Versionen antworten weiter mit dem ganzen Auftragsbuch.
+
 ### 1.28.2 – 2026-10-07
 - **Tab wieder sichtbar (Android):** War der Tab länger als 1 Minute im Hintergrund, holt das Script verpasste Meldungen sofort nach und fordert per „hi“ das Auftragsbuch der anderen Geräte an.
 

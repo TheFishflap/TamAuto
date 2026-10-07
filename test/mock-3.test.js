@@ -165,6 +165,26 @@ describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
     assert.equal((await posted()).filter((m) => m.t === 'bk').length, n1, 'ohne „man“ gilt die Sperrzeit');
   });
 
+  it('Auftragsbuch-Abgleich: „hi“ nennt die bekannten Nummern (Kurz-Hash, in Teilen) – gesendet wird nur das Fehlende; eigenes „hi“ enthält alle Hashes', async () => {
+    const { ck, ret } = await withChannelKey();
+    const t = Date.now(), nr = (i) => `MW33${String(i).padStart(5, '0')}`;
+    const hash = (x) => { let h = 2166136261; for (const c of x) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36).padStart(6, '0'); };
+    tam.store.set('orderbook', Array.from({ length: 600 }, (_, i) => ({ ts: new Date(t - (i + 1) * 60e3).toISOString(), nr: nr(i), plz: '44141', ort: 'Dortmund' })));
+    const untilA = async (fn, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(50); } return null; };
+    const posted = async () => Promise.all(tam.posts(ret).map((m) => K.decryptMsg(ck, m)));
+    assert.ok(await untilA(async () => (await posted()).filter((m) => m.t === 'hi').length >= 3, 12000), 'eigenes „hi“ in 3 Teilen fehlt');
+    const his = (await posted()).filter((m) => m.t === 'hi');
+    assert.equal(his[0].n, 3); assert.deepEqual(his.flatMap((m) => m.k).sort(), Array.from({ length: 600 }, (_, i) => hash(nr(i))).sort());
+    // anderes Gerät kennt alles außer den Nummern 5 und 7 → nur diese kommen
+    const known = Array.from({ length: 600 }, (_, i) => i).filter((i) => i !== 5 && i !== 7).map((i) => hash(nr(i)));
+    const n0 = (await posted()).filter((m) => m.t === 'bk').length;
+    for (let p = 0; p < 3; p++) tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'hi', nrs: [], at: Date.now(), src: 'x', id: 'abc', p, n: 3, k: known.slice(p * 250, (p + 1) * 250) }));
+    assert.ok(await untilA(async () => (await posted()).filter((m) => m.t === 'bk').length > n0, 16000), 'keine Antwort');
+    await sleep(2500);
+    const items = (await posted()).filter((m) => m.t === 'bk').flatMap((m) => m.items);
+    assert.deepEqual(items.map((x) => x.n).sort(), [nr(5), nr(7)]);
+  });
+
   it('Auftragsbuch-Abgleich: empfangene Aufträge werden geprüft und ergänzt; ältere als 7 Tage und Fremdes auf dem öffentlichen Kanal ignoriert', async () => {
     const { ck, ret } = await withChannelKey();
     const t = Date.now(), book = () => tam.store.get('orderbook') || [];

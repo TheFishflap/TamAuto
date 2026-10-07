@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.28.2
+// @version      1.29.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1021,15 +1021,35 @@
   // Auftragsbuch-Abgleich über den geheimen Kanal: ein neu gestartetes Gerät meldet sich mit „hi“; die anderen Geräte antworten (zeitversetzt) mit den
   // Aufträgen ihrer letzten 7 Tage („bk“, je 10 mit Auftragsdaten). So kennt jedes Gerät dasselbe Auftragsbuch – auch über die 12 Stunden hinaus, die ntfy
   // Meldungen vorhält. Nur auf dem geheimen Kanal (dort stehen Auftragsdaten); empfangene Angaben werden geprüft und gekürzt.
-  const RUN_ID = Math.random().toString(36).slice(2, 10), BK_CHUNK = 10, BK_DAYS = 7, BK_MAX = 300;
+  const RUN_ID = Math.random().toString(36).slice(2, 10), BK_CHUNK = 10, BK_DAYS = 7, BK_MAX = 1000, HI_CHUNK = 250;
   let lastBkAt = 0;
   function retPostSecure(msg) { return retChanP.then(async (ch) => (ch ? ntfySend(ch.topic, await sealMsg(ch, msg)) : false)).catch(() => false); }
-  async function sendeBuch(force = false) {
+  // Kurz-Hash einer Auftragsnummer (FNV-1a, 6 Zeichen): „hi“ nennt damit, was ein Gerät schon kennt – die anderen senden nur das Fehlende
+  const nrHash = (nr) => { let h = 2166136261; for (const c of nrKey(nr)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36).padStart(6, '0'); };
+  const bkSeen = new Set(); // Nummern, die andere Geräte seit der letzten Anfrage schon gesendet haben (nicht doppelt senden)
+  async function sendHi(man = false) {
+    const von = Date.now() - BK_DAYS * 864e5, k = [...new Set(GM_getValue('orderbook', []).filter((e) => e.nr && new Date(e.ts).getTime() >= von).map((e) => nrHash(e.nr)))];
+    const id = Math.random().toString(36).slice(2, 8), n = Math.max(1, Math.ceil(k.length / HI_CHUNK));
+    let ok = false;
+    for (let i = 0; i < n; i++) { ok = await retPostSecure(Object.assign({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID, id, p: i, n, k: k.slice(i * HI_CHUNK, (i + 1) * HI_CHUNK) }, man ? { man: 1 } : {})); if (!ok) break; if (i < n - 1) await sleep(600); }
+    return ok;
+  }
+  const hiPending = new Map(); // Anfrage (Gerät + Kennung) → bisher empfangene Teile
+  function onHi(d) {
+    const key = `${d.src}|${d.id || ''}`, k = Array.isArray(d.k) ? d.k.filter((x) => typeof x === 'string' && x.length <= 8).slice(0, HI_CHUNK) : null;
+    let q = hiPending.get(key);
+    if (!q) { q = { known: k ? new Set() : null, got: 0, man: !!d.man, done: false }; hiPending.set(key, q); setTimeout(() => hiPending.delete(key), 120e3); }
+    if (k && q.known) k.forEach((x) => q.known.add(x));
+    q.got++;
+    const antworten = () => { if (q.done) return; q.done = true; clearTimeout(q.t0); setTimeout(() => sendeBuch(q.man, q.known).catch(() => {}), 1500 + Math.random() * 9000); };
+    if (!k || !d.n || q.got >= d.n) antworten(); else if (!q.t0) q.t0 = setTimeout(antworten, 8000); // fehlt ein Teil, mit dem Bekannten antworten
+  }
+  async function sendeBuch(force = false, known = null, nurHeute = false) {
     if (!license || (!force && Date.now() - lastBkAt < 10 * 60e3)) return;
     const von = Date.now() - BK_DAYS * 864e5, me = String((license && license.name) || '').slice(0, 40);
-    const items = GM_getValue('orderbook', []).filter((e) => e.nr && RET_NR.test(nrKey(e.nr)) && new Date(e.ts).getTime() >= von).sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0)).slice(0, BK_MAX) // neueste zuerst, unabhängig von der Reihenfolge im Speicher
+    const items = GM_getValue('orderbook', []).filter((e) => e.nr && RET_NR.test(nrKey(e.nr)) && new Date(e.ts).getTime() >= (nurHeute ? new Date().setHours(0, 0, 0, 0) : von) && !(known && known.has(nrHash(e.nr))) && !bkSeen.has(nrKey(e.nr))).sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0)).slice(0, BK_MAX) // neueste zuerst, unabhängig von der Reihenfolge im Speicher
       .map((e) => ({ n: nrKey(e.nr), t: new Date(e.ts).getTime(), b: e.by || me, p: e.plz || '', o: e.ort || '', s: e.strasse || '', d: String(e.dienst || '').slice(0, 80), e: typeof e.preis === 'number' ? e.preis : null, r: e.ref || '' }));
-    if (!items.length) return;
+    if (!items.length) { log('Auftragsbuch-Abgleich: die anderen Geräte kennen schon alle Aufträge.', 'debug'); return; }
     lastBkAt = Date.now();
     for (let i = 0; i < items.length; i += BK_CHUNK) {
       const part = items.slice(i, i + BK_CHUNK);
@@ -1061,8 +1081,9 @@
   function onRetMessage(d, secure = false, replay = false) {
     if (!d || d.v !== 1 || !Array.isArray(d.nrs) || d.nrs.length > 20) return;
     // „hi“ nur live beantworten (beim Nachholen alter Meldungen würden sonst alle Geräte erneut ihr Auftragsbuch senden); „man“ = von Hand angefordert, dann ohne Sperrzeit
-    if (secure && d.t === 'hi') { if (!replay && d.src !== RUN_ID && new Date(d.at || 0).toLocaleDateString('sv-SE') === today()) setTimeout(() => sendeBuch(!!d.man).catch(() => {}), 1500 + Math.random() * 9000); return; }
+    if (secure && d.t === 'hi') { if (!replay && d.src !== RUN_ID && new Date(d.at || 0).toLocaleDateString('sv-SE') === today()) { bkSeen.clear(); onHi(d); } return; }
     if (secure && d.t === 'bk') {
+      if (Array.isArray(d.items)) d.items.slice(0, BK_CHUNK).forEach((x) => x && bkSeen.add(nrKey(x.n)));
       const n = addBookItems(d.items); bkGot += Array.isArray(d.items) ? Math.min(d.items.length, BK_CHUNK) : 0;
       if (n) log(`Auftragsbuch abgeglichen: ${n} Aufträge von anderen Geräten ergänzt.`, 'debug');
       clearTimeout(onRetMessage.bkT); onRetMessage.bkT = setTimeout(() => { if (bkGot) log(`Auftragsbuch-Abgleich: ${bkGot} Einträge von anderen Geräten empfangen.`, 'debug'); bkGot = 0; }, 15000);
@@ -1091,7 +1112,7 @@
     let hiddenAt = 0;
     document.addEventListener('visibilitychange', () => { // Android: Tab war im Hintergrund → sofort nachholen und Auftragsbuch bei den anderen Geräten anfordern
       if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
-      if (hiddenAt && Date.now() - hiddenAt > 60e3 && topic === retSecretTopic) { hiddenAt = 0; catchUp(); setTimeout(() => retPostSecure({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID, man: 1 }), 2000); }
+      if (hiddenAt && Date.now() - hiddenAt > 60e3 && topic === retSecretTopic) { hiddenAt = 0; catchUp(); setTimeout(() => sendHi(true).catch(() => {}), 2000); }
     });
     return ntfyStream(`${LIC_NTFY}/${topic}/sse`, { onMessage: (ev) => handle(ev.data), onReconnect: catchUp });
   }
@@ -1109,7 +1130,7 @@
         retSecretTopic = ch.topic;
         listenRet(ch.topic, async (raw, rp) => onRetMessage(await openMsg(ch, ntfyBody(raw)), true, rp));
         log('Rückgaben laufen über den geschützten Kanal.', 'debug');
-        setTimeout(() => retPostSecure({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID }), 4000); // „ich bin neu da“ – die anderen Geräte senden ihr Auftragsbuch
+        setTimeout(() => sendHi().catch(() => {}), 4000); // „ich bin neu da“ – die anderen Geräte senden ihr Auftragsbuch
       }
     });
   }
@@ -3660,8 +3681,8 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     $('tamauto-ob-range').onchange = renderOrderbook;
     $('tamauto-ob-sync').onclick = async () => { // Auftragsbücher der Geräte abgleichen (hi → die anderen senden; zusätzlich das eigene senden)
       const b = $('tamauto-ob-sync'); b.disabled = true; b.textContent = '⇅ läuft …';
-      const ok = await retPostSecure({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID, man: 1 });
-      if (ok) { sendeBuch(true).catch(() => {}); log('Auftragsbuch-Abgleich angefordert: die anderen Geräte senden ihr Auftragsbuch, das eigene wird gesendet.', 'ok'); }
+      const ok = await sendHi(true);
+      if (ok) { sendeBuch(true, null, true).catch(() => {}); log('Auftragsbuch-Abgleich angefordert: die anderen Geräte senden ihr Auftragsbuch, das eigene wird gesendet.', 'ok'); }
       else log('Auftragsbuch-Abgleich nicht möglich: kein geheimer Kanal (Lizenz ohne Kanal-Schlüssel).', 'err');
       setTimeout(() => { b.disabled = false; b.textContent = '⇅ Abgleichen'; }, 15000);
     };
