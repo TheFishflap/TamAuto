@@ -113,14 +113,29 @@
         : { at: 0, why: 'ältere Version, Herkunft unbekannt', exp: Date.now() };
     });
   })();
+  let resCache = { at: 0, map: new Map() }; // Reservierungsende je Auftrag aus dem Auftragsbuch (kurz zwischengespeichert)
+  const resEndeOf = (k) => {
+    if (Date.now() - resCache.at > 30000) resCache = { at: Date.now(), map: new Map(GM_getValue('orderbook', []).filter((e) => e.resEnde).map((e) => [String(e.nr).toUpperCase(), e.resEnde])) };
+    return resCache.map.get(k);
+  };
   function isDone(k) {
     if (!k || !done.has(k)) return false;
     const i = doneInfo[k];
     if (i && i.exp && i.exp <= Date.now()) { done.delete(k); delete doneInfo[k]; return false; }
-    // Früher (an einem anderen Tag) angenommen und jetzt wieder veröffentlicht = zurückgegeben → wie ein neuer Auftrag behandeln und direkt annehmen
-    // (steht er auf der Rückgabe-Liste, z. B. „XX zurück“, sperrt ihn die Blacklist). Heute Angenommenes bleibt gesperrt (Zeile steht bis zum Refresh noch).
+    // Früher (an einem anderen Tag) angenommen und jetzt wieder veröffentlicht: Läuft die Reservierung ab (Ende laut Terminfenster, sonst 24 h nach der
+    // Annahme), gibt TAM den Auftrag selbst zurück → direkt wieder annehmen. Kommt er früher zurück, hat ihn jemand aktiv zurückgegeben → 48 h sperren
+    // (wie bei „XX zurück“). Heute Angenommenes bleibt gesperrt (die Zeile steht bis zum Refresh noch).
     const heute0 = new Date().setHours(0, 0, 0, 0);
-    if (i && /^angenommen/.test(i.why || '') && (i.at || 0) < heute0) { done.delete(k); delete doneInfo[k]; return false; }
+    if (i && /^angenommen/.test(i.why || '') && (i.at || 0) < heute0) {
+      const re = slaMs(resEndeOf(String(k).toUpperCase()));
+      const abgelaufen = re !== null ? Date.now() >= re - 30 * 60e3 : Date.now() - (i.at || 0) >= 23 * 3600e3;
+      done.delete(k); delete doneInfo[k];
+      if (!abgelaufen && addToday('returnsToday', [k], {})) {
+        log(`${k}: früher angenommen (${new Date(i.at).toLocaleString('de-DE')}), Reservierung noch nicht abgelaufen – wieder da = aktiv zurückgegeben → 48 h gesperrt.`, 'ok');
+        retPost('ret', [k]);
+      }
+      return false;
+    }
     return true;
   }
   function markDone(k, why, ttlMs = 0) {

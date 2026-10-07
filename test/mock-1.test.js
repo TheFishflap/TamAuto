@@ -31,6 +31,33 @@ describe('Bereits bearbeitet / done (P1 Sixt)', { skip }, () => {
     assert.ok(await until(() => tam.accepted.includes(SIXT.nr), 15000), tam.logs().join('\n'));
   });
 
+  // Uhr auf 12:30 festgelegt: „gestern 23:00“ ist dann 13,5 h her (Reservierung noch nicht abgelaufen)
+  const gestern23 = () => new Date().setHours(0, 0, 0, 0) - 3600e3;
+  it('gestern angenommen, nach 13 h wieder da (Reservierung läuft noch) = aktiv zurückgegeben → 48 h gesperrt, den anderen Geräten gemeldet', async () => {
+    tam = startTam({ fakeHour: 12, gm: { places: KOELN, doneRefs: [SIXT.nr], doneInfo: { [SIXT.nr]: { at: gestern23(), why: 'angenommen' } } } });
+    await tam.ready();
+    tam.addOrder(SIXT);
+    assert.ok(await until(() => tam.logs().some((l) => /aktiv zurückgegeben → 48 h gesperrt/.test(l)), 6000), tam.logs().slice(-4).join('\n'));
+    assert.ok((tam.store.get('returnsToday').items || {})[SIXT.nr]);
+    await sleep(1500);
+    assert.deepEqual(tam.dblclicks, []);
+    assert.ok(tam.posts('tamret-').some((m) => m.t === 'ret' && m.nrs.includes(SIXT.nr)), 'Rückgabe nicht gemeldet');
+  });
+  it('Reservierungsende (aus dem Terminfenster) schon vorbei → abgelaufen → wieder annehmen; noch nicht vorbei → gesperrt', async () => {
+    const fmt = (d) => { const p = (n) => String(n).padStart(2, '0'); return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+    tam = startTam({ fakeHour: 12, gm: { places: KOELN, doneRefs: [SIXT.nr], doneInfo: { [SIXT.nr]: { at: gestern23(), why: 'angenommen' } },
+      orderbook: [{ ts: new Date(gestern23()).toISOString(), nr: SIXT.nr, resEnde: fmt(new Date(Date.now() - 2 * 3600e3)) }] } });
+    await tam.ready();
+    tam.addOrder(SIXT);
+    assert.ok(await until(() => tam.accepted.includes(SIXT.nr), 15000), tam.logs().join('\n'));
+    tam.close();
+    tam = startTam({ fakeHour: 12, gm: { places: KOELN, doneRefs: [SIXT.nr], doneInfo: { [SIXT.nr]: { at: gestern23() - 20 * 3600e3, why: 'angenommen' } },
+      orderbook: [{ ts: new Date(gestern23()).toISOString(), nr: SIXT.nr, resEnde: fmt(new Date(Date.now() + 5 * 3600e3)) }] } });
+    await tam.ready();
+    tam.addOrder(SIXT);
+    await sleep(2500);
+    assert.deepEqual(tam.dblclicks, []);
+  });
   it('früher angenommen, aber auf der Rückgabe-Liste („XX zurück“) → nicht wieder annehmen', async () => {
     tam = startTam({ gm: { places: KOELN, doneRefs: [SIXT.nr], doneInfo: { [SIXT.nr]: { at: Date.now() - 26 * 3600e3, why: 'angenommen' } },
       returnsToday: { date: '2026-10-07', items: { [SIXT.nr]: { at: Date.now() - 3600e3 } } } } });
