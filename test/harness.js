@@ -255,6 +255,7 @@ function startTam(opts = {}) {
     if (extra.id !== undefined) row.querySelector('td.x-grid3-td-id').textContent = extra.id;
     if (extra.zeichen !== undefined) row.querySelector('td.x-grid3-td-zeichenAgent').textContent = extra.zeichen;
     if (extra.preis !== undefined) row.querySelector('td.x-grid3-td-preis').textContent = extra.preis;
+    if (extra.reserviert !== undefined) { const c = row.querySelector('td.x-grid3-td-reserviertBis'); if (c) c.textContent = extra.reserviert; }
     if (extra.plz !== undefined) row.querySelector('td.x-grid3-td-besichtigungsPlz').textContent = extra.plz;
     if (extra.ort !== undefined) row.querySelector('td.x-grid3-td-besichtigungsOrt').textContent = extra.ort;
     if (!same) body.appendChild(row);

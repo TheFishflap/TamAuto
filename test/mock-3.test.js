@@ -250,7 +250,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
     { k: 'BO', name: 'Backoffice Postfach', mail: 'auftrag@example.com', backoffice: true }, { k: 'SI', name: 'Silke', mail: 'silke@example.com', backoffice: true },
     { k: 'LS', name: 'Leonie Struve', mail: '', backoffice: true }, { k: 'LU', name: 'Louis Thomee', mail: 'louis@example.com', backoffice: true }];
   const BOOK = () => [
-    { ts: today, nr: 'MW3190401', plz: '44141', ort: 'Dortmund', dienst: 'Sixt Rückgabe', ref: 'WVWZZZ000B', strasse: 'Hauptstr. 5', sla: inH(1), preis: 200, terminWeg: 1, zeichen: 'MK' },
+    { ts: today, nr: 'MW3190401', plz: '44141', ort: 'Dortmund', dienst: 'Sixt Rückgabe', ref: 'WVWZZZ000B', strasse: 'Hauptstr. 5', sla: inH(1), resEnde: inH(1), preis: 200, zeichen: 'MK' },
     { ts: today, nr: 'MW3190402', plz: '45127', ort: 'Essen', dienst: 'Standard', ref: 'WVWZZZ000A', preis: 180, zeichen: 'MK 12.10 10:00 T' }, // hat schon eine Tour
     { ts: today, nr: 'MW3190403', plz: '99999', ort: 'Nirgendwo', dienst: 'Standard', preis: 200, zeichen: '' },                          // noch kein Kürzel
     { ts: today, nr: 'MW3190404', plz: '44141', ort: 'Dortmund', dienst: 'Kennzeichenversand', ref: 'WVWZZZ000B', preis: 20, zeichen: '' }, // gehört zu 401 (gleiche FIN)

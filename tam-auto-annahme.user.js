@@ -680,7 +680,7 @@
     const rows = list.map((o) => {
       const e = endeStr(o), h = stundenBis(e, now);
       return [`${o.nr}${o.nurVersand ? ' (nur Versand)' : ''}${o.extra.length ? ` + Kennzeichenversand ${o.extra.map((x) => x.nr).join(', ')}` : ''}`, o.ref || '', `${o.plz} ${o.ort}${o.strasse ? `, ${o.strasse}` : ''}`, o.dienst || '',
-        e ? `${{ rot: '🔴', gelb: '🟡' }[ampel(e, now)] || ''}${o.terminWeg && ampel(e, now) === 'rot' ? ' 1' : ''} ${e}${h !== null ? ` (in ${h} h)` : ''}`.trim() : '', kontaktText(o)];
+        e ? `${{ rot: '🔴', gelb: '🟡' }[ampel(e, now)] || ''}${o.resEnde && ampel(e, now) === 'rot' ? ' 1' : ''} ${e}${h !== null ? ` (in ${h} h)` : ''}`.trim() : '', kontaktText(o)];
     });
     const kopf = ['Auftrag', 'FIN', 'PLZ / Ort', 'Auftragsart', 'Reservierung bis', 'Kontakt'];
     const breite = kopf.map((h, c) => Math.max(h.length, ...rows.map((r) => r[c].length)));
@@ -703,10 +703,15 @@
     return { to: ma.mail || '', cc: [...cc], subject, body, html, tabelle };
   }
   // </ma-logik>
-  // Rote 1 (nur im Auftragsbuch): Terminfenster nach der Annahme weggeklickt (z. B. Sixt, „Ende: 02.10.2026 15:13“) und die Reservierung
-  // fällt innerhalb der nächsten 2 Stunden aus der SLA (oder ist schon abgelaufen)
+  // Rote 1 (Auftragsbuch und MA-Management): die Reservierung (z. B. Sixt, „Ende: 02.10.2026 15:13“ im Terminfenster oder „Reserviert bis“ in
+  // „Angenommene Aufträge“) endet innerhalb der nächsten 2 Stunden
   const SLA_SOON_MS = 2 * 3600 * 1000;
-  const terminRed = (e) => { const t = slaMs(e.resEnde || e.sla); return !!e.terminWeg && t !== null && t - Date.now() <= SLA_SOON_MS; };
+  // Reservierungsende: „Reserviert bis“ aus „Angenommene Aufträge“ bzw. „Ende:“ aus dem Terminfenster (resEnde); nur nach dem Terminfenster zusätzlich der Endtermin (Agent).
+  // Keine rote 1 bei Rückgaben und wenn der Termin schon steht (Kürzel + Datum im Zeichen); abgelaufene Reservierungen nur noch 6 Stunden lang.
+  const terminRed = (e) => {
+    const t = slaMs(e.resEnde || (e.terminWeg ? e.sla : '')), d = t === null ? 0 : t - Date.now();
+    return t !== null && d <= SLA_SOON_MS && d > -6 * 3600e3 && !istZurueck(e) && !(e.zeichen && parseTourzeichen(e.zeichen, (places.ma || []).map((m) => m.k)).status === 'tour');
+  };
   const terminPending = new Map(); // Nr → Reservierungsende, falls das Fenster vor dem Eintrag ins Auftragsbuch kam
   function markTermin(nrs, ende = '') {
     const up = new Set(nrs.filter(Boolean).map((x) => String(x).toUpperCase()));
@@ -727,15 +732,15 @@
   // Aus „Angenommene Aufträge“ ins Auftragsbuch übernehmen, sobald die Tabelle dort angezeigt wird: interne ID,
   // Ihr Zeichen und Preis (so, wie sie in TAM stehen) und – für vorgemerkte Aufträge – den Endtermin (Agent). AuftragsNr und ID
   // stehen dort in ausgeblendeten Spalten (Zuordnung über die Spalten-ID).
-  function scanAccepted() {
+  function scanAccepted(allowHidden = false) {
     const panel = document.getElementById(cfg.acceptedTabId);
-    if (!panel || panel.closest('.x-hide-display')) return;
+    if (!panel || (!allowHidden && panel.closest('.x-hide-display'))) return;
     const info = new Map([...panel.querySelectorAll('.x-grid3-row')].map((r) => [text(r.querySelector('td.x-grid3-td-teilAuftragNr')).toUpperCase(), {
       sla: text(r.querySelector('td.x-grid3-td-slaEndeAgent')), tid: text(r.querySelector('td.x-grid3-td-id')).replace(/\D/g, ''),
       zeichen: text(r.querySelector('td.x-grid3-td-zeichenAgent')), preis: parseEuro(text(r.querySelector('td.x-grid3-td-preis'))),
       plz: text(r.querySelector('td.x-grid3-td-besichtigungsPlz')), ort: text(r.querySelector('td.x-grid3-td-besichtigungsOrt')),
       dienst: text(r.querySelector('td.x-grid3-td-cst_projekt_dienstleistung_name')), status: text(r.querySelector('td.x-grid3-td-status')),
-      ref: text(r.querySelector('td.x-grid3-td-referenz')), strasse: text(r.querySelector('td.x-grid3-td-besichtigungsStrasse')) }]));
+      ref: text(r.querySelector('td.x-grid3-td-referenz')), strasse: text(r.querySelector('td.x-grid3-td-besichtigungsStrasse')), res: text(r.querySelector('td.x-grid3-td-reserviertBis')) }]));
     const book = GM_getValue('orderbook', []);
     let changed = 0;
     book.forEach((e) => {
@@ -747,6 +752,7 @@
       if (a.preis != null && e.preis !== a.preis) { e.preis = a.preis; changed++; }
       ['plz', 'ort', 'dienst'].forEach((k) => { if (!e[k] && a[k]) { e[k] = a[k]; changed++; } }); // z. B. Annahmen anderer Geräte
       if (slaMs(a.sla) !== null && e.sla !== a.sla) { e.sla = a.sla; changed++; }
+      if (slaMs(a.res) !== null && e.resEnde !== a.res) { e.resEnde = a.res; changed++; } // „Reserviert bis“ aus TAM (für jeden Auftrag, nicht nur mit Terminfenster)
       ['status', 'ref', 'strasse'].forEach((k) => { if (a[k] && e[k] !== a[k]) { e[k] = a[k]; changed++; } });
     });
     changed += verarbeiteRueckgaben(book);
@@ -2141,6 +2147,7 @@
     try {
       const n = await ladeMaKontakte();
       GM_setValue('accSyncAt', Date.now());
+      scanAccepted(true); // Tabelle des (verborgenen) Reiters „Angenommene Aufträge“ mitlesen, falls TAM sie geladen hat: Reserviert bis, Zeichen, Preise
       log(`${grund}: angenommene Aufträge still geladen (${n} Aufträge, kein Reiterwechsel).`, 'ok');
       return true;
     } catch (e) {

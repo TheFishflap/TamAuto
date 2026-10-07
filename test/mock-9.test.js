@@ -131,5 +131,23 @@ describe('„XX zurück“, Start und stilles Laden', { skip }, () => {
     assert.ok(tam.document.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active'), 'Reiter wurde gewechselt');
     assert.ok(tam.logs().some((l) => /angenommene Aufträge still geladen/.test(l)));
   });
+
+  it('Rote 1 aus „Reserviert bis“ (Angenommene Aufträge) – auch ohne Terminfenster; nicht bei stehendem Termin oder Rückgabe', async () => {
+    const f = (h) => { const d = new Date(Date.now() + h * 3600e3), p = (n) => String(n).padStart(2, '0'); return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+    const ts = new Date().toISOString(), row = (nr) => [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.textContent.includes(nr));
+    tam = startTam({ gm: { places: { ...KOELN, ma: [{ k: 'GS', name: 'G', mail: '', backoffice: false }] }, orderbook: [
+      { ts, nr: 'MW3190901', plz: '44141', ort: 'Dortmund', zeichen: '' }, { ts, nr: 'MW3190902', plz: '44141', ort: 'Dortmund', zeichen: '' },
+      { ts, nr: 'MW3190903', plz: '44141', ort: 'Dortmund', zeichen: '' }, { ts, nr: 'MW3190904', plz: '44141', ort: 'Dortmund', zeichen: '' }] } });
+    await tam.ready();
+    tam.addAccepted('MW3190901', '', { id: '1', zeichen: '', reserviert: f(1.5) });   // läuft in 1,5 h ab → rote 1
+    tam.addAccepted('MW3190902', '', { id: '2', zeichen: '', reserviert: f(30) });    // erst in 30 h → keine
+    tam.addAccepted('MW3190903', '', { id: '3', zeichen: 'GS 12.10 10:00 T', reserviert: f(1) }); // Termin steht → keine
+    tam.addAccepted('MW3190904', '', { id: '4', zeichen: '', reserviert: f(-10) });   // seit 10 h abgelaufen → keine
+    tam.selectTab('AgentEigeneAuftraege');
+    assert.ok(await until(() => (book().find((e) => e.nr === 'MW3190901') || {}).resEnde, 4000), JSON.stringify(book()));
+    tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-book"]').click();
+    const red = (nr) => !!row(nr).querySelector('.tamauto-termin');
+    assert.equal(red('MW3190901'), true); assert.equal(red('MW3190902'), false); assert.equal(red('MW3190903'), false); assert.equal(red('MW3190904'), false);
+  });
 });
 
