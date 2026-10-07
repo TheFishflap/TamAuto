@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.27.2 – 2026-10-07
+- **Zurückgegebene Aufträge werden direkt wieder angenommen:** Ein Auftrag, der an einem **früheren Tag** angenommen wurde und jetzt wieder in „Veröffentlichte Aufträge“ steht (z. B. MW3191915: gestern 10:15 angenommen, heute 10:15 wieder da), galt bisher als „bereits bearbeitet“ – das Script sah ihn, nahm ihn aber nicht an, die Zeile blieb grün stehen. Jetzt wird er wie ein neuer Auftrag behandelt. Nicht angenommen wird er nur, wenn er auf der Rückgabe-Liste steht („XX zurück“, 48 h). Heute Angenommenes bleibt weiter gesperrt (die Zeile steht bis zum Refresh noch). Ist der Auftrag inzwischen vergeben, blendet das Script die Zeile wie bisher aus.
+
 ### 1.27.1 – 2026-10-07
 - **Update wird über GitHub installiert, nicht heruntergeladen:** Der Update-Knopf nutzt nur noch den GitHub-Link (Tampermonkey erkennt ihn und öffnet die Installationsseite). Der OneDrive-Link ist ein reiner Datei-Download; er wird nur angeboten, wenn GitHub nicht erreichbar ist (Hinweis „nur Download“). Hat GitHub die neue Version noch nicht (liegt nur im OneDrive), wartet das Script auf die nächste Prüfung.
 - **Smartes Neuladen:** Nach dem Klick auf „Update installieren“ mehrere Versuche im Abstand von 90 s (bis zu 6, 30 s Ruhe), weil die Bestätigung in Tampermonkey dauert – das erste Neuladen kam vorher zu früh und lud noch die alte Version. Ohne Klick weiter höchstens dreimal, einmal je Stunde.

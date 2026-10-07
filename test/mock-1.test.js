@@ -24,14 +24,29 @@ describe('Bereits bearbeitet / done (P1 Sixt)', { skip }, () => {
     assert.ok(await until(() => tam.accepted.includes(SIXT.nr), 15000), tam.logs().join('\n'));
   });
 
-  it('alter Eintrag, laut Auftragsbuch angenommen → bleibt gesperrt, Herkunft im Log', async () => {
-    tam = startTam({ gm: { places: KOELN, doneRefs: [SIXT.nr], orderbook: [{ ts: '2026-10-01T10:00:00Z', nr: SIXT.nr }] } });
+  it('früher (anderer Tag) angenommen, jetzt wieder veröffentlicht (zurückgegeben) → wird direkt wieder angenommen', async () => {
+    tam = startTam({ gm: { places: KOELN, doneRefs: [SIXT.nr], doneInfo: { [SIXT.nr]: { at: Date.now() - 26 * 3600e3, why: 'angenommen' } }, orderbook: [{ ts: '2026-10-01T10:00:00Z', nr: SIXT.nr }] } });
+    await tam.ready();
+    tam.addOrder(SIXT);
+    assert.ok(await until(() => tam.accepted.includes(SIXT.nr), 15000), tam.logs().join('\n'));
+  });
+
+  it('früher angenommen, aber auf der Rückgabe-Liste („XX zurück“) → nicht wieder annehmen', async () => {
+    tam = startTam({ gm: { places: KOELN, doneRefs: [SIXT.nr], doneInfo: { [SIXT.nr]: { at: Date.now() - 26 * 3600e3, why: 'angenommen' } },
+      returnsToday: { date: '2026-10-07', items: { [SIXT.nr]: { at: Date.now() - 3600e3 } } } } });
+    await tam.ready();
+    tam.addOrder(SIXT);
+    await sleep(2500);
+    assert.deepEqual(tam.dblclicks, []);
+  });
+
+  it('heute angenommen, Zeile steht noch → bleibt gesperrt, Herkunft im Log', async () => {
+    tam = startTam({ gm: { places: KOELN, doneRefs: [SIXT.nr], doneInfo: { [SIXT.nr]: { at: Date.now() - 2 * MIN, why: 'angenommen' } }, orderbook: [{ ts: new Date().toISOString(), nr: SIXT.nr }] } });
     await tam.ready();
     tam.addOrder(SIXT);
     assert.ok(await until(() => tam.logs().some((l) => l.includes(SIXT.nr) && /bereits bearbeitet/.test(l) && /angenommen/.test(l)), 5000), tam.logs().join('\n'));
     assert.deepEqual(tam.dblclicks, []);
   });
-
   it('fehlgeschlagene Annahme sperrt nur befristet', async () => {
     tam = startTam({ gm: { places: KOELN, doneRefs: [SIXT.nr],
       doneInfo: { [SIXT.nr]: { at: Date.now() - 20 * MIN, why: 'Annahme fehlgeschlagen (vergeben)', exp: Date.now() - 5 * MIN } } } });

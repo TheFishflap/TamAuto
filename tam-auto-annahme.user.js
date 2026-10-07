@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.27.1
+// @version      1.27.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -117,6 +117,10 @@
     if (!k || !done.has(k)) return false;
     const i = doneInfo[k];
     if (i && i.exp && i.exp <= Date.now()) { done.delete(k); delete doneInfo[k]; return false; }
+    // Früher (an einem anderen Tag) angenommen und jetzt wieder veröffentlicht = zurückgegeben → wie ein neuer Auftrag behandeln und direkt annehmen
+    // (steht er auf der Rückgabe-Liste, z. B. „XX zurück“, sperrt ihn die Blacklist). Heute Angenommenes bleibt gesperrt (Zeile steht bis zum Refresh noch).
+    const heute0 = new Date().setHours(0, 0, 0, 0);
+    if (i && /^angenommen/.test(i.why || '') && (i.at || 0) < heute0) { done.delete(k); delete doneInfo[k]; return false; }
     return true;
   }
   function markDone(k, why, ttlMs = 0) {
