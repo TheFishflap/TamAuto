@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.28.2 – 2026-10-07
+- **Tab wieder sichtbar (Android):** War der Tab länger als 1 Minute im Hintergrund, holt das Script verpasste Meldungen sofort nach und fordert per „hi“ das Auftragsbuch der anderen Geräte an.
+
 ### 1.28.1 – 2026-10-07
 - **Rote Flagge 🚩 im MA-Management** statt rote 1 im Auftragsbuch: Sie erscheint in der Liste und in der Mail, wenn die Reservierung („Reserviert bis“ / „Ende:“) in **≤ 1 Stunde** ausläuft (bei Rückgabe oder stehendem Termin nicht). Die Auftragsbuch-Zeile bleibt unmarkiert.
 - **Auftragsbuch-Abgleich zwischen Geräten robuster:** Es werden die **neuesten** Aufträge zuerst gesendet (bisher die letzten 150 nach Speicherreihenfolge – nach Abgleichen konnten heutige eigene Annahmen herausfallen), bis zu 300 Aufträge; Senden mit Statusprüfung und bis zu 3 Versuchen, Fehler stehen im Log; ein von Hand angeforderter Abgleich („⇅ Abgleichen“) umgeht die 10-Minuten-Sperre der anderen Geräte; zusätzlich alle 3 Minuten Nachholen verpasster Meldungen (Android schläft im Hintergrund); im Log steht, wie viele Einträge empfangen wurden.

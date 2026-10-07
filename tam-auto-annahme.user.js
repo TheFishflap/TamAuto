@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.28.1
+// @version      1.28.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1087,7 +1087,12 @@
         .then((t) => t.split('\n').filter(Boolean).forEach((x) => handle(x, true))).catch(() => {});
     };
     catchUp();
-    setInterval(catchUp, 3 * 60e3); // zusätzlich alle 3 Minuten: ein im Hintergrund eingeschlafener Datenstrom (Android) verpasst sonst Annahmen anderer Geräte
+    setInterval(catchUp, 3 * 60e3); // alle 3 Minuten: ein im Hintergrund eingeschlafener Datenstrom (Android) verpasst sonst Annahmen anderer Geräte
+    let hiddenAt = 0;
+    document.addEventListener('visibilitychange', () => { // Android: Tab war im Hintergrund → sofort nachholen und Auftragsbuch bei den anderen Geräten anfordern
+      if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+      if (hiddenAt && Date.now() - hiddenAt > 60e3 && topic === retSecretTopic) { hiddenAt = 0; catchUp(); setTimeout(() => retPostSecure({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID, man: 1 }), 2000); }
+    });
     return ntfyStream(`${LIC_NTFY}/${topic}/sse`, { onMessage: (ev) => handle(ev.data), onReconnect: catchUp });
   }
   const ntfyBody = (raw) => { try { const m = JSON.parse(raw); return m.event === 'message' ? JSON.parse(m.message) : null; } catch (e) { return null; } };
