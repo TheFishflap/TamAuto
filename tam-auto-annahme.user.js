@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.29.0
+// @version      1.29.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -955,11 +955,17 @@
   // Senden mit Statusprüfung (ntfy antwortet bei Überlast mit 429/5xx, zu große Nachrichten mit 413) und bis zu 3 Versuchen; Fehler stehen im Log
   async function ntfySend(topic, obj) {
     let st = 'keine Antwort';
-    for (let i = 0; i < 3; i++) {
-      try { const r = await licFetch(`${LIC_NTFY}/${topic}`, { method: 'POST', body: JSON.stringify(obj) }); if (r && r.ok) return true; st = `HTTP ${r && r.status}`; if (r && r.status && r.status < 429 && r.status !== 408) break; } catch (e) { st = e.message || 'Netzfehler'; }
-      await sleep(1500 * (i + 1));
+    for (let i = 0; i < 5; i++) { // Pausen: Retry-After von ntfy, sonst 4, 8, 16, 30 s
+      let wait = Math.min(30, 4 * 2 ** i) * 1000;
+      try {
+        const r = await licFetch(`${LIC_NTFY}/${topic}`, { method: 'POST', body: JSON.stringify(obj) });
+        if (r && r.ok) { if (i) log(`Meldung an die anderen Geräte gesendet (Versuch ${i + 1}).`, 'debug'); return true; }
+        st = `HTTP ${r && r.status}`; if (r && r.status && r.status < 429 && r.status !== 408) break;
+        const ra = Number(r && r.headers && r.headers.get && r.headers.get('Retry-After')); if (ra > 0 && ra <= 60) wait = Math.max(wait, ra * 1000);
+      } catch (e) { st = e.message || 'Netzfehler'; }
+      if (i < 4) await sleep(wait);
     }
-    log(`Meldung an die anderen Geräte konnte nicht gesendet werden (${st}).`, 'err');
+    log(`Meldung an die anderen Geräte konnte nach mehreren Versuchen nicht gesendet werden (${st}).`, 'err');
     return false;
   }
   function retPost(t, nrs) {
@@ -1032,6 +1038,7 @@
     const id = Math.random().toString(36).slice(2, 8), n = Math.max(1, Math.ceil(k.length / HI_CHUNK));
     let ok = false;
     for (let i = 0; i < n; i++) { ok = await retPostSecure(Object.assign({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID, id, p: i, n, k: k.slice(i * HI_CHUNK, (i + 1) * HI_CHUNK) }, man ? { man: 1 } : {})); if (!ok) break; if (i < n - 1) await sleep(600); }
+    if (ok) log(`Auftragsbuch-Abgleich angefordert: ${k.length} bekannte Aufträge gemeldet (${n} Nachricht${n > 1 ? 'en' : ''}).`, 'debug');
     return ok;
   }
   const hiPending = new Map(); // Anfrage (Gerät + Kennung) → bisher empfangene Teile

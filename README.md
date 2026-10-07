@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.29.1 – 2026-10-07
+- **Senden bei Überlast (HTTP 429):** bis zu 5 Versuche mit längeren Pausen (Retry-After von ntfy, sonst 4/8/16/30 s). Das Log zeigt auch Erfolge: Abgleich angefordert (n bekannte Aufträge), Auftragsbuch gesendet bzw. „alle bekannt“, Einträge empfangen.
+
 ### 1.29.0 – 2026-10-07
 - **Auftragsbuch-Abgleich sendet nur noch das Fehlende:** Das „hi“ eines Geräts nennt die Nummern, die es in den letzten 7 Tagen schon kennt (Kurz-Hash, auf mehrere Nachrichten verteilt – reicht für 600+ Aufträge). Die anderen Geräte senden nur, was fehlt (bis 1000), und doppelt senden sie nichts, was ein anderes Gerät schon geschickt hat. „⇅ Abgleichen“ sendet zusätzlich die heutigen eigenen Aufträge. Ältere Script-Versionen antworten weiter mit dem ganzen Auftragsbuch.
 
