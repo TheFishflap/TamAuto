@@ -396,6 +396,11 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.27.1 – 2026-10-07
+- **Update wird über GitHub installiert, nicht heruntergeladen:** Der Update-Knopf nutzt nur noch den GitHub-Link (Tampermonkey erkennt ihn und öffnet die Installationsseite). Der OneDrive-Link ist ein reiner Datei-Download; er wird nur angeboten, wenn GitHub nicht erreichbar ist (Hinweis „nur Download“). Hat GitHub die neue Version noch nicht (liegt nur im OneDrive), wartet das Script auf die nächste Prüfung.
+- **Smartes Neuladen:** Nach dem Klick auf „Update installieren“ mehrere Versuche im Abstand von 90 s (bis zu 6, 30 s Ruhe), weil die Bestätigung in Tampermonkey dauert – das erste Neuladen kam vorher zu früh und lud noch die alte Version. Ohne Klick weiter höchstens dreimal, einmal je Stunde.
+- **Keine Rückfrage beim Neuladen:** Die Sicherheitsabfrage „Seite verlassen?“ von TAM wird für das gewollte Neuladen unterdrückt.
+
 ### 1.27.0 – 2026-10-07
 - **Zurückgegebene Aufträge sind im Auftragsbuch rausgestrichen** (durchgestrichen, grau, Tooltip „zurückgegeben“) und zählen nicht in die Summe unten (dort steht „n zurückgegeben (ausgenommen)“). Als zurückgegeben gilt ein Auftrag, der auf der Rückgabe-Liste steht (erkannt von diesem oder einem anderen Gerät, über den geheimen Kanal gemeldet) oder „… zurück“ im Zeichen hat; die Markierung bleibt auch nach den 48 Stunden der Blacklist erhalten.
 - **Knopf „⇅ Abgleichen“ im Auftragsbuch:** fragt bei den anderen Geräten ihr Auftragsbuch an und sendet das eigene – für den Fall, dass die Auftragsbücher nicht übereinstimmen. (Jedes Gerät meldet seine Annahmen weiter automatisch; ein neu gestartetes Gerät holt sich das Auftragsbuch der anderen ebenfalls selbst.)

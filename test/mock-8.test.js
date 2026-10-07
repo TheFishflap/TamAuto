@@ -246,5 +246,40 @@ describe('Smartes Neuladen nach einem Update', { skip }, () => {
     await tam.ready();
     assert.equal(tam.store.get('smartReload'), null);
   });
+
+  it('nach dem Klick auf „Update“: mehrere Versuche im Abstand von 90 s (Bestätigung in Tampermonkey dauert); TAMs Rückfrage beim Verlassen wird unterdrückt', async () => {
+    tam = startTam({ gm: { ...base, updateClickedAt: Date.now(), smartReload: { ver: '99.0.0', n: 1, at: Date.now() - 100e3 } }, xhr });
+    tam.window.onbeforeunload = () => 'Seite verlassen?';
+    await tam.ready();
+    assert.ok(await until(() => reloads() === 1, 12000), tam.logs().slice(-5).join('\n'));
+    assert.equal(tam.store.get('smartReload').n, 2);
+    assert.ok(await until(() => tam.window.onbeforeunload === null, 3000), 'Rückfrage nicht unterdrückt');
+  });
+});
+
+// Update-Quelle: installiert wird nur über GitHub (Tampermonkey); OneDrive wäre nur ein Download der Datei
+describe('Update-Quelle', { skip }, () => {
+  const { revocationList } = require('./harness');
+  const src = (gh, od) => (o) => o.url.includes('IQBmSNFRkXF5') ? { status: 200, responseText: revocationList() }
+    : o.url.includes('raw.githubusercontent.com') ? (gh ? { status: 200, responseText: `// @version      ${gh}` } : { error: true })
+      : o.url.includes('IQALfRz3JKDF') ? (od ? { status: 200, responseText: `// @version      ${od}` } : { error: true }) : { error: true };
+  const btn = () => tam.document.getElementById('tamauto-upd');
+  const start = async (gh, od) => { tam = startTam({ gm: { places: KOELN, smartReloadIdleSec: 999 }, xhr: src(gh, od) }); await tam.ready(); await sleep(1500); };
+
+  it('GitHub hat die neue Version → Installation über den GitHub-Link', async () => {
+    await start('99.0.0', '99.0.0');
+    assert.match(btn().textContent, /Update 99\.0\.0 installieren/);
+    assert.match(tam.document.getElementById('tamauto-update').href, /raw\.githubusercontent\.com.*\.user\.js$/);
+  });
+  it('nur OneDrive hat die neue Version (GitHub liefert noch die alte) → kein Update-Knopf (wäre nur ein Download)', async () => {
+    await start('1.0.0', '99.0.0');
+    assert.doesNotMatch(btn().textContent, /Update 99/);
+    assert.ok(tam.logs().some((l) => /liegt im OneDrive, GitHub liefert noch/.test(l)), tam.logs().slice(-4).join('\n'));
+  });
+  it('GitHub nicht erreichbar, OneDrive neuer → OneDrive als Ersatz (mit Hinweis „nur Download“)', async () => {
+    await start(null, '99.0.0');
+    assert.match(btn().textContent, /Update 99\.0\.0 installieren/);
+    assert.ok(tam.logs().some((l) => /Quelle: OneDrive – nur Download/.test(l)));
+  });
 });
 

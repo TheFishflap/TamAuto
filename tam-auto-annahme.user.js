@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.27.0
+// @version      1.27.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1304,16 +1304,25 @@
   // ist nach dem Neuladen noch die alte Version aktiv, hat Tampermonkey noch nicht aktualisiert; der Update-Knopf bleibt dann stehen.
   let lastInputAt = Date.now();
   ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => document.addEventListener(ev, () => { lastInputAt = Date.now(); }, { capture: true, passive: true }));
+  // TAM fragt beim Verlassen der Seite nach („Seite verlassen?“) – für das gewollte Neuladen wird diese Rückfrage unterdrückt
+  function neuLadenOhneRueckfrage() {
+    try {
+      const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+      W.onbeforeunload = null; window.onbeforeunload = null;
+      [W, window].forEach((w) => w.addEventListener('beforeunload', (e) => { e.stopImmediatePropagation(); }, true));
+    } catch (e) { /* ignorieren */ }
+    location.reload();
+  }
   function smartReload(now = Date.now()) {
     if (!pendingUpdate || !license || busy || currentAcceptNr || accSyncing || startRunning || visibleWindows().length || now - lastAcceptAt < 60e3) return false;
     const sr = GM_getValue('smartReload', null), mine = sr && sr.ver === pendingUpdate ? sr : { ver: pendingUpdate, n: 0, at: 0 };
-    if (mine.n >= 3 || now - mine.at < 3600e3) return false;
-    const geklickt = now - GM_getValue('updateClickedAt', 0) < 30 * 60e3;
-    const ruhig = (GM_getValue('smartReloadIdleSec', 0) * 1000) || (geklickt ? 20e3 : inSchedule() ? 600e3 : 120e3); // smartReloadIdleSec: nur für Tests
+    const geklickt = now - GM_getValue('updateClickedAt', 0) < 30 * 60e3; // nach dem Klick dauert die Bestätigung in Tampermonkey: mehrere Versuche im Abstand von 90 s
+    if (mine.n >= (geklickt ? 6 : 3) || now - mine.at < (geklickt ? 90e3 : 3600e3)) return false;
+    const ruhig = (GM_getValue('smartReloadIdleSec', 0) * 1000) || (geklickt ? 30e3 : inSchedule() ? 600e3 : 120e3); // smartReloadIdleSec: nur für Tests
     if (now - lastInputAt < ruhig) return false;
     GM_setValue('smartReload', { ver: pendingUpdate, n: mine.n + 1, at: now });
-    log(`Neue Version ${pendingUpdate} bereit – Seite wird in der ruhigen Phase neu geladen (Versuch ${mine.n + 1}/3).`, 'ok');
-    setTimeout(() => location.reload(), 400);
+    log(`Neue Version ${pendingUpdate} bereit – Seite wird in der ruhigen Phase neu geladen (Versuch ${mine.n + 1}/${geklickt ? 6 : 3}).`, 'ok');
+    setTimeout(neuLadenOhneRueckfrage, 400);
     return true;
   }
   // Nach dem Neuladen: Ziel erreicht → Schutzmarke löschen
@@ -1340,12 +1349,19 @@
       if (manual) updateButtonFeedback(`✗ GitHub und OneDrive nicht erreichbar – aktueller Stand: v${VERSION}`, '#c62828');
       return;
     }
-    const gh = ok.find((r) => r.name === 'GitHub' && newerVersion(r.v, VERSION));
-    const best = gh || ok.reduce((a, b) => (newerVersion(b.v, a.v) ? b : a));
-    if (newerVersion(best.v, VERSION)) {
-      // Tampermonkey erkennt einen Installationslink nur an der Endung .user.js – SharePoint ignoriert den Zusatz
-      updateLink = best.url === UPDATE_BACKUP_URL ? `${best.url}&tm=tam-auto-annahme.user.js` : best.url;
-      log(`Update ${best.v} verfügbar (installiert: ${VERSION}, Quelle: ${best.name}).`, 'ok');
+    // Installieren geht nur über GitHub (Tampermonkey erkennt den .user.js-Link und öffnet seine Installationsseite). Der OneDrive-Link wäre ein
+    // reiner Download der Datei – er wird nur angeboten, wenn GitHub nicht erreichbar ist. Hat GitHub die neue Version (Zwischenspeicher) noch nicht, wird gewartet.
+    const gh = res.find((r) => r.name === 'GitHub'), od = res.find((r) => r.name === 'OneDrive');
+    const best = gh && gh.v ? gh : (od && od.v ? od : null);
+    if (!gh || !gh.v) { /* GitHub nicht erreichbar → OneDrive als Ersatz */ }
+    else if (od && od.v && newerVersion(od.v, gh.v) && newerVersion(od.v, VERSION) && !newerVersion(gh.v, VERSION)) {
+      log(`Update ${od.v} liegt im OneDrive, GitHub liefert noch ${gh.v} – Installation erst, wenn GitHub die neue Version ausliefert (nächste Prüfung folgt).`, 'debug');
+      if (manual) updateButtonFeedback(`GitHub liefert noch v${gh.v} – später erneut prüfen`, '#b26a00');
+      return;
+    }
+    if (best && newerVersion(best.v, VERSION)) {
+      updateLink = best.name === 'OneDrive' ? `${best.url}&tm=tam-auto-annahme.user.js` : best.url;
+      log(`Update ${best.v} verfügbar (installiert: ${VERSION}, Quelle: ${best.name}${best.name === 'OneDrive' ? ' – nur Download, GitHub nicht erreichbar' : ''}).`, 'ok');
       const upd = document.getElementById('tamauto-update');
       if (upd) { upd.href = updateLink; upd.textContent = `⬆ Update ${best.v} verfügbar – installieren`; upd.style.display = 'block'; }
       markUpdateButton(best.v);

@@ -90,10 +90,12 @@ describe('Update über GitHub oder OneDrive', { skip }, () => {
     assert.match(link().href, /^https:\/\/raw\.githubusercontent\.com\/.*\.user\.js$/);
   });
 
-  it('GitHub ohne Update, OneDrive mit Update → OneDrive (Ersatz)', async () => {
+  it('GitHub ohne Update, OneDrive mit Update → kein Update (GitHub ist maßgeblich, OneDrive wäre nur ein Download)', async () => {
     tam = startTam({ gm: { places: KOELN }, xhr: xhr('1.0.0', '9.9.9') });
     await tam.ready();
-    assert.match(await updLog() || '', /9\.9\.9.*OneDrive/);
+    await sleep(1200);
+    assert.ok(!tam.logs().some((l) => /Update 9\.9\.9 verfügbar/.test(l)));
+    assert.ok(tam.logs().some((l) => /liegt im OneDrive, GitHub liefert noch/.test(l)));
   });
 
   it('Tampermonkey prüft Updates über GitHub (Kopf @updateURL/@downloadURL)', () => {
