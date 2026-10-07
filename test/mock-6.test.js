@@ -165,3 +165,26 @@ describe('ntfy-Verbindung neu aufbauen (P3)', { skip }, () => {
     assert.ok(await until(() => tam.opened(RET) >= 2 && polls() >= 2, 4000), `Verbindungen ${tam.opened(RET)}, Abrufe ${polls()}`);
   });
 });
+
+// Das Mock bildet die Annahme wie das echte TAM nach (Mitschnitt vom 07.10.2026): Karte lädt Auftrag und Dokumente, „Bestätigen“ sendet einen accept-Aufruf
+describe('Mock: Annahme wie im echten TAM', { skip }, () => {
+  it('Karte ruft getTeilauftrag + listAuftragsDokumente, „Bestätigen“ genau einen accept-Aufruf mit der ID; Auftrag verschwindet, Annahme verbucht', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder({ ...ORDER, id: '3709951' });
+    assert.ok(await until(() => tam.accepted.includes(ORDER.nr), 15000), tam.logs().slice(-4).join('\n'));
+    const urls = tam.xhrs.map((x) => `${x.url.split('tam.tuvsud.com')[1]} ${(x.body.match(/\|(getTeilauftrag|listAuftragsDokumente|accept)\|/) || [])[1] || ''}`);
+    assert.ok(urls.includes('/gwt-rpc/auftrag getTeilauftrag') && urls.includes('/gwt-rpc/dienstleistung listAuftragsDokumente'), urls.join(' · '));
+    const acc = tam.xhrs.filter((x) => /gwt-rpc\/workflow\/agent/.test(x.url) && /\|accept\|/.test(x.body));
+    assert.equal(acc.length, 1); assert.equal(acc[0].headers['X-GWT-Permutation'], 'B0147C817E751A9BD6E4C4F5171A12B0');
+    assert.deepEqual(tam.acceptCalls[0].ids, ['3709951']);
+  });
+  it('Warenkorb: ein accept-Aufruf mit den IDs aller angehakten Aufträge', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder({ ...ORDER, id: '3709951', nearby: [{ nr: 'MW3000001', km: 0, id: '3709952' }] });
+    assert.ok(await until(() => tam.accepted.includes('MW3000001'), 15000), tam.logs().slice(-4).join('\n'));
+    assert.equal(tam.acceptCalls.length, 1); assert.deepEqual(tam.acceptCalls[0].ids, ['3709951', '3709952']);
+  });
+});
+

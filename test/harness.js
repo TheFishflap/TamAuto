@@ -33,6 +33,18 @@ async function until(fn, timeout = 5000, step = 20) {
 
 const PUB_COLS = ['slaBeginnAgent', 'slaEndeAgent', 'teilAuftragNr', 'cst_projekt_dienstleistung_name', 'referenz', 'status',
   'termin', 'besichtigungsStrasse', 'besichtigungsPlz', 'besichtigungsOrt', 'preis'];
+// ---- GWT-RPC wie im echten TAM (Mitschnitt der Annahme, 07.10.2026): IDs sind Long als GWT-Base64
+const GWT64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_';
+const gwtEnc = (n) => { let v = BigInt(n), out = ''; do { out = GWT64[Number(v & 63n)] + out; v >>= 6n; } while (v > 0n); return out; };
+const gwtDec = (t) => String([...String(t)].reduce((v, c) => v * 64n + BigInt(GWT64.indexOf(c)), 0n));
+const GWT_HEADERS = { 'Content-Type': 'text/x-gwt-rpc; charset=utf-8', 'X-GWT-Permutation': 'B0147C817E751A9BD6E4C4F5171A12B0', 'X-GWT-Module-Base': 'https://tam.tuvsud.com/' };
+const GWT = {
+  getTeilauftrag: (id) => `7|0|5|https://tam.tuvsud.com/|46BCC365FF43A0A4BA682C6032C0E3D6|de.tomcom.tam.client.rpc.gwt.IAuftragService|getTeilauftrag|java.lang.Long/4227064769|1|2|3|4|1|5|5|${gwtEnc(id)}|`,
+  listAuftragsDokumente: (id) => `7|0|5|https://tam.tuvsud.com/|B1C44B441C2D39DC3EF5E2E0884EC221|de.tomcom.tam.client.rpc.gwt.IDienstleistungsService|listAuftragsDokumente|java.lang.Long/4227064769|1|2|3|4|2|5|5|5|${gwtEnc(id)}|5|CDK|`,
+  // accept(List<Long>, Transition): Liste „7|n|8|id|8|id …“, danach die feste Transition „6|1|9|16|10|1|11|0“ (Veröffentlicht → Angenommen, Teilnahmetyp 0)
+  accept: (ids) => '7|0|11|https://tam.tuvsud.com/|670EFDCAA814D9444E84F56982AE8F7C|de.tomcom.tam.client.rpc.gwt.IAgentWorkflowService|accept|java.util.List|de.tomcom.tam.client.model.workflow.Transition/1241042154|java.util.ArrayList/4159755760|java.lang.Long/4227064769|de.tomcom.tam.client.model.projekt.TeilauftragsStatusUebergang/517324559|de.tomcom.tam.client.model.projekt.TeilauftragsStatus/2285077510|de.tomcom.tam.client.model.projektdefinition.TeilnahmeTyp/3427105274|' +
+    `1|2|3|4|2|5|6|7|${ids.length}|${ids.map((i) => `8|${gwtEnc(i)}`).join('|')}|6|1|9|16|10|1|11|0|`,
+};
 const btnHtml = (t, cls = '') => `<table class="x-btn x-component x-btn-noicon ${cls}"><tbody><tr><td class="x-btn-mc"><em>` +
   `<button class="x-btn-text" type="button">${t}</button></em></td></tr></tbody></table>`;
 
@@ -105,10 +117,15 @@ function startTam(opts = {}) {
     fetches.push({ url, o });
     const rpcBody = String((o && o.body) || '');
     if (/saveMerkmal/.test(rpcBody)) tam.saves.push(rpcBody);
-    const body = !/\/gwt-rpc\//.test(url) ? '' : /saveMerkmal/.test(rpcBody) ? tam.rpcSave : tam.rpc;
+    const body = !/\/gwt-rpc\//.test(url) ? '' : /saveMerkmal/.test(rpcBody) ? tam.rpcSave
+      : /\/gwt-rpc\/workflow\/agent/.test(url) && /\|accept\|/.test(rpcBody) ? tam.acceptRpc(rpcBody, url) : tam.rpc;
     return { ok: true, status: 200, text: async () => body, json: async () => ({}) };
   };
-  w.XMLHttpRequest.prototype.send = function () {}; // kein Netz im Test (das Script schneidet TAMs Anfrage beim Senden mit)
+  // kein Netz im Test (das Script schneidet TAMs Anfrage beim Senden mit); die Anfragen werden für die Tests mitgeschrieben (tam.xhrs)
+  const xp = w.XMLHttpRequest.prototype;
+  xp.open = function (m, u) { this.__u2 = String(u); this.__h2 = {}; };
+  xp.setRequestHeader = function (k, v) { if (this.__h2) this.__h2[k] = v; };
+  xp.send = function (b) { tam.xhrs.push({ url: this.__u2, headers: this.__h2 || {}, body: String(b || '') }); };
   const sources = [];
   w.EventSource = class {
     constructor(url) { this.url = url; this.readyState = 0; this.ls = {}; sources.push(this); }
@@ -122,7 +139,25 @@ function startTam(opts = {}) {
   w.setInterval = (...a) => { const id = si.apply(w, a); timers.add(id); return id; };
 
   // ---- TAM-Verhalten
-  const tam = { accepted: [], closed: [], dblclicks: [], sources, fetches, requests, store, window: w, document: d, rpc: '//OK[]', rpcSave: '//OK[[],0,7]', saves: [] };
+  const tam = { accepted: [], xhrs: [], acceptCalls: [], acceptFail: '', rpcAccept: "//OK[-9,1,2,'aEWHNqw',6,'VeNGK',5,0]", closed: [], dblclicks: [], sources, fetches, requests, store, window: w, document: d, rpc: '//OK[]', rpcSave: '//OK[[],0,7]', saves: [] };
+  // Anfrage wie TAMs Client über window.XMLHttpRequest absetzen (das Script schneidet sie mit)
+  tam.xhr = (path, body) => { const x = new w.XMLHttpRequest(); x.open('POST', `https://tam.tuvsud.com${path}`); Object.entries(GWT_HEADERS).forEach(([k, v]) => x.setRequestHeader(k, v)); x.send(body); };
+  tam.gwt = GWT; tam.gwtEnc = gwtEnc; tam.gwtDec = gwtDec;
+  // „accept“-Aufruf auswerten wie der Server: IDs der Liste lesen, Aufträge als angenommen verbuchen (Zeile weg), Antwort //OK oder //EX
+  tam.acceptRpc = (body) => {
+    const p = String(body).split('|'), n = +p[2], tab = p.slice(3, 3 + n), st = p.slice(3 + n);
+    const A = tab.findIndex((x) => /ArrayList/.test(x)) + 1, L = tab.findIndex((x) => /java\.lang\.Long/.test(x)) + 1;
+    const i = st.findIndex((v, k) => +v === A && +st[k + 2] === L), cnt = i < 0 ? 0 : +st[i + 1];
+    const ids = Array.from({ length: cnt }, (_, k) => gwtDec(st[i + 3 + 2 * k]));
+    const rows = [...d.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')];
+    const nrs = ids.map((id) => { const r = rows.find((x) => (x.querySelector('td.x-grid3-td-id') || {}).textContent === id); return r ? r.querySelector('td.x-grid3-td-teilAuftragNr').textContent.trim() : ''; }).filter(Boolean);
+    tam.acceptCalls.push({ ids, nrs, body });
+    if (tam.acceptFail) return `//EX[1,["${tam.acceptFail}"],0,7]`;
+    nrs.forEach((nr) => { if (!tam.accepted.includes(nr)) tam.accepted.push(nr); });
+    tam.acceptedAt = Date.now();
+    rows.filter((r) => nrs.includes(r.querySelector('td.x-grid3-td-teilAuftragNr').textContent.trim())).forEach((r) => r.remove());
+    return tam.rpcAccept;
+  };
 
   // Reiterwechsel: Klick auf einen Reiter der Hauptleiste
   const strip = d.querySelector(`li[id$="__AgentVeroeffentlichteAuftraege"]`).parentElement; // Reiterleiste (einmal merken: Tests können Reiter entfernen)
@@ -172,6 +207,7 @@ function startTam(opts = {}) {
 
   // Auftragskarte nach docs/TAM-DEBUG.md Abschnitt 4/5 (noch kein Live-Mitschnitt)
   tam.openCard = (o) => {
+    if (o.id) { tam.xhr('/gwt-rpc/auftrag', GWT.getTeilauftrag(o.id)); tam.xhr('/gwt-rpc/dienstleistung', GWT.listAuftragsDokumente(o.id)); } // die Karte lädt Auftrag und Dokumente
     const c = d.createElement('div');
     c.className = 'x-window x-component'; c.dataset.test = 'card';
     c.innerHTML = `<div class="x-window-header"><span class="x-window-header-text">Auftragskarte zu ${o.nr}</span></div>
@@ -200,7 +236,11 @@ function startTam(opts = {}) {
       cb.addEventListener('click', () => ok.classList.toggle('x-item-disabled', !cb.checked));
       ok.querySelector('button').addEventListener('click', () => {
         if (ok.classList.contains('x-item-disabled')) return;
-        tam.accepted.push(...checked); tam.acceptedAt = Date.now(); dl.remove();
+        // „Bestätigen“ sendet genau einen accept-Aufruf mit den IDs aller angehakten Warenkorb-Einträge (wie im Mitschnitt)
+        const rowOf = (nr) => [...d.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')].find((r) => r.querySelector('td.x-grid3-td-teilAuftragNr').textContent.trim() === nr);
+        const ids = checked.map((nr) => (nr === o.nr ? (o.id || (rowOf(nr) && rowOf(nr).querySelector('td.x-grid3-td-id').textContent)) : (((o.nearby || []).find((n) => n.nr === nr) || {}).id || (rowOf(nr) && rowOf(nr).querySelector('td.x-grid3-td-id').textContent)))).filter(Boolean);
+        if (ids.length) { const b = GWT.accept(ids); tam.xhr('/gwt-rpc/workflow/agent', b); tam.acceptRpc(b); }
+        tam.accepted.push(...checked.filter((x) => !tam.accepted.includes(x))); tam.acceptedAt = Date.now(); dl.remove();
         if (o.afterAccept) o.afterAccept(tam, o);
       });
       dl.querySelectorAll('button')[1].addEventListener('click', () => dl.remove());
