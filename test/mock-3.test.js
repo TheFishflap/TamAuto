@@ -145,6 +145,26 @@ describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
     assert.deepEqual(bk.nrs, ['MW3191001']);
   });
 
+  it('Auftragsbuch-Abgleich: sendet neueste zuerst und alle (auch über 150 hinaus), unabhängig von der Reihenfolge im Speicher; „man“ umgeht die Sperrzeit', async () => {
+    const { ck, ret } = await withChannelKey();
+    const t = Date.now(), nr = (i) => `MW32${String(i).padStart(5, '0')}`;
+    // heutiger Eintrag steht am ANFANG des Speichers, danach 199 ältere (durch frühere Abgleiche hinten angehängt)
+    tam.store.set('orderbook', [{ ts: new Date(t - 60e3).toISOString(), nr: nr(1), plz: '44141', ort: 'Dortmund' }, ...Array.from({ length: 169 }, (_, i) => ({ ts: new Date(t - (i + 2) * 600e3).toISOString(), nr: nr(i + 2), plz: '44141', ort: 'Dortmund' }))]);
+    const untilA = async (fn, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(50); } return null; };
+    const posted = async () => Promise.all(tam.posts(ret).map((m) => K.decryptMsg(ck, m)));
+    assert.ok(await untilA(async () => (await posted()).some((m) => m.t === 'hi'), 9000), 'kein „hi“ nach dem Start');
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'hi', nrs: [], at: Date.now(), src: 'anderes-gerät', man: 1 }));
+    assert.ok(await untilA(async () => (await posted()).filter((m) => m.t === 'bk').length >= 17, 45000), 'nicht alle Nachrichten gesendet');
+    const bk = (await posted()).filter((m) => m.t === 'bk'), items = bk.flatMap((m) => m.items);
+    assert.equal(items[0].n, nr(1), 'neuester Eintrag nicht zuerst');
+    assert.ok(items.length === 170, `${items.length} Einträge`);
+    // zweite Anforderung von Hand sofort danach: trotz Sperrzeit erneut gesendet; ohne „man“ nicht
+    const n1 = bk.length;
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'hi', nrs: [], at: Date.now(), src: 'drittes-gerät' }));
+    await sleep(12000);
+    assert.equal((await posted()).filter((m) => m.t === 'bk').length, n1, 'ohne „man“ gilt die Sperrzeit');
+  });
+
   it('Auftragsbuch-Abgleich: empfangene Aufträge werden geprüft und ergänzt; ältere als 7 Tage und Fremdes auf dem öffentlichen Kanal ignoriert', async () => {
     const { ck, ret } = await withChannelKey();
     const t = Date.now(), book = () => tam.store.get('orderbook') || [];
@@ -274,7 +294,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.doesNotMatch(rows, /MW3190406/, 'unter 150 €'); assert.doesNotMatch(rows, /MW3190407/, 'anderer MA');
     assert.ok(rows.indexOf('MW3190405') < rows.indexOf('MW3190401'), 'FIN WVWZZZ000A vor WVWZZZ000B');
     assert.match($('tamauto-ma-rows').textContent, /🔴/); // Reservierung in 1 h
-    assert.ok([...tam.document.querySelectorAll('#tamauto-ma-rows b')].some((b) => b.textContent === '1'), 'rote 1 fehlt in der Liste'); // Terminfenster weggeklickt + Reservierung in 1 h
+    assert.ok([...tam.document.querySelectorAll('#tamauto-ma-rows b')].some((b) => b.textContent === '🚩'), 'rote Flagge fehlt in der Liste'); // Terminfenster weggeklickt + Reservierung in 1 h
     assert.match($('tamauto-ma-hint').textContent, /1 Aufträge mit Terminpflicht haben noch kein Kürzel/);
   });
 
@@ -287,7 +307,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.match(b, /^Auftrag\s+\| FIN\s+\| PLZ \/ Ort\s+\| Auftragsart\s+\| Reservierung bis\s+\| Kontakt$/m);
     assert.match(b, /\+ Kennzeichenversand MW3190404/); assert.equal((b.match(/MW3190404/g) || []).length, 1);
     assert.match(b, /Die Reservierung läuft zu den angegebenen Zeiten aus/);
-    assert.match(b, /🔴 1 \d{2}\.\d{2}\.\d{4} \d{2}:\d{2} \(in 1 h\)/); assert.match(b, /🔴 = Reservierung läuft in ≤ 2 h aus.*1 = Terminfenster/);
+    assert.match(b, /🔴 🚩 \d{2}\.\d{2}\.\d{4} \d{2}:\d{2} \(in 1 h\)/); assert.match(b, /🔴 = Reservierung läuft in ≤ 2 h aus.*🚩 = Reservierung läuft in ≤ 1 h/);
   });
 
   it('Cc abwählbar, Absender = Backoffice-Zeilen, gemerkt (Signatur „Liebe Grüße“)', async () => {

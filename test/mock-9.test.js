@@ -132,7 +132,7 @@ describe('„XX zurück“, Start und stilles Laden', { skip }, () => {
     assert.ok(tam.logs().some((l) => /angenommene Aufträge still geladen/.test(l)));
   });
 
-  it('Rote 1 aus „Reserviert bis“ (Angenommene Aufträge) – auch ohne Terminfenster; nicht bei stehendem Termin oder Rückgabe', async () => {
+  it('Reservierungsende aus „Reserviert bis“ gemerkt; 🚩 im MA-Management nur bei ≤ 1 h, nicht bei stehendem Termin; nie in der Auftragsbuch-Zeile', async () => {
     const f = (h) => { const d = new Date(Date.now() + h * 3600e3), p = (n) => String(n).padStart(2, '0'); return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
     const ts = new Date().toISOString(), row = (nr) => [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.textContent.includes(nr));
     tam = startTam({ gm: { places: { ...KOELN, ma: [{ k: 'GS', name: 'G', mail: '', backoffice: false }] }, orderbook: [
@@ -148,7 +148,7 @@ describe('„XX zurück“, Start und stilles Laden', { skip }, () => {
     assert.equal(book().find((e) => e.nr === 'MW3190901').resEnde, f(1.5)); // „Ende: “ vor dem Datum wird abgeschnitten
     tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-book"]').click();
     const red = (nr) => !!row(nr).querySelector('.tamauto-termin');
-    assert.equal(red('MW3190901'), true); assert.equal(red('MW3190902'), false); assert.equal(red('MW3190903'), false); assert.equal(red('MW3190904'), false);
+    assert.equal(red('MW3190901'), false); assert.equal(row('MW3190901').style.background, ''); assert.equal(red('MW3190902'), false); assert.equal(red('MW3190903'), false); assert.equal(red('MW3190904'), false);
   });
 });
 

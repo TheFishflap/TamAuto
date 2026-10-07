@@ -78,7 +78,7 @@ describe('Gesperrte Aufträge in der Tabelle', { skip }, () => {
 });
 
 // Terminfenster nach der Annahme weggeklickt (z. B. Sixt, „Ende: 02.10.2026 15:13“) → Auftrag im Auftragsbuch markiert, rote 1 (bleibt stehen)
-describe('Auftragsbuch: rote 1 (Terminfenster weggeklickt, Reservierungsende aus dem Fenster)', { skip }, () => {
+describe('Auftragsbuch: keine rote 1 mehr in der Zeile; Reservierungsende wird gemerkt (Terminfenster weggeklickt, Reservierungsende aus dem Fenster)', { skip }, () => {
   const ENDE = '02.10.2099 15:13';
   const terminWin = (t, ende = ENDE) => {
     const m = t.document.createElement('div'); m.className = 'x-window x-component';
@@ -101,24 +101,23 @@ describe('Auftragsbuch: rote 1 (Terminfenster weggeklickt, Reservierungsende aus
     await sleep(3000); // Nachkontrolle vorbei
   }
 
-  it('Fenster mit „Ende“ in ≤ 2 h → rote 1 (auch beim Warenkorb-Auftrag), Zeile markiert, Reservierungsende gemerkt', async () => {
+  it('Fenster mit „Ende“ in ≤ 1 h → Reservierungsende gemerkt (auch beim Warenkorb-Auftrag), Zeile bleibt unmarkiert', async () => {
     const ende = inH(1);
     await acceptWithTermin({ nearby: [{ nr: 'MW3000001', km: 0 }], ende });
-    assert.equal(red().length, 2, JSON.stringify(tam.store.get('orderbook')));
-    assert.equal(red()[0].textContent, '1');
+    assert.equal(red().length, 0);
     assert.ok(tam.store.get('orderbook').every((e) => e.resEnde === ende));
     const row = [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.textContent.includes(ORDER.nr));
-    assert.equal(row.style.background, 'rgb(255, 235, 238)');
+    assert.equal(row.style.background, '');
   });
 
-  it('Ende erst in 5 h → noch keine rote 1', async () => {
+  it('Ende erst in 5 h → keine rote 1', async () => {
     await acceptWithTermin({ ende: inH(5) });
     assert.equal(red().length, 0);
   });
 
-  it('Ende schon überschritten → rote 1; Fenster ohne lesbares Ende → keine rote 1', async () => {
+  it('Ende schon überschritten / Fenster ohne lesbares Ende → keine rote 1', async () => {
     await acceptWithTermin({ ende: inH(-3) });
-    assert.equal(red().length, 1);
+    assert.equal(red().length, 0);
     tam.close();
     await acceptWithTermin({ ende: '' });
     assert.equal(red().length, 0);

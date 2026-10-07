@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.28.1 – 2026-10-07
+- **Rote Flagge 🚩 im MA-Management** statt rote 1 im Auftragsbuch: Sie erscheint in der Liste und in der Mail, wenn die Reservierung („Reserviert bis“ / „Ende:“) in **≤ 1 Stunde** ausläuft (bei Rückgabe oder stehendem Termin nicht). Die Auftragsbuch-Zeile bleibt unmarkiert.
+- **Auftragsbuch-Abgleich zwischen Geräten robuster:** Es werden die **neuesten** Aufträge zuerst gesendet (bisher die letzten 150 nach Speicherreihenfolge – nach Abgleichen konnten heutige eigene Annahmen herausfallen), bis zu 300 Aufträge; Senden mit Statusprüfung und bis zu 3 Versuchen, Fehler stehen im Log; ein von Hand angeforderter Abgleich („⇅ Abgleichen“) umgeht die 10-Minuten-Sperre der anderen Geräte; zusätzlich alle 3 Minuten Nachholen verpasster Meldungen (Android schläft im Hintergrund); im Log steht, wie viele Einträge empfangen wurden.
+
 ### 1.28.0 – 2026-10-07
 - **Stille Annahme (Beta)** – ganz unten in den Erweiterten Einstellungen, **Standard aus** (zusätzlich „nur Sixt“, Standard an): Statt über die Auftragskarte (Doppelklick, Annehmen, Haken, Bestätigen – rund 1,4 s) schickt das Script TAMs eigenen Annahme-Aufruf `IAgentWorkflowService.accept` direkt ab (rund 0,2 s). Die Anfrage (Hash, Kopfzeilen, Transition) lernt es von der **ersten normalen Annahme** nach dem Laden der Seite, danach ersetzt es nur die ID. Bis dahin und bei jedem Problem (unbekannte Antwort, Netzfehler, TAM aktualisiert) nimmt es wie bisher über die Auftragskarte an; meldet TAM „bereits vergeben“, gilt die Annahme als fehlgeschlagen. Es wird nur der Auftrag selbst angenommen (kein Warenkorb mit 0-km-Aufträgen). Das **Protokoll** zeigt jeden Schritt („Stille Annahme …: sende accept (ID …) …“, „TAM antwortet //OK in … ms“ bzw. Grund des Rückfalls). Ein Terminfenster gibt es dabei nicht; „Reserviert bis“ kommt aus „Angenommene Aufträge“.
 - Test-Mock bildet die Annahme jetzt wie das echte TAM nach (Karte lädt Auftrag und Dokumente, „Bestätigen“ sendet den accept-Aufruf mit GWT-IDs).

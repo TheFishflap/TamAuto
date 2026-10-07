@@ -82,7 +82,7 @@ describe('Mail „neue Terminvereinbarung“', () => {
     assert.match(lines[hi + 1], /^-+(-\+-)-*/);
     assert.equal(lines[hi + 5], '');
     const r1 = lines.slice(hi + 2, hi + 5).find((l) => l.startsWith('MW1'));
-    assert.match(r1, /MW1 \+ Kennzeichenversand MW2\s+\|\s*\| 44141 Dortmund, Hauptstr\. 5\s+\| Sixt Rückgabe\s+\| 🔴 1 06\.10\.2026 16:00 \(in 1 h\)\s+\| Frau Muster, Tel\. 0171 1234567$/);
+    assert.match(r1, /MW1 \+ Kennzeichenversand MW2\s+\|\s*\| 44141 Dortmund, Hauptstr\. 5\s+\| Sixt Rückgabe\s+\| 🔴 🚩 06\.10\.2026 16:00 \(in 1 h\)\s+\| Frau Muster, Tel\. 0171 1234567$/);
   });
   it('nach FIN sortiert (dann Reservierungsende); Kennzeichenversand nur benannt', () => {
     const ms = L.baueMail({ ma: MA[0], orders: [o('MWB', '44141', { ref: 'FIN2', sla: '06.10.2026 16:00' }), o('MWA', '45127', { ref: 'FIN1', sla: '09.10.2026 09:00' }), o('MWC', '44309', { sla: '07.10.2026 09:00' })], absender: '', cc: [], now: NOW }).body;

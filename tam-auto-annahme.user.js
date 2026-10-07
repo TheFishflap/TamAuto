@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.28.0
+// @version      1.28.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -682,12 +682,12 @@
     const rows = list.map((o) => {
       const e = endeStr(o), h = stundenBis(e, now);
       return [`${o.nr}${o.nurVersand ? ' (nur Versand)' : ''}${o.extra.length ? ` + Kennzeichenversand ${o.extra.map((x) => x.nr).join(', ')}` : ''}`, o.ref || '', `${o.plz} ${o.ort}${o.strasse ? `, ${o.strasse}` : ''}`, o.dienst || '',
-        e ? `${{ rot: '🔴', gelb: '🟡' }[ampel(e, now)] || ''}${o.resEnde && ampel(e, now) === 'rot' ? ' 1' : ''} ${e}${h !== null ? ` (in ${h} h)` : ''}`.trim() : '', kontaktText(o)];
+        e ? `${{ rot: '🔴', gelb: '🟡' }[ampel(e, now)] || ''}${o.resEnde && endeTs(o) - now.getTime() <= 3600e3 ? ' 🚩' : ''} ${e}${h !== null ? ` (in ${h} h)` : ''}`.trim() : '', kontaktText(o)];
     });
     const kopf = ['Auftrag', 'FIN', 'PLZ / Ort', 'Auftragsart', 'Reservierung bis', 'Kontakt'];
     const breite = kopf.map((h, c) => Math.max(h.length, ...rows.map((r) => r[c].length)));
     const zeile = (r) => r.map((x, c) => (c === r.length - 1 ? x : x.padEnd(breite[c]))).join(' | ').trimEnd();
-    const legende = rows.some((r) => /🔴|🟡/.test(r[4])) ? '🔴 = Reservierung läuft in ≤ 2 h aus oder ist abgelaufen · 🟡 = in ≤ 24 h · 1 = Terminfenster nach der Annahme war schon offen' : '';
+    const legende = rows.some((r) => /🔴|🟡|🚩/.test(r[4])) ? '🔴 = Reservierung läuft in ≤ 2 h aus oder ist abgelaufen · 🟡 = in ≤ 24 h · 🚩 = Reservierung läuft in ≤ 1 h aus' : '';
     const lines = list.length ? [zeile(kopf), breite.slice(0, -1).map((w) => '-'.repeat(w)).join('-+-') + '-+-' + '-'.repeat(Math.max(breite[breite.length - 1], 7)), ...rows.map(zeile), ...(legende ? ['', legende] : [])] : [];
     const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const tabelle = list.length ? `<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><tr>${kopf.map((h) => `<th align="left" style="background:#e8f0fb">${esc(h)}</th>`).join('')}</tr>${rows.map((r) => `<tr>${r.map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</table>${legende ? `<p style="font-size:11px;color:#555">${esc(legende)}</p>` : ''}` : '';
@@ -705,14 +705,14 @@
     return { to: ma.mail || '', cc: [...cc], subject, body, html, tabelle };
   }
   // </ma-logik>
-  // Rote 1 (Auftragsbuch und MA-Management): die Reservierung (z. B. Sixt, „Ende: 02.10.2026 15:13“ im Terminfenster oder „Reserviert bis“ in
-  // „Angenommene Aufträge“) endet innerhalb der nächsten 2 Stunden
-  const SLA_SOON_MS = 2 * 3600 * 1000;
+  // Rote Flagge 🚩 (nur MA-Management und Mail): die Reservierung (z. B. Sixt, „Ende: 02.10.2026 15:13“ im Terminfenster oder „Reserviert bis“ in
+  // „Angenommene Aufträge“) endet innerhalb der nächsten Stunde
+  const FLAG_SOON_MS = 3600 * 1000;
   // Reservierungsende: „Reserviert bis“ aus „Angenommene Aufträge“ bzw. „Ende:“ aus dem Terminfenster (resEnde); nur nach dem Terminfenster zusätzlich der Endtermin (Agent).
   // Keine rote 1 bei Rückgaben und wenn der Termin schon steht (Kürzel + Datum im Zeichen); abgelaufene Reservierungen nur noch 6 Stunden lang.
   const terminRed = (e) => {
     const t = slaMs(e.resEnde || (e.terminWeg ? e.sla : '')), d = t === null ? 0 : t - Date.now();
-    return t !== null && d <= SLA_SOON_MS && d > -6 * 3600e3 && !istZurueck(e) && !(e.zeichen && parseTourzeichen(e.zeichen, (places.ma || []).map((m) => m.k)).status === 'tour');
+    return t !== null && d <= FLAG_SOON_MS && d > -6 * 3600e3 && !istZurueck(e) && !(e.zeichen && parseTourzeichen(e.zeichen, (places.ma || []).map((m) => m.k)).status === 'tour');
   };
   const terminPending = new Map(); // Nr → Reservierungsende, falls das Fenster vor dem Eintrag ins Auftragsbuch kam
   function markTermin(nrs, ende = '') {
@@ -885,19 +885,12 @@
         const td = document.createElement('td');
         td.textContent = v;
         if (i === 2 && ampel(e.sla)) td.title = `SLA (Endtermin Agent) ${e.sla}: ${ampel(e.sla) === 'rot' ? 'überfällig oder in ≤ 2 h' : 'in ≤ 24 h'}`;
-        if (i === 2 && terminRed(e)) { // rote 1: Terminfenster weggeklickt und Reservierung läuft in ≤ 2 h aus
-          const t = document.createElement('span');
-          t.className = 'tamauto-termin'; t.textContent = '1'; t.title = `Reservierung läuft ${e.resEnde || e.sla} aus (in ≤ 2 h) – Termin vereinbaren`;
-          Object.assign(t.style, { color: '#c62828', fontWeight: 'bold', marginLeft: '4px' });
-          td.appendChild(t);
-        }
         Object.assign(td.style, { padding: '1px 4px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap', textAlign: i === 4 ? 'right' : 'left' });
         tr.appendChild(td);
       });
       const zurueck = istZurueck(e);
       tr.title = `${e.dienst || ''}${zurueck ? ' · zurückgegeben' : ''}`; tr.dataset.nr = e.nr;
       if (zurueck) Object.assign(tr.style, { textDecoration: 'line-through', color: '#888' }); // zurückgegebene Aufträge rausgestrichen
-      if (terminRed(e)) tr.style.background = '#ffebee'; // Reservierung läuft in ≤ 2 h aus: Zeile markiert
       tbody.appendChild(tr);
     });
     if (!rows.length) tbody.innerHTML = '<tr><td colspan="5" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
@@ -959,6 +952,16 @@
     return det;
   }
   const ACC_CHUNK = 8; // ntfy erlaubt höchstens 4 KB je Nachricht
+  // Senden mit Statusprüfung (ntfy antwortet bei Überlast mit 429/5xx, zu große Nachrichten mit 413) und bis zu 3 Versuchen; Fehler stehen im Log
+  async function ntfySend(topic, obj) {
+    let st = 'keine Antwort';
+    for (let i = 0; i < 3; i++) {
+      try { const r = await licFetch(`${LIC_NTFY}/${topic}`, { method: 'POST', body: JSON.stringify(obj) }); if (r && r.ok) return true; st = `HTTP ${r && r.status}`; if (r && r.status && r.status < 429 && r.status !== 408) break; } catch (e) { st = e.message || 'Netzfehler'; }
+      await sleep(1500 * (i + 1));
+    }
+    log(`Meldung an die anderen Geräte konnte nicht gesendet werden (${st}).`, 'err');
+    return false;
+  }
   function retPost(t, nrs) {
     if (!nrs.length) return;
     // Rückgaben: nur Nummern. Annahmen: Nummern + Lizenzname des Geräts; auf dem geheimen Kanal zusätzlich die Auftragsdaten
@@ -967,9 +970,9 @@
       if (ch) {
         for (let i = 0; i < nrs.length; i += (t === 'acc' ? ACC_CHUNK : nrs.length)) {
           const part = nrs.slice(i, i + (t === 'acc' ? ACC_CHUNK : nrs.length));
-          await licFetch(`${LIC_NTFY}/${ch.topic}`, { method: 'POST', body: JSON.stringify(await sealMsg(ch, Object.assign(base(), { nrs: part }, t === 'acc' ? { det: detailsFor(part) } : {}))) });
+          await ntfySend(ch.topic, await sealMsg(ch, Object.assign(base(), { nrs: part }, t === 'acc' ? { det: detailsFor(part) } : {})));
         }
-      } else await licFetch(`${LIC_NTFY}/${RET_TOPIC}`, { method: 'POST', body: JSON.stringify(Object.assign(base(), { nrs })) });
+      } else await ntfySend(RET_TOPIC, Object.assign(base(), { nrs }));
     }).catch(() => {});
   }
   // Annahmen anderer Geräte ins Auftragsbuch (Spalte „Von“ = Lizenzname), hier nicht mehr annehmen, Zeile ausblenden.
@@ -1018,13 +1021,13 @@
   // Auftragsbuch-Abgleich über den geheimen Kanal: ein neu gestartetes Gerät meldet sich mit „hi“; die anderen Geräte antworten (zeitversetzt) mit den
   // Aufträgen ihrer letzten 7 Tage („bk“, je 10 mit Auftragsdaten). So kennt jedes Gerät dasselbe Auftragsbuch – auch über die 12 Stunden hinaus, die ntfy
   // Meldungen vorhält. Nur auf dem geheimen Kanal (dort stehen Auftragsdaten); empfangene Angaben werden geprüft und gekürzt.
-  const RUN_ID = Math.random().toString(36).slice(2, 10), BK_CHUNK = 10, BK_DAYS = 7;
+  const RUN_ID = Math.random().toString(36).slice(2, 10), BK_CHUNK = 10, BK_DAYS = 7, BK_MAX = 300;
   let lastBkAt = 0;
-  function retPostSecure(msg) { return retChanP.then(async (ch) => { if (ch) await licFetch(`${LIC_NTFY}/${ch.topic}`, { method: 'POST', body: JSON.stringify(await sealMsg(ch, msg)) }); return !!ch; }).catch(() => false); }
-  async function sendeBuch() {
-    if (!license || Date.now() - lastBkAt < 10 * 60e3) return;
+  function retPostSecure(msg) { return retChanP.then(async (ch) => (ch ? ntfySend(ch.topic, await sealMsg(ch, msg)) : false)).catch(() => false); }
+  async function sendeBuch(force = false) {
+    if (!license || (!force && Date.now() - lastBkAt < 10 * 60e3)) return;
     const von = Date.now() - BK_DAYS * 864e5, me = String((license && license.name) || '').slice(0, 40);
-    const items = GM_getValue('orderbook', []).filter((e) => e.nr && RET_NR.test(nrKey(e.nr)) && new Date(e.ts).getTime() >= von).slice(-150)
+    const items = GM_getValue('orderbook', []).filter((e) => e.nr && RET_NR.test(nrKey(e.nr)) && new Date(e.ts).getTime() >= von).sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0)).slice(0, BK_MAX) // neueste zuerst, unabhängig von der Reihenfolge im Speicher
       .map((e) => ({ n: nrKey(e.nr), t: new Date(e.ts).getTime(), b: e.by || me, p: e.plz || '', o: e.ort || '', s: e.strasse || '', d: String(e.dienst || '').slice(0, 80), e: typeof e.preis === 'number' ? e.preis : null, r: e.ref || '' }));
     if (!items.length) return;
     lastBkAt = Date.now();
@@ -1033,7 +1036,7 @@
       if (!(await retPostSecure({ v: 1, t: 'bk', nrs: part.map((x) => x.n), at: Date.now(), items: part }))) return;
       await sleep(1100); // ntfy nicht überfluten
     }
-    log(`Auftragsbuch an die anderen Geräte gesendet (${items.length} Aufträge).`, 'debug');
+    log(`Auftragsbuch an die anderen Geräte gesendet (${items.length} Aufträge, ${Math.ceil(items.length / BK_CHUNK)} Nachrichten).`, 'debug');
   }
   function addBookItems(raw) {
     if (!Array.isArray(raw)) return 0;
@@ -1054,10 +1057,17 @@
     if (added) { GM_setValue('orderbook', pruneBook(book)); renderOrderbook(); }
     return Math.floor(added);
   }
-  function onRetMessage(d, secure = false) {
+  let bkGot = 0;
+  function onRetMessage(d, secure = false, replay = false) {
     if (!d || d.v !== 1 || !Array.isArray(d.nrs) || d.nrs.length > 20) return;
-    if (secure && d.t === 'hi' && d.src !== RUN_ID && new Date(d.at || 0).toLocaleDateString('sv-SE') === today()) { setTimeout(() => sendeBuch().catch(() => {}), 1500 + Math.random() * 9000); return; }
-    if (secure && d.t === 'bk') { const n = addBookItems(d.items); if (n) log(`Auftragsbuch abgeglichen: ${n} Aufträge von anderen Geräten ergänzt.`, 'debug'); return; }
+    // „hi“ nur live beantworten (beim Nachholen alter Meldungen würden sonst alle Geräte erneut ihr Auftragsbuch senden); „man“ = von Hand angefordert, dann ohne Sperrzeit
+    if (secure && d.t === 'hi') { if (!replay && d.src !== RUN_ID && new Date(d.at || 0).toLocaleDateString('sv-SE') === today()) setTimeout(() => sendeBuch(!!d.man).catch(() => {}), 1500 + Math.random() * 9000); return; }
+    if (secure && d.t === 'bk') {
+      const n = addBookItems(d.items); bkGot += Array.isArray(d.items) ? Math.min(d.items.length, BK_CHUNK) : 0;
+      if (n) log(`Auftragsbuch abgeglichen: ${n} Aufträge von anderen Geräten ergänzt.`, 'debug');
+      clearTimeout(onRetMessage.bkT); onRetMessage.bkT = setTimeout(() => { if (bkGot) log(`Auftragsbuch-Abgleich: ${bkGot} Einträge von anderen Geräten empfangen.`, 'debug'); bkGot = 0; }, 15000);
+      return;
+    }
     if (d.t === 'ret' ? !(Date.now() - d.at <= RET_KEEP_MS && d.at <= Date.now() + 60e3) : new Date(d.at || 0).toLocaleDateString('sv-SE') !== today()) return; // Rückgaben 48 h, übrige Meldungen nur von heute
     const nrs = d.nrs.map(nrKey).filter((x) => RET_NR.test(x));
     const info = { at: +d.at };
@@ -1074,9 +1084,10 @@
     const catchUp = () => {
       const since = Math.floor((Date.now() - RET_KEEP_MS) / 1000); // Rückgaben 48 h; Annahmen filtert onRetMessage auf heute
       licFetch(`${LIC_NTFY}/${topic}/json?poll=1&since=${since}`).then((r) => r.text())
-        .then((t) => t.split('\n').filter(Boolean).forEach(handle)).catch(() => {});
+        .then((t) => t.split('\n').filter(Boolean).forEach((x) => handle(x, true))).catch(() => {});
     };
     catchUp();
+    setInterval(catchUp, 3 * 60e3); // zusätzlich alle 3 Minuten: ein im Hintergrund eingeschlafener Datenstrom (Android) verpasst sonst Annahmen anderer Geräte
     return ntfyStream(`${LIC_NTFY}/${topic}/sse`, { onMessage: (ev) => handle(ev.data), onReconnect: catchUp });
   }
   const ntfyBody = (raw) => { try { const m = JSON.parse(raw); return m.event === 'message' ? JSON.parse(m.message) : null; } catch (e) { return null; } };
@@ -1088,10 +1099,10 @@
     chanKeyP = null; // Kanal-Schlüssel der aktuellen Lizenz neu lesen
     retChanP = secretChannel('ret').catch(() => null);
     retChanP.then((ch) => {
-      if (!retLegacy) retLegacy = listenRet(RET_TOPIC, (raw) => onRetMessage(ntfyBody(raw)));
+      if (!retLegacy) retLegacy = listenRet(RET_TOPIC, (raw, rp) => onRetMessage(ntfyBody(raw), false, rp));
       if (ch && ch.topic !== retSecretTopic) {
         retSecretTopic = ch.topic;
-        listenRet(ch.topic, async (raw) => onRetMessage(await openMsg(ch, ntfyBody(raw)), true));
+        listenRet(ch.topic, async (raw, rp) => onRetMessage(await openMsg(ch, ntfyBody(raw)), true, rp));
         log('Rückgaben laufen über den geschützten Kanal.', 'debug');
         setTimeout(() => retPostSecure({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID }), 4000); // „ich bin neu da“ – die anderen Geräte senden ihr Auftragsbuch
       }
@@ -2827,7 +2838,7 @@
       scanAccepted();    // Auftragsbuch mit „Angenommene Aufträge“ abgleichen (nur wenn sichtbar und geändert)
       smartReload(now); // neue Version bereit → in ruhiger Phase neu laden
       const bookPage = document.getElementById('tamauto-page-book');
-      if (bookPage && bookPage.style.display !== 'none' && now - lastBookRenderAt > 60000) { lastBookRenderAt = now; renderOrderbook(); } // rote 1 wandert mit der Zeit
+      if (bookPage && bookPage.style.display !== 'none' && now - lastBookRenderAt > 60000) { lastBookRenderAt = now; renderOrderbook(); } // Markierungen wandern mit der Zeit
     }
     renderSync(now);
     if (busy || !onPublishedTab()) return;
@@ -2946,7 +2957,7 @@
       : ohneKz ? `${ohneKz} Aufträge mit Terminpflicht haben noch kein Kürzel im Zeichen – sie stehen bei niemandem.` : '');
     $('tamauto-ma-rows').innerHTML = mine.length ? mine.map((o) => {
       const e = endeStr(o), h = stundenBis(e), tel = o.kontakt && o.kontakt.telefon ? o.kontakt.telefon : '';
-      return `<tr><td>${{ rot: '🔴', gelb: '🟡' }[ampel(e)] || ''}${terminRed(o) ? '<b style="color:#c62828;margin-left:2px" title="Terminfenster nach der Annahme weggeklickt, Reservierung läuft in ≤ 2 h aus">1</b>' : ''}</td><td>${escHtml(o.nr)}</td><td>${escHtml(o.ref)}</td><td>${escHtml(`${o.plz} ${o.ort}`)}</td><td>${escHtml(e ? `${e}${h !== null ? ` (in ${h} h)` : ''}` : '')}</td><td>${escHtml(tel)}</td></tr>`;
+      return `<tr><td>${{ rot: '🔴', gelb: '🟡' }[ampel(e)] || ''}${terminRed(o) ? '<b style="margin-left:2px" title="Reservierung läuft in ≤ 1 h aus (oder ist gerade abgelaufen)">🚩</b>' : ''}</td><td>${escHtml(o.nr)}</td><td>${escHtml(o.ref)}</td><td>${escHtml(`${o.plz} ${o.ort}`)}</td><td>${escHtml(e ? `${e}${h !== null ? ` (in ${h} h)` : ''}` : '')}</td><td>${escHtml(tel)}</td></tr>`;
     }).join('') : '<tr><td colspan="6" style="color:#555;padding:4px">Keine offenen Terminvereinbarungen (Aufträge der letzten 7 Tage, ab 150 €, Kürzel im Zeichen, noch ohne Tour).</td></tr>';
     $('tamauto-ma-loadstate').textContent = maKontakte.at ? `Kontakte: ${maKontakte.map.size} · ${hhmm(new Date(maKontakte.at))}` : 'Kontakte: nicht geladen';
     // Cc und Absender: die Backoffice-Zeilen im Blatt „MA“
@@ -3644,9 +3655,8 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     $('tamauto-ob-range').onchange = renderOrderbook;
     $('tamauto-ob-sync').onclick = async () => { // Auftragsbücher der Geräte abgleichen (hi → die anderen senden; zusätzlich das eigene senden)
       const b = $('tamauto-ob-sync'); b.disabled = true; b.textContent = '⇅ läuft …';
-      lastBkAt = 0;
-      const ok = await retPostSecure({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID });
-      if (ok) { sendeBuch().catch(() => {}); log('Auftragsbuch-Abgleich angefordert: die anderen Geräte senden ihr Auftragsbuch, das eigene wird gesendet.', 'ok'); }
+      const ok = await retPostSecure({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID, man: 1 });
+      if (ok) { sendeBuch(true).catch(() => {}); log('Auftragsbuch-Abgleich angefordert: die anderen Geräte senden ihr Auftragsbuch, das eigene wird gesendet.', 'ok'); }
       else log('Auftragsbuch-Abgleich nicht möglich: kein geheimer Kanal (Lizenz ohne Kanal-Schlüssel).', 'err');
       setTimeout(() => { b.disabled = false; b.textContent = '⇅ Abgleichen'; }, 15000);
     };
