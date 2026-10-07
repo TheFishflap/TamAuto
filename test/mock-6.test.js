@@ -188,3 +188,73 @@ describe('Mock: Annahme wie im echten TAM', { skip }, () => {
   });
 });
 
+// Stille Annahme (Beta): accept-Aufruf direkt an TAM, Anfrage von der ersten normalen Annahme gelernt, Rückfall auf die Auftragskarte
+describe('Stille Annahme (Beta)', { skip }, () => {
+  const SIXT2 = { nr: 'MW3153999', plz: '50825', ort: 'Köln', id: '3709952', dienst: 'Sixt Rückgabe' };
+  const FIRST = { ...ORDER, id: '3709951' };
+  const acceptFetches = () => tam.fetches.filter((f) => /gwt-rpc\/workflow\/agent/.test(f.url) && /\|accept\|/.test(String((f.o && f.o.body) || '')));
+  async function learned(gm = {}) {
+    tam = startTam({ gm: { places: KOELN, silentAccept: true, silentAcceptSixt: false, ...gm } });
+    await tam.ready();
+    tam.addOrder(FIRST); // erste Annahme: normal über die Karte – dabei lernt das Script die Anfrage
+    assert.ok(await until(() => tam.accepted.includes(FIRST.nr), 15000), tam.logs().slice(-4).join('\n'));
+    assert.ok(tam.store.get('acceptTpl'), 'Vorlage nicht gelernt');
+    await sleep(1500);
+  }
+
+  it('Standard aus: normale Annahme über die Karte, keine stille Anfrage – die Vorlage wird trotzdem gelernt', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder(FIRST);
+    assert.ok(await until(() => tam.accepted.includes(FIRST.nr), 15000));
+    assert.equal(acceptFetches().length, 0); assert.deepEqual(tam.dblclicks, [FIRST.nr]);
+    assert.ok(tam.store.get('acceptTpl') && /\|accept\|/.test(tam.store.get('acceptTpl').body));
+  });
+
+  it('an + gelernt: zweiter Auftrag still angenommen – ohne Doppelklick, Aufbau wie TAMs Anfrage, ausführlich im Protokoll, gebucht und gemeldet', async () => {
+    await learned();
+    tam.addOrder(SIXT2);
+    assert.ok(await until(() => tam.accepted.includes(SIXT2.nr), 15000), tam.logs().slice(-6).join('\n'));
+    assert.deepEqual(tam.dblclicks, [FIRST.nr], 'zweiter Auftrag lief über die Karte');
+    const f = acceptFetches()[0];
+    assert.ok(f.o.body.includes(`|8|${tam.gwtEnc('3709952')}|6|1|9|16|10|1|11|0|`), f.o.body); // Liste mit der ID, danach die feste Transition
+    assert.equal(f.o.headers['X-GWT-Permutation'], 'B0147C817E751A9BD6E4C4F5171A12B0');
+    assert.deepEqual(tam.acceptCalls.slice(-1)[0].nrs, [SIXT2.nr]);
+    assert.ok(tam.logs().some((l) => /Stille Annahme MW3153999: sende accept \(ID 3709952 = /.test(l)));
+    assert.ok(tam.logs().some((l) => /Stille Annahme MW3153999: TAM antwortet \/\/OK in \d+ ms/.test(l)));
+    assert.ok((tam.store.get('orderbook') || []).some((e) => e.nr === SIXT2.nr));
+    assert.ok(Object.keys((tam.store.get('accToday') || {}).items || {}).includes(SIXT2.nr));
+    assert.ok(tam.posts('tamret-').some((m) => m.t === 'acc' && m.nrs.includes(SIXT2.nr)), 'Annahme nicht gemeldet');
+  });
+
+  it('„nur Sixt“: ein normaler Auftrag läuft weiter über die Karte', async () => {
+    await learned({ silentAcceptSixt: true });
+    tam.addOrder({ ...SIXT2, nr: 'MW3153998', id: '3709953', dienst: 'Standard' });
+    assert.ok(await until(() => tam.accepted.includes('MW3153998'), 15000));
+    assert.deepEqual(tam.dblclicks, [FIRST.nr, 'MW3153998']); assert.equal(acceptFetches().length, 0);
+  });
+
+  it('TAM meldet „bereits vergeben“ → kein Rückfall, Annahme fehlgeschlagen verbucht', async () => {
+    await learned();
+    tam.acceptFail = 'Auftrag bereits vergeben';
+    tam.addOrder(SIXT2);
+    assert.ok(await until(() => tam.logs().some((l) => /Annahme fehlgeschlagen: .*MW3153999/.test(l)), 15000), tam.logs().slice(-5).join('\n'));
+    assert.deepEqual(tam.dblclicks, [FIRST.nr]);
+    assert.ok(!tam.accepted.includes(SIXT2.nr));
+  });
+
+  it('unbekannte Antwort → Rückfall: Annahme über die Auftragskarte', async () => {
+    await learned();
+    tam.acceptFail = 'com.google.gwt.user.client.rpc.SerializationException';
+    tam.addOrder(SIXT2);
+    assert.ok(await until(() => tam.dblclicks.includes(SIXT2.nr), 15000), tam.logs().slice(-5).join('\n'));
+    assert.ok(tam.logs().some((l) => /Stille Annahme MW3153999: unerwartete Antwort – nehme über die Auftragskarte an/.test(l)));
+  });
+
+  it('Aufbau mehrerer IDs: Liste „7|n|8|id|8|id …“, Transition bleibt (für den Warenkorb später)', async () => {
+    await learned();
+    const tpl = tam.store.get('acceptTpl'), p = tpl.body.split('|');
+    assert.ok(p[2] === '11'); assert.ok(tpl.body.endsWith(`|7|1|8|${tam.gwtEnc('3709951')}|6|1|9|16|10|1|11|0|`));
+  });
+});
+

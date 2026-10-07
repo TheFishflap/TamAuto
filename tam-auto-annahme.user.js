@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.27.2
+// @version      1.28.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -85,6 +85,8 @@
     prioOrder: GM_getValue('prioOrder', ({ ort: ['anzahl', 'summe', 'preis'], summe: ['summe', 'preis', 'keine'],
       preis: ['preis', 'keine', 'keine'], tabelle: ['keine', 'keine', 'keine'] })[GM_getValue('prioMode', 'ort')] || ['anzahl', 'summe', 'preis']),
     // Silent Reload: an/aus per Checkbox (wie Auto-Refresh), Intervall 1–60 s. Früher hieß 0 s „aus“ → einmalig übernommen
+    silentAccept: GM_getValue('silentAccept', false),     // Stille Annahme (Beta): accept-Aufruf direkt an TAM statt über die Auftragskarte – Standard aus
+    silentAcceptSixt: GM_getValue('silentAcceptSixt', true), // … nur für Sixt-Aufträge
     silentOn: GM_getValue('silentOn', true),            // Standard an (ersetzt den Auto-Refresh); wer ihn ausgeschaltet hat, behält das
     silentSec: GM_getValue('silentSec', 0) || 30,       // Standard 30 s, sonst der eingestellte Wert
     // Arbeitszeit: außerhalb pausieren Auto-Refresh und Silent Reload (Einstellungen bleiben erhalten) – fest 08:00–18:00, nicht einstellbar
@@ -1603,6 +1605,7 @@
         try {
           // Welche Liste ist es? Am Listentyp in der Anfrage erkennbar (TAM aktualisiert bei offenen Reitern auch die Liste des Hintergrund-Reiters);
           // nur bei unbekanntem Aufbau entscheidet der aktive Reiter
+          if (typeof b === 'string' && /\/gwt-rpc\/workflow\/agent/i.test(this.__tamU || '') && /\|accept\|/.test(b)) learnAcceptTpl({ url: new URL(this.__tamU, location.href).href, body: b, headers: Object.assign({}, this.__tamH) });
           const typ = typeof b === 'string' ? listenTypOf(b) : null;
           if (/\/gwt-rpc\/auftrag/i.test(this.__tamU || '') && typeof b === 'string' && /\|loadTeilauftraege\|/.test(b) && (typ === 1 || (typ === null && onAcceptedTab()))) {
             tamAcceptedReq = { url: new URL(this.__tamU, location.href).href, body: b, headers: Object.assign({}, this.__tamH) };
@@ -1885,6 +1888,58 @@
     await sleep(ms);
   }
 
+  // ---- Stille Annahme (Beta): TAMs eigener Aufruf IAgentWorkflowService.accept(List<Long>, Transition) an /gwt-rpc/workflow/agent (Mitschnitt 07.10.2026).
+  // Die Anfrage (Hash, Kopfzeilen, Transition) lernt das Script von der ersten normalen Annahme nach dem Laden der Seite; danach wird nur die ID ersetzt.
+  // Klappt etwas nicht (keine Vorlage, unbekannte Antwort, Netzfehler), nimmt das Script wie bisher über die Auftragskarte an.
+  const GWT64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_';
+  const gwtLong = (n) => { let v = BigInt(n), out = ''; do { out = GWT64[Number(v & 63n)] + out; v >>= 6n; } while (v > 0n); return out; };
+  let acceptTpl = GM_getValue('acceptTpl', null);
+  function learnAcceptTpl(t) {
+    if (!t || !t.body) return;
+    const neu = !acceptTpl || acceptTpl.headers['X-GWT-Permutation'] !== t.headers['X-GWT-Permutation'] || acceptTpl.body.split('|')[1] !== t.body.split('|')[1];
+    acceptTpl = { url: t.url, headers: t.headers, body: t.body, at: Date.now() };
+    GM_setValue('acceptTpl', acceptTpl);
+    if (neu) log(`Stille Annahme: accept-Anfrage von TAM gelernt (Hash ${t.body.split('|')[1].slice(0, 8)}…, Permutation ${(t.headers['X-GWT-Permutation'] || '?').slice(0, 8)}…).`, cfg.silentAccept ? 'ok' : 'debug');
+  }
+  // accept-Anfrage für diese IDs aus der Vorlage bauen: Liste „<ArrayList>|n|<Long>|id|<Long>|id …“, der Rest (Transition) bleibt
+  function buildAcceptBody(tpl, tids) {
+    const p = String(tpl.body).split('|'), n = +p[2];
+    if (!(n > 0) || p.length < 4 + n) return null;
+    const strs = p.slice(3, 3 + n), A = strs.findIndex((t) => /java\.util\.ArrayList\//.test(t)) + 1, L = strs.findIndex((t) => /java\.lang\.Long\//.test(t)) + 1;
+    if (!A || !L) return null;
+    const st = p.slice(3 + n), i = st.findIndex((v, k) => +v === A && +st[k + 2] === L && /^\d+$/.test(st[k + 1] || ''));
+    if (i < 0) return null;
+    const cnt = +st[i + 1];
+    return [...p.slice(0, 3 + n), ...st.slice(0, i), String(A), String(tids.length), ...tids.flatMap((t) => [String(L), gwtLong(t)]), ...st.slice(i + 2 + 2 * cnt)].join('|');
+  }
+  // Ergebnis: true = angenommen, false = TAM meldet „vergeben“, null = nicht möglich → Annahme über die Auftragskarte
+  async function silentAcceptTry(order, nr) {
+    if (!cfg.silentAccept) return null;
+    const why = (t) => { log(`Stille Annahme ${nr}: ${t} – nehme über die Auftragskarte an.`, 'info'); return null; };
+    if (cfg.silentAcceptSixt && !istSixt(order.dienst)) return null; // nur Sixt: normale Annahme, kein Hinweis nötig
+    if (!acceptTpl) return why('noch keine accept-Anfrage von TAM gelernt (erste normale Annahme nach dem Laden der Seite lernt sie)');
+    const perm = tamLoadReq && tamLoadReq.headers && tamLoadReq.headers['X-GWT-Permutation'];
+    if (perm && acceptTpl.headers['X-GWT-Permutation'] && perm !== acceptTpl.headers['X-GWT-Permutation']) { acceptTpl = null; GM_setValue('acceptTpl', null); return why('TAM wurde aktualisiert (Permutation geändert), gelernte Anfrage verworfen'); }
+    const tid = order.row ? text(order.row.querySelector('td.x-grid3-td-id')).replace(/\D/g, '') : '';
+    if (!tid) return why('interne ID der Zeile unbekannt');
+    const body = buildAcceptBody(acceptTpl, [tid]);
+    if (!body) return why('Aufbau der gelernten Anfrage nicht lesbar');
+    log(`Stille Annahme ${nr}: sende accept (ID ${tid} = ${gwtLong(tid)}, ${istSixt(order.dienst) ? 'Sixt' : order.dienst || 'ohne Dienst'}) …`, 'info');
+    const t0 = Date.now();
+    let res;
+    try { res = await postText({ url: acceptTpl.url, headers: acceptTpl.headers, body }, 8000); } catch (e) { return why(`Anfrage fehlgeschlagen (${e.message})`); }
+    const ms = Date.now() - t0, head = res.txt.replace(/\s+/g, ' ').slice(0, 140);
+    if (res.ok && /^\/\/OK/.test(res.txt)) {
+      log(`Stille Annahme ${nr}: TAM antwortet //OK in ${ms} ms (${res.txt.length} Zeichen) · ${head}`, 'ok');
+      lastAcceptAt = Date.now(); lastAcceptOrder = order; order.auftragsNr = nr; order.extra = []; order.bulk = [];
+      addToday('accToday', [nr], {}); retPost('acc', [nr]); // wie nach der normalen Annahme: den anderen Geräten melden (Terminfenster gibt es nicht; „Reserviert bis“ kommt aus „Angenommene Aufträge“)
+      return true;
+    }
+    log(`Stille Annahme ${nr}: Antwort nach ${ms} ms: HTTP ${res.status} · ${head}`, 'err');
+    if (/vergeben|bereits|nicht (mehr )?verf(ü|u)gbar|falsch(en)? Status/i.test(res.txt)) { order.failReason = 'vergeben'; return false; }
+    return why('unerwartete Antwort');
+  }
+
   // Während der Annahme merkt sich der Wächter den Auftrag, damit er dessen Fenster nicht schließt
   async function acceptOrder(order) {
     currentAcceptNr = nrBase(order.nr);
@@ -1894,6 +1949,8 @@
     if (!onPublishedTab()) { log('Abbruch: nicht im Tab "Veröffentlichte Aufträge".', 'err'); return false; }
     const nr = (order.nr || '').trim();
     if (!nr) { log('Keine AuftragsNr in der Zeile (Spalte „AuftragsNr“ leer).', 'err'); return false; } // Format egal
+    const stille = await silentAcceptTry(order, nr); // Beta: ohne Auftragskarte
+    if (stille !== null) return stille;
 
     // 1) Doppelklick -> "Auftragskarte zu MW…"
     // Noch offenes Auftragsfenster (Karte oder Detailansicht) eines ANDEREN Auftrags vorher schließen – es verdeckt
@@ -3125,6 +3182,12 @@ Wichtig: Die Farben ändern nur die Anzeige der TAM-Oberfläche lokal in diesem 
               <span style="color:#555">Der Benachrichtigungston funktioniert auch ohne Popups.</span>
             </div>
           </div>
+          <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
+            <label class="tamauto-chk"><input type="checkbox" id="tamauto-silentaccept"> <b>Stille Annahme (Beta)</b></label>
+            <label class="tamauto-chk" style="margin-left:8px"><input type="checkbox" id="tamauto-silentaccept-sixt"> nur Sixt</label>
+            <span class="tamauto-help" title="Beta: Statt über die Auftragskarte (Doppelklick, Annehmen, Haken, Bestätigen – rund 1,4 s) schickt das Script TAMs Annahme-Aufruf direkt ab (rund 0,2 s). Die Anfrage lernt es von der ersten normalen Annahme nach dem Laden der Seite; bis dahin und bei jedem Problem nimmt es wie bisher über die Auftragskarte an. Nur der Auftrag selbst wird angenommen (kein Warenkorb mit 0-km-Aufträgen). Alles steht ausführlich im Protokoll („Stille Annahme …“). Standard: aus.">?</span>
+            <div id="tamauto-silentaccept-state" style="color:#555;font-size:11px;margin-top:2px"></div>
+          </div>
           <!-- Console Log immer ganz unten – direkt über dem Protokoll, das darunter aufklappt -->
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
             <label class="tamauto-chk" title="Zeigt das Protokoll des Scripts direkt darunter im Bedienfeld">
@@ -3451,6 +3514,11 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     setInterval(renderSched, 30000);
 
     // Silent Reload: Intervall in s, 0 = aus
+    $('tamauto-silentaccept').checked = cfg.silentAccept; $('tamauto-silentaccept-sixt').checked = cfg.silentAcceptSixt;
+    const renderSilentAccept = () => { $('tamauto-silentaccept-state').textContent = !cfg.silentAccept ? 'aus' : acceptTpl ? `bereit – accept-Anfrage gelernt (${new Date(acceptTpl.at).toLocaleTimeString('de-DE')})${cfg.silentAcceptSixt ? ', nur Sixt' : ', alle Aufträge'}` : 'wartet auf die erste normale Annahme (lernt die Anfrage)'; };
+    $('tamauto-silentaccept').onchange = (e) => { cfg.silentAccept = e.target.checked; GM_setValue('silentAccept', cfg.silentAccept); log(`Stille Annahme (Beta): ${cfg.silentAccept ? 'an' : 'aus'}.`, 'ok'); renderSilentAccept(); };
+    $('tamauto-silentaccept-sixt').onchange = (e) => { cfg.silentAcceptSixt = e.target.checked; GM_setValue('silentAcceptSixt', cfg.silentAcceptSixt); log(`Stille Annahme: ${cfg.silentAcceptSixt ? 'nur Sixt-Aufträge' : 'alle Aufträge'}.`, 'ok'); renderSilentAccept(); };
+    renderSilentAccept(); setInterval(renderSilentAccept, 5000);
     $('tamauto-silent-on').checked = cfg.silentOn;
     $('tamauto-silent').value = cfg.silentSec;
     const silentChanged = () => {
