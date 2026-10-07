@@ -46,13 +46,13 @@ describe('Bereits bearbeitet / done (P1 Sixt)', { skip }, () => {
   it('Reservierungsende (aus dem Terminfenster) schon vorbei → abgelaufen → wieder annehmen; noch nicht vorbei → gesperrt', async () => {
     const fmt = (d) => { const p = (n) => String(n).padStart(2, '0'); return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
     tam = startTam({ fakeHour: 12, gm: { places: KOELN, doneRefs: [SIXT.nr], doneInfo: { [SIXT.nr]: { at: gestern23(), why: 'angenommen' } },
-      orderbook: [{ ts: new Date(gestern23()).toISOString(), nr: SIXT.nr, resEnde: fmt(new Date(Date.now() - 2 * 3600e3)) }] } });
+      orderbook: [{ ts: new Date(gestern23()).toISOString(), nr: SIXT.nr, resEnde: '01.01.2020 00:00' }] } });
     await tam.ready();
     tam.addOrder(SIXT);
     assert.ok(await until(() => tam.accepted.includes(SIXT.nr), 15000), tam.logs().join('\n'));
     tam.close();
     tam = startTam({ fakeHour: 12, gm: { places: KOELN, doneRefs: [SIXT.nr], doneInfo: { [SIXT.nr]: { at: gestern23() - 20 * 3600e3, why: 'angenommen' } },
-      orderbook: [{ ts: new Date(gestern23()).toISOString(), nr: SIXT.nr, resEnde: fmt(new Date(Date.now() + 5 * 3600e3)) }] } });
+      orderbook: [{ ts: new Date(gestern23()).toISOString(), nr: SIXT.nr, resEnde: '01.01.2099 00:00' }] } });
     await tam.ready();
     tam.addOrder(SIXT);
     await sleep(2500);
