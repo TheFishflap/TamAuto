@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.30.1
+// @version      1.30.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1049,25 +1049,27 @@
   // Auftragsbuch-Abgleich über den geheimen Kanal: ein neu gestartetes Gerät meldet sich mit „hi“; die anderen Geräte antworten (zeitversetzt) mit den
   // Aufträgen ihrer letzten 7 Tage („bk“, je 10 mit Auftragsdaten). So kennt jedes Gerät dasselbe Auftragsbuch – auch über die 12 Stunden hinaus, die ntfy
   // Meldungen vorhält. Nur auf dem geheimen Kanal (dort stehen Auftragsdaten); empfangene Angaben werden geprüft und gekürzt.
-  const RUN_ID = Math.random().toString(36).slice(2, 10), BK_CHUNK = 10, BK_DAYS = 7, BK_MAX = 1000, HI_CHUNK = 250;
+  const RUN_ID = Math.random().toString(36).slice(2, 10), BK_CHUNK = 10, BK_DAYS = 7, BK_MAX = 1000, HI_CHUNK = 650;
   let lastBkAt = 0;
   function retPostSecure(msg) { return retChanP.then(async (ch) => (ch ? ntfySend(ch.topic, await sealMsg(ch, msg), msg.t === 'hi' || msg.t === 'bk') : false)).catch(() => false); }
-  // Kurz-Hash einer Auftragsnummer (FNV-1a, 6 Zeichen): „hi“ nennt damit, was ein Gerät schon kennt – die anderen senden nur das Fehlende
-  const nrHash = (nr) => { let h = 2166136261; for (const c of nrKey(nr)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36).padStart(6, '0'); };
+  // Kurz-Hash einer Auftragsnummer (FNV-1a, 24 Bit = 4 Zeichen base64url, aneinandergehängt im Feld „ks“): „hi“ nennt damit, was ein Gerät
+  // schon kennt – die anderen senden nur das Fehlende. Bis 650 Aufträge passen in EINE Nachricht (ntfy: 4 KB je Nachricht, 250 am Tag je IP).
+  const B64U = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  const nrHash = (nr) => { let h = 2166136261; for (const c of nrKey(nr)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } h >>>= 8; return [18, 12, 6, 0].map((b) => B64U[(h >> b) & 63]).join(''); };
   const bkSeen = new Set(); // Nummern, die andere Geräte seit der letzten Anfrage schon gesendet haben (nicht doppelt senden)
   async function sendHi(man = false, minAbstandMs = 10 * 60e3) {
     if (!man && Date.now() - GM_getValue('lastHiAt', 0) < minAbstandMs) return false; // automatische Anfragen sparsam (Tageslimit bei ntfy)
     const von = Date.now() - BK_DAYS * 864e5, k = [...new Set(GM_getValue('orderbook', []).filter((e) => e.nr && new Date(e.ts).getTime() >= von).map((e) => nrHash(e.nr)))];
     const id = Math.random().toString(36).slice(2, 8), n = Math.max(1, Math.ceil(k.length / HI_CHUNK));
     let ok = false;
-    for (let i = 0; i < n; i++) { ok = await retPostSecure(Object.assign({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID, id, p: i, n, k: k.slice(i * HI_CHUNK, (i + 1) * HI_CHUNK) }, man ? { man: 1 } : {})); if (!ok) break; if (i < n - 1) await sleep(600); }
+    for (let i = 0; i < n; i++) { ok = await retPostSecure(Object.assign({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID, id, p: i, n, ks: k.slice(i * HI_CHUNK, (i + 1) * HI_CHUNK).join('') }, man ? { man: 1 } : {})); if (!ok) break; if (i < n - 1) await sleep(600); }
     if (ok) GM_setValue('lastHiAt', Date.now());
     if (ok) log(`Auftragsbuch-Abgleich angefordert: ${k.length} bekannte Aufträge gemeldet (${n} Nachricht${n > 1 ? 'en' : ''}).`, 'debug');
     return ok;
   }
   const hiPending = new Map(); // Anfrage (Gerät + Kennung) → bisher empfangene Teile
   function onHi(d) {
-    const key = `${d.src}|${d.id || ''}`, k = Array.isArray(d.k) ? d.k.filter((x) => typeof x === 'string' && x.length <= 8).slice(0, HI_CHUNK) : null;
+    const key = `${d.src}|${d.id || ''}`, k = typeof d.ks === 'string' && /^[\w-]*$/.test(d.ks) ? (d.ks.slice(0, HI_CHUNK * 4).match(/.{4}/g) || []) : null; // ohne „ks“ (ältere Version): alles senden
     let q = hiPending.get(key);
     if (!q) { q = { known: k ? new Set() : null, got: 0, man: !!d.man, done: false }; hiPending.set(key, q); setTimeout(() => hiPending.delete(key), 120e3); }
     if (k && q.known) k.forEach((x) => q.known.add(x));
@@ -1151,9 +1153,9 @@
     catchUp();
     setInterval(catchUp, 3 * 60e3); // alle 3 Minuten: ein im Hintergrund eingeschlafener Datenstrom (Android) verpasst sonst Annahmen anderer Geräte
     let hiddenAt = 0;
-    document.addEventListener('visibilitychange', () => { // Android: Tab war im Hintergrund → sofort nachholen und Auftragsbuch bei den anderen Geräten anfordern
+    document.addEventListener('visibilitychange', () => { // Android: Tab war im Hintergrund → sofort nachholen
       if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
-      if (hiddenAt && Date.now() - hiddenAt > 60e3 && topic === retSecretTopic) { hiddenAt = 0; catchUp(); setTimeout(() => sendHi(false, 30 * 60e3).catch(() => {}), 2000); } // höchstens alle 30 min
+      if (hiddenAt && Date.now() - hiddenAt > 60e3 && topic === retSecretTopic) { const lang = Date.now() - hiddenAt > 10 * 3600e3; hiddenAt = 0; catchUp(); if (lang) setTimeout(() => sendHi(false, 30 * 60e3).catch(() => {}), 2000); } // Verpasstes holt das Nachholen (ntfy hält ~12 h); „hi“ nur nach über 10 h im Hintergrund
     });
     return ntfyStream(`${LIC_NTFY}/${topic}/sse`, { onMessage: (ev) => take(ev.data, false), onReconnect: catchUp });
   }

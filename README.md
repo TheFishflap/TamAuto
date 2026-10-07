@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.30.2 – 2026-10-07
+- **Abgleich sparsamer (ntfy-Tageslimit 250 Nachrichten je IP):** Das „hi“ passt jetzt für bis zu 650 Aufträge in **eine** Nachricht (4-Zeichen-Hash statt 6 Zeichen in 250er-Teilen). Wird der Tab wieder sichtbar, holt das Script nur Verpasstes nach (ntfy hält Meldungen ~12 h); ein „hi“ gibt es dabei nur noch nach über 10 Stunden im Hintergrund.
+
 ### 1.30.1 – 2026-10-07
 - **ntfy-Limit (HTTP 429) behoben:** ntfy.sh erlaubt je IP-Adresse 250 Nachrichten am Tag und 200 MB Datenvolumen – Geräte im selben Netz teilen sich das. Das Nachholen alle 3 Minuten lud bisher jedes Mal alle Meldungen der letzten 48 h neu (im Log z. B. „9187 Einträge empfangen“). Jetzt: Nachholen nur ab der zuletzt gesehenen Meldung, jede Meldung wird nur einmal verarbeitet; Abgleich-Nachrichten (hi/bk) werden bei ntfy nicht zwischengespeichert; automatische Abgleich-Anfragen höchstens alle 10 min (Start) bzw. 30 min (Tab wieder sichtbar); bei HTTP 429 pausiert der Abgleich 15 Minuten – Annahmen und Rückgaben werden weiter gemeldet.
 
