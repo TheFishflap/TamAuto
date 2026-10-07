@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.26.1
+// @version      1.27.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -836,6 +836,8 @@
       `<br>Angenommen von passenden: <b>${pct(angenommen, passend)}</b> · von tatsächlich verfügbaren: <b>${pct(angenommen, verfuegbar)}</b>`;
   }
 
+  // Zurückgegeben = auf der Rückgabe-Liste (48 h), als zurückgegeben vorgemerkt oder „… zurück“ im Zeichen
+  const istZurueck = (e) => !!e.rueck || !!dayList('returnsToday').items[nrKey(e.nr)] || (!!e.zeichen && /\bzur(ü|ue)ck\b/i.test(e.zeichen) && parseTourzeichen(e.zeichen, (places.ma || []).map((m) => m.k)).status === 'rueckgabe');
   function renderOrderbook() {
     const tbody = document.getElementById('tamauto-ob-rows');
     if (!tbody) return;
@@ -865,19 +867,22 @@
         Object.assign(td.style, { padding: '1px 4px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap', textAlign: i === 4 ? 'right' : 'left' });
         tr.appendChild(td);
       });
-      tr.title = e.dienst || ''; tr.dataset.nr = e.nr;
+      const zurueck = istZurueck(e);
+      tr.title = `${e.dienst || ''}${zurueck ? ' · zurückgegeben' : ''}`; tr.dataset.nr = e.nr;
+      if (zurueck) Object.assign(tr.style, { textDecoration: 'line-through', color: '#888' }); // zurückgegebene Aufträge rausgestrichen
       if (terminRed(e)) tr.style.background = '#ffebee'; // Reservierung läuft in ≤ 2 h aus: Zeile markiert
       tbody.appendChild(tr);
     });
     if (!rows.length) tbody.innerHTML = '<tr><td colspan="5" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
     // Unten: Anzahl Aufträge, Anzahl PLZ (mit Aufträgen je PLZ), Summe Euro
+    const gueltig = rows.filter((e) => !istZurueck(e)), zurueckN = rows.length - gueltig.length; // Zurückgegebene zählen nicht mit
     const perPlz = {};
-    rows.forEach((e) => { perPlz[e.plz] = (perPlz[e.plz] || 0) + 1; });
-    const sum = rows.reduce((a, e) => a + (e.preis || 0), 0);
-    const noPrice = rows.filter((e) => e.preis == null).length;
+    gueltig.forEach((e) => { perPlz[e.plz] = (perPlz[e.plz] || 0) + 1; });
+    const sum = gueltig.reduce((a, e) => a + (e.preis || 0), 0);
+    const noPrice = gueltig.filter((e) => e.preis == null).length;
     document.getElementById('tamauto-ob-sum').innerHTML =
-      `<b>${rows.length} Aufträge</b> · <b>${Object.keys(perPlz).length} PLZ</b> · Summe gesamt <b>${fmtEuro(sum)}</b>` +
-      (noPrice ? ` <span style="color:#555">(${noPrice} ohne Preis)</span>` : '');
+      `<b>${gueltig.length} Aufträge</b> · <b>${Object.keys(perPlz).length} PLZ</b> · Summe gesamt <b>${fmtEuro(sum)}</b>` +
+      (noPrice ? ` <span style="color:#555">(${noPrice} ohne Preis)</span>` : '') + (zurueckN ? ` <span style="color:#555">· ${zurueckN} zurückgegeben (ausgenommen)</span>` : '');
     renderHitRate(from);
     renderMa(); // MA-Management zeigt dieselben Aufträge
     updateMaBadge();
@@ -905,8 +910,14 @@
   const nrKey = (x) => String(x || '').toUpperCase().trim();
   function addToday(key, nrs, info) {
     const l = dayList(key); let added = 0;
-    nrs.filter(Boolean).forEach((x) => { const k = nrKey(x); if (!l.items[k]) { l.items[k] = Object.assign({ at: Date.now() }, info); added++; } });
+    const neu = [];
+    nrs.filter(Boolean).forEach((x) => { const k = nrKey(x); if (!l.items[k]) { l.items[k] = Object.assign({ at: Date.now() }, info); added++; neu.push(k); } });
     if (added) GM_setValue(key, l);
+    if (neu.length && key === 'returnsToday') { // zurückgegebene Aufträge im Auftragsbuch dauerhaft vormerken (rausgestrichen), auch nach den 48 h
+      const book = GM_getValue('orderbook', []);
+      let n = 0; book.forEach((e) => { if (!e.rueck && neu.includes(nrKey(e.nr))) { e.rueck = 1; n++; } });
+      if (n) { GM_setValue('orderbook', book); renderOrderbook(); }
+    }
     return added;
   }
   const goneSince = new Map(); // Nr → seit wann nicht in der Tabelle (diese Sitzung)
@@ -3146,6 +3157,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
             <span>Zeitraum <select id="tamauto-ob-range">
               <option value="today">Heute</option><option value="d1">Gestern</option><option value="d2">Vorgestern</option><option value="d3">Vor 3 Tagen</option><option value="d4">Vor 4 Tagen</option><option value="d5">Vor 5 Tagen</option><option value="d6">Vor 6 Tagen</option><option value="d7">Vor 7 Tagen</option><option value="week">Letzte 7 Tage</option>
               <option value="month">Dieser Monat</option><option value="all">Alle</option></select></span>
+            <button id="tamauto-ob-sync" title="Fragt bei den anderen Geräten ihr Auftragsbuch an (geheimer Kanal) und sendet das eigene – für den Fall, dass die Auftragsbücher nicht übereinstimmen.">⇅ Abgleichen</button>
           </div>
           <div style="max-height:180px;overflow:auto;margin-top:4px;border:1px solid #ddd">
             <table style="border-collapse:collapse;width:100%;font-size:11px">
@@ -3520,6 +3532,14 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
 
     // Auftragsbuch
     $('tamauto-ob-range').onchange = renderOrderbook;
+    $('tamauto-ob-sync').onclick = async () => { // Auftragsbücher der Geräte abgleichen (hi → die anderen senden; zusätzlich das eigene senden)
+      const b = $('tamauto-ob-sync'); b.disabled = true; b.textContent = '⇅ läuft …';
+      lastBkAt = 0;
+      const ok = await retPostSecure({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID });
+      if (ok) { sendeBuch().catch(() => {}); log('Auftragsbuch-Abgleich angefordert: die anderen Geräte senden ihr Auftragsbuch, das eigene wird gesendet.', 'ok'); }
+      else log('Auftragsbuch-Abgleich nicht möglich: kein geheimer Kanal (Lizenz ohne Kanal-Schlüssel).', 'err');
+      setTimeout(() => { b.disabled = false; b.textContent = '⇅ Abgleichen'; }, 15000);
+    };
 
     // Tages-Annahmeliste (nur exakt 5 Ziffern)
     const addAl = () => {

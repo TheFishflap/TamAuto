@@ -163,6 +163,23 @@ describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
     assert.ok(!book().some((e) => e.nr === 'MW3191199'));
   });
 
+  it('Rückgabe über den geheimen Kanal: Auftrag im Auftragsbuch rausgestrichen und nicht in der Summe; Knopf „Abgleichen“ sendet „hi“ und das eigene Buch', async () => {
+    const { ck, ret } = await withChannelKey();
+    const t = Date.now(), book = () => tam.store.get('orderbook') || [];
+    tam.store.set('orderbook', [{ ts: new Date(t).toISOString(), nr: 'MW3191201', plz: '44141', ort: 'Dortmund', preis: 100 }, { ts: new Date(t).toISOString(), nr: 'MW3191202', plz: '44141', ort: 'Dortmund', preis: 50 }]);
+    await until(() => tam.live(ret).length, 2000);
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'ret', nrs: ['MW3191201'], at: Date.now() }));
+    assert.ok(await until(() => (book().find((e) => e.nr === 'MW3191201') || {}).rueck === 1, 3000), JSON.stringify(book()));
+    tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-book"]').click();
+    const row = (nr) => [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.textContent.includes(nr));
+    assert.equal(row('MW3191201').style.textDecoration, 'line-through'); assert.notEqual(row('MW3191202').style.textDecoration, 'line-through');
+    assert.match(tam.document.getElementById('tamauto-ob-sum').textContent, /1 Aufträge .*50[,.]00.*1 zurückgegeben/);
+    const untilA = async (fn, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(50); } return null; };
+    const n0 = tam.posts(ret).length;
+    tam.document.getElementById('tamauto-ob-sync').click();
+    assert.ok(await untilA(async () => { const ms = await Promise.all(tam.posts(ret).slice(n0).map((m) => K.decryptMsg(ck, m))); return ms.some((m) => m.t === 'hi') && ms.some((m) => m.t === 'bk'); }, 6000), 'Abgleich-Knopf sendete nicht');
+  });
+
   it('Details auf dem öffentlichen Kanal werden ignoriert (nur Nummern)', async () => {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();

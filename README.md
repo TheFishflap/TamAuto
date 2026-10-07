@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.27.0 – 2026-10-07
+- **Zurückgegebene Aufträge sind im Auftragsbuch rausgestrichen** (durchgestrichen, grau, Tooltip „zurückgegeben“) und zählen nicht in die Summe unten (dort steht „n zurückgegeben (ausgenommen)“). Als zurückgegeben gilt ein Auftrag, der auf der Rückgabe-Liste steht (erkannt von diesem oder einem anderen Gerät, über den geheimen Kanal gemeldet) oder „… zurück“ im Zeichen hat; die Markierung bleibt auch nach den 48 Stunden der Blacklist erhalten.
+- **Knopf „⇅ Abgleichen“ im Auftragsbuch:** fragt bei den anderen Geräten ihr Auftragsbuch an und sendet das eigene – für den Fall, dass die Auftragsbücher nicht übereinstimmen. (Jedes Gerät meldet seine Annahmen weiter automatisch; ein neu gestartetes Gerät holt sich das Auftragsbuch der anderen ebenfalls selbst.)
+
 ### 1.26.1 – 2026-10-07
 - **Kopfzeile aufgeräumt (aufgeklappt und minimiert):** „TAM in x min“, die Refresh-Uhrzeit mit Art („Refresh 08:48 ✓ (TAM)“) und alles zu Auto-Refresh entfallen. Es steht nur noch der Silent Reload: „Silent Reload in 7 s (alle 11 s)“, außerhalb der Arbeitszeit „pausiert (bis 08:00)“.
 
