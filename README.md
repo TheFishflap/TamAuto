@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.26.1 – 2026-10-07
+- **Kopfzeile aufgeräumt (aufgeklappt und minimiert):** „TAM in x min“, die Refresh-Uhrzeit mit Art („Refresh 08:48 ✓ (TAM)“) und alles zu Auto-Refresh entfallen. Es steht nur noch der Silent Reload: „Silent Reload in 7 s (alle 11 s)“, außerhalb der Arbeitszeit „pausiert (bis 08:00)“.
+
 ### 1.26.0 – 2026-10-07
 - **Smartes Neuladen nach einem Update:** Tampermonkey installiert Updates im eigenen Takt, eine offene TAM-Seite behält aber den alten Code, bis sie neu geladen wird. Steht eine neuere Version bereit (Prüfung beim Start, alle 6 h und bei einer Update-Meldung), lädt das Script die Seite in einer **ruhigen Phase** selbst neu: keine Annahme, kein offenes Fenster, keine Eingabe seit 2 min (in der Arbeitszeit 10 min; nach dem Klick auf „Update installieren“ 20 s). **Höchstens einmal je Stunde und dreimal je Version** – ist nach dem Neuladen noch die alte Version aktiv, hat Tampermonkey noch nicht aktualisiert; der grüne Update-Knopf bleibt dann stehen. Im Protokoll steht „Neue Version … bereit – Seite wird in der ruhigen Phase neu geladen“.
 

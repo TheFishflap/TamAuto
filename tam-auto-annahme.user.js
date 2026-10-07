@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.26.0
+// @version      1.26.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1477,8 +1477,6 @@
     }, 10000, 100);
     const ok = maskSeen || Date.now() - t0 < 10000;
     if (ok) lastAnyRefreshAt = Date.now();
-    const stamp = hhmm();
-    setRefreshStatus(ok ? `Refresh ${stamp} ✓ (Auto-Refresh)` : `Refresh ${stamp} ✗ keine Wirkung`);
     if (ok !== lastRefreshOk) {
       log(ok ? 'Refresh funktioniert – Tabelle wurde neu geladen.' :
         'Refresh-Klick ohne Wirkung (Tabelle nicht neu geladen). Bitte melden.', ok ? 'ok' : 'err');
@@ -1489,7 +1487,6 @@
   }
 
   const hhmm = (d = new Date()) => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-  function setRefreshStatus(t) { const el = document.getElementById('tamauto-refresh'); if (el) el.textContent = `${t} · `; }
 
   // Refresh von außen (Klick auf den Refresh-Pfeil der Website oder TAM-Autoaktualisierung) anzeigen
   let ownRefresh = false;   // true, solange das Script selbst refresht
@@ -1604,7 +1601,6 @@
       const now = Date.now();
       lastAnyRefreshAt = now;
       if (src === 'TAM') noteTamRefresh(now);
-      setRefreshStatus(`Refresh ${hhmm()} ✓ (${src})`);
       if (!cfg.enabled) log(`Refresh (${src}) – Tabelle neu geladen; Script gestoppt, kein Abgleich.`);
     }, 500);
     return src;
@@ -2325,13 +2321,7 @@
     if (!box || box.style.display === 'none') return;
     const [st, col] = !cfg.enabled ? ['■ GESTOPPT', '#c62828'] : onPublishedTab() ? ['● AKTIV', '#2e7d32'] : ['⏸ PAUSIERT', '#b26a00'];
     const s = document.getElementById('tamauto-mini-state'); s.textContent = st; s.style.color = col;
-    // nächste Aktualisierung: eigener Auto-Refresh bzw. TAM, dazu der nächste Silent Reload
-    const t = tamNext();
-    let next = t.enabled && t.at ? `TAM in ${fmtDur(t.at - now)}` : t.enabled ? 'TAM: nächste Aktualisierung' : 'TAM-Aktualisierung aus';
-    if (cfg.silentOn) {
-      next += !inSchedule() ? ' · Silent pausiert' : !tamLoadReq ? ' · Silent wartet auf Refresh'
-        : ` · Silent in ${fmtDur(Math.max(0, lastSilentAt + cfg.silentSec * 1000 - now))}`;
-    }
+    const next = silentHeader(now);
     document.getElementById('tamauto-mini-next').textContent = next;
     const book = GM_getValue('orderbook', []);
     const last = [...book].reverse().find((e) => !e.zu) || book[book.length - 1];
@@ -2344,23 +2334,17 @@
     document.getElementById('tamauto-mini-rate').textContent = rows.length ? `heute ${ang}/${rows.length} (${pct(ang, rows.length)})` : 'heute noch keine passenden';
   }
 
+  // Kopfzeile (aufgeklappt und minimiert): nur noch der Silent Reload
+  const silentHeader = (now) => (!cfg.silentOn ? 'Silent Reload aus' : !inSchedule() ? `⏾ außerhalb der Arbeitszeit – Silent Reload pausiert (bis ${cfg.schedFrom})`
+    : !tamLoadReq ? 'Silent Reload wartet auf den ersten Refresh' : `Silent Reload in ${fmtDur(Math.max(0, lastSilentAt + cfg.silentSec * 1000 - now))} (alle ${cfg.silentSec} s)`);
   function renderSync(now) {
     renderMini(now);
     const pi = document.getElementById('tamauto-prio-info');
     if (pi) pi.textContent = `Priorität: ${prioText()}`;
     const el = document.getElementById('tamauto-sync');
     if (!el) return;
-    const t = tamNext();
-    let txt;
-    if (!t.enabled) {
-      txt = 'TAM-Aktualisierung aus';
-    } else {
-      const per = t.periodMs ? ` (alle ${fmtDur(t.periodMs)})` : '';
-      txt = t.at ? `TAM in ${fmtDur(t.at - now)}${per}` : `TAM${per}: wartet auf ersten Refresh`;
-    }
-    if (cfg.silentOn) txt += !inSchedule() ? ' · Silent pausiert' : !tamLoadReq ? ' · Silent wartet auf Refresh' : ` · Silent in ${fmtDur(Math.max(0, lastSilentAt + cfg.silentSec * 1000 - now))}`;
     checkScheduleChange();
-    if (!inSchedule() && cfg.silentOn) txt = `⏾ außerhalb der Arbeitszeit – Silent pausiert · ${txt}`;
+    const txt = silentHeader(now);
     el.textContent = txt;
   }
 
@@ -2746,15 +2730,9 @@
     }
   }
 
-  function updateRefreshStatus() {
-    setRefreshStatus(cfg.intervalSec > 60 ? 'Auto-Refresh aus – Abgleich synchron mit TAM-Aktualisierung'
-      : cfg.autoRefresh ? `Auto-Refresh alle ${cfg.intervalSec} s, ausgerichtet am TAM-Takt` : 'Auto-Refresh aus');
-  }
-
   function restartTimer() {
     clearInterval(timer);
     timer = setInterval(tick, 1000); // Sekundentakt; ob refresht wird, entscheidet ownRefreshDue()
-    updateRefreshStatus();
   }
 
   // ------------------------------------------------------------------ Bedienfeld
@@ -2954,7 +2932,7 @@
         <div id="tamauto-tab" style="font-weight:bold;margin:4px 0"></div>
         <div id="tamauto-places"></div>
         <div id="tamauto-status" style="color:#555;display:none"></div>
-        <div style="color:#555"><span id="tamauto-refresh"></span><span id="tamauto-sync"></span></div>
+        <div style="color:#555"><span id="tamauto-sync"></span></div>
         <div id="tamauto-prio-info" style="color:#555" title="Ändern unter „Erweiterte Einstellungen“ → Priorität"></div>
         <div id="tamauto-tabbar" style="display:flex;flex-wrap:wrap;gap:0 2px;margin-top:6px">
           <button class="tamauto-tabbtn" data-page="tamauto-page-main">Bedienung</button>
@@ -3276,7 +3254,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
       $('tamauto-int').value = cfg.intervalSec;
     };
     $('tamauto-ar').onchange = (e) => {
-      cfg.autoRefresh = e.target.checked; GM_setValue('autoRefreshV2', cfg.autoRefresh); lastRefreshOk = null; updateRefreshStatus();
+      cfg.autoRefresh = e.target.checked; GM_setValue('autoRefreshV2', cfg.autoRefresh); lastRefreshOk = null;
     };
     $('tamauto-int').onchange = (e) => {
       cfg.intervalSec = Math.max(10, parseInt(e.target.value, 10) || 60); GM_setValue('intervalSecV2', cfg.intervalSec);
@@ -3422,7 +3400,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     $('tamauto-silent-on').checked = cfg.silentOn;
     $('tamauto-silent').value = cfg.silentSec;
     const silentChanged = () => {
-      silentState = ''; lastSilentAt = 0; renderSilent(); updateRefreshStatus();
+      silentState = ''; lastSilentAt = 0; renderSilent();
       log(cfg.silentOn ? `Silent Reload an: alle ${cfg.silentSec} s Hintergrund-Abfrage` +
         (!inSchedule() ? ' (startet mit der Arbeitszeit).' : tamLoadReq ? '.' : ' (startet nach dem nächsten Refresh).') : 'Silent Reload aus.');
       if (cfg.silentOn && cfg.silentSec < 5) log(`Achtung: ${Math.round(3600 / cfg.silentSec)} Anfragen/Stunde an TAM – hohe Serverlast, nur kurzzeitig nutzen.`, 'err');

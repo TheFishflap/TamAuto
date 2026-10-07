@@ -189,11 +189,12 @@ describe('Stille Abfrage (Push-Signal)', { skip }, () => {
     const n = tam.fetches.filter((f) => /gwt-rpc/.test(f.url)).length;
     assert.ok(await until(() => tam.fetches.filter((f) => /gwt-rpc/.test(f.url)).length > n, 8000), 'Silent Reload blieb nach der Zeitüberschreitung stehen');
   });
-  it('Kopfzeile (aufgeklappt) zeigt den Countdown „Silent in …“ und nichts zu Auto-Refresh', async () => {
+  it('Kopfzeile (aufgeklappt): nur der Silent Reload – ohne „TAM in …“, Refresh-Zeit und Art', async () => {
     await ready({ silentOn: true });
     const t = () => tam.document.getElementById('tamauto-sync').textContent;
-    assert.ok(await until(() => /Silent in \d+ s/.test(t()), 3000), t());
-    assert.doesNotMatch(t(), /Auto-Refresh/);
+    assert.ok(await until(() => /^Silent Reload in \d+ s \(alle \d+ s\)$/.test(t()), 3000), t());
+    assert.equal(tam.document.getElementById('tamauto-refresh'), null);
+    assert.doesNotMatch(tam.document.getElementById('tamauto-body').textContent.slice(0, 600), /Auto-Refresh|TAM in |Refresh \d\d:\d\d/);
   });
   it('TAM meldet neuen Auftrag → Tabelle wird aktualisiert', async () => {
     const r0 = await ready();
