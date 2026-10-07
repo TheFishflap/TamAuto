@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.30.0 – 2026-10-07
+- **Aufgeräumt (nicht mehr benutzte Features entfernt):** Auto-Refresh samt Intervall-Einstellung und Taktberechnung (ersetzt durch den Silent Reload); Mitlesen der TAM-Konsole (TAM-Timer, stammte aus 1.x); OneDrive als Update- und Changelog-Quelle (Updates nur noch über GitHub); Button „Jetzt testen“ beim Silent Reload. Rund 145 Zeilen weniger.
+
 ### 1.29.3 – 2026-10-07
 - **Silent Reload als harter Takt:** fragt genau alle x Sekunden ab; der Versatz nach einem Refresh (Rest aus der Auto-Refresh-Zeit, bis zur halben Intervalllänge Pause) entfällt.
 - **Weniger Dauerschleifen:** Die 250-ms-Suche nach neuen Zeilen entfällt (neue Zeilen meldet die Tabellenbeobachtung sofort); die Anzeige der stillen Annahme wird nur noch bei Änderung aktualisiert statt alle 5 s. Das Wegklicken von TAM-Meldungen (wichtig für Android) bleibt unverändert.

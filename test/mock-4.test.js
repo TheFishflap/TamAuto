@@ -63,39 +63,30 @@ describe('Rückgaben (Tages-Blacklist über ntfy)', { skip }, () => {
   });
 });
 
-// Zweiter Update-Kanal: OneDrive, falls GitHub (Repo) nicht erreichbar ist
-describe('Update über GitHub oder OneDrive', { skip }, () => {
+// Update nur über GitHub (OneDrive ist kein Update-Kanal mehr)
+describe('Update über GitHub', { skip }, () => {
   const { revocationList } = require('./harness');
-  const ONEDRIVE = 'IQALfRz3JKDFTajqSq2MROJNAcTdmeeQDOYup07olXdgzlg';
-  const xhr = (gh, od) => (o) => {
+  const xhr = (gh) => (o) => {
     if (o.url.includes('IQBmSNFRkXF5')) return { status: 200, responseText: revocationList() };
     if (o.url.includes('raw.githubusercontent.com') && /\.user\.js/.test(o.url)) return gh ? { status: 200, responseText: `// @version ${gh}` } : { status: 404, responseText: '' };
-    if (o.url.includes(ONEDRIVE)) return od ? { status: 200, responseText: `// @version ${od}` } : { error: true };
     return { error: true };
   };
   const link = () => tam.document.getElementById('tamauto-update');
   const updLog = () => until(() => tam.logs().find((l) => /Update .* verfügbar/.test(l)), 3000);
 
-  it('GitHub weg → Update von OneDrive', async () => {
-    tam = startTam({ gm: { places: KOELN }, xhr: xhr(null, '9.9.9') });
+  it('GitHub hat ein Update → GitHub-Link', async () => {
+    tam = startTam({ gm: { places: KOELN }, xhr: xhr('9.9.9') });
     await tam.ready();
-    assert.match(await updLog() || '', /9\.9\.9.*OneDrive/);
-    assert.ok(link().href.includes(ONEDRIVE), link().href);
-  });
-
-  it('GitHub zuerst: GitHub hat ein Update → GitHub-Link, auch wenn OneDrive eine noch neuere Version hat', async () => {
-    tam = startTam({ gm: { places: KOELN }, xhr: xhr('9.9.9', '9.9.10') });
-    await tam.ready();
-    assert.match(await updLog() || '', /9\.9\.9.*GitHub/);
+    assert.match(await updLog() || '', /Update 9\.9\.9 verfügbar/);
     assert.match(link().href, /^https:\/\/raw\.githubusercontent\.com\/.*\.user\.js$/);
   });
 
-  it('GitHub ohne Update, OneDrive mit Update → kein Update (GitHub ist maßgeblich, OneDrive wäre nur ein Download)', async () => {
-    tam = startTam({ gm: { places: KOELN }, xhr: xhr('1.0.0', '9.9.9') });
+  it('GitHub nicht erreichbar → kein Update, keine OneDrive-Abfrage', async () => {
+    tam = startTam({ gm: { places: KOELN }, xhr: xhr(null) });
     await tam.ready();
     await sleep(1200);
-    assert.ok(!tam.logs().some((l) => /Update 9\.9\.9 verfügbar/.test(l)));
-    assert.ok(tam.logs().some((l) => /liegt im OneDrive, GitHub liefert noch/.test(l)));
+    assert.ok(!tam.logs().some((l) => /Update .* verfügbar/.test(l)));
+    assert.ok(!(tam.xhrs || []).some((x) => /IQALfRz3/.test(x.url || '')));
   });
 
   it('Tampermonkey prüft Updates über GitHub (Kopf @updateURL/@downloadURL)', () => {

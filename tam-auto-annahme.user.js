@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.29.3
+// @version      1.30.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -50,7 +50,6 @@
     blockAddrSheet: 'nicht annehmen Adresse',
     maSheet: 'MA',            // Mitarbeiter: Kürzel | Name | E-Mail | Backoffice (Haken = Backoffice: Absender und Cc der Mails)
     placesReloadMin: 30,          // Excel alle 30 min neu laden (Sperrliste zeitnah aktuell)
-    intervalSec: 60,          // Auto-Refresh-Intervall (Sekunden), Standard 60
     enabled: false,
     maxPerCycle: 3,           // Sicherheitsbremse
     tabName: 'Veröffentlichte Aufträge',
@@ -62,11 +61,9 @@
     confirmButton: /^bestätigen$/i,
   };
   const cfg = Object.assign({}, DEFAULTS, {
-    intervalSec: GM_getValue('intervalSecV2', DEFAULTS.intervalSec),
     // eigener Schlüssel seit Wegfall des Testmodus: wer im Testmodus lief, startet nicht ungefragt live
     enabled: GM_getValue('running', DEFAULTS.enabled),
     maxPerCycle: GM_getValue('maxPerCycle', DEFAULTS.maxPerCycle),
-    autoRefresh: false, // ab 1.21.11 ersetzt der Silent Reload den Auto-Refresh (Oberfläche entfällt, läuft nie mehr)
     // Protokoll im Bedienfeld ("Console Log"), Standard aus. Neuer Schlüssel ab 1.6.1, damit ein früher
     // eingeschaltetes Log nach dem Update bei allen aus ist.
     consoleLog: GM_getValue('consoleLogV2', false),
@@ -84,12 +81,12 @@
     // Dropdown (prioMode) einmalig übernommen
     prioOrder: GM_getValue('prioOrder', ({ ort: ['anzahl', 'summe', 'preis'], summe: ['summe', 'preis', 'keine'],
       preis: ['preis', 'keine', 'keine'], tabelle: ['keine', 'keine', 'keine'] })[GM_getValue('prioMode', 'ort')] || ['anzahl', 'summe', 'preis']),
-    // Silent Reload: an/aus per Checkbox (wie Auto-Refresh), Intervall 1–60 s. Früher hieß 0 s „aus“ → einmalig übernommen
+    // Silent Reload: an/aus per Checkbox, Intervall 1–60 s. Früher hieß 0 s „aus“ → einmalig übernommen
     silentAccept: GM_getValue('silentAccept', false),     // Stille Annahme (Beta): accept-Aufruf direkt an TAM statt über die Auftragskarte – Standard aus
     silentAcceptSixt: GM_getValue('silentAcceptSixt', true), // … nur für Sixt-Aufträge
     silentOn: GM_getValue('silentOn', true),            // Standard an (ersetzt den Auto-Refresh); wer ihn ausgeschaltet hat, behält das
     silentSec: GM_getValue('silentSec', 0) || 30,       // Standard 30 s, sonst der eingestellte Wert
-    // Arbeitszeit: außerhalb pausieren Auto-Refresh und Silent Reload (Einstellungen bleiben erhalten) – fest 08:00–18:00, nicht einstellbar
+    // Arbeitszeit: außerhalb pausiert der Silent Reload (Einstellungen bleiben erhalten) – fest 08:00–18:00, nicht einstellbar
     schedOn: true,
     schedFrom: '08:00',
     schedTo: '18:00',
@@ -1290,12 +1287,9 @@
 
   // ------------------------------------------------------------------ Updates (GitHub)
   const UPDATE_URL = 'https://raw.githubusercontent.com/TheFishflap/TamAuto/main/tam-auto-annahme.user.js';
-  // Ersatz-Update-Kanal, falls GitHub nicht erreichbar ist: Freigabelink „Jeder mit dem Link“ der Datei
-  // Script\\tam-auto-annahme.user.js im OneDrive. Tampermonkey selbst aktualisiert über GitHub (@updateURL/@downloadURL).
-  const UPDATE_BACKUP_URL = 'https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQALfRz3JKDFTajqSq2MROJNAcTdmeeQDOYup07olXdgzlg';
   let updateLink = UPDATE_URL; // Installationslink der Quelle mit der neuesten Version
   // Update-Meldung über ntfy: nach einem Release sendet IB Thomée {v:1,t:'update',ver} → sofort prüfen statt erst nach
-  // bis zu 6 h. Die Meldung löst nur die Prüfung aus – maßgeblich ist die Version bei GitHub/OneDrive.
+  // bis zu 6 h. Die Meldung löst nur die Prüfung aus – maßgeblich ist die Version bei GitHub.
   const UPDATE_TOPIC = 'tamnotify-j72jpwgezh3r58fwhu35dh0safm6';
   function startUpdateNotify() {
     ntfyStream(`https://ntfy.sh/${UPDATE_TOPIC}/sse`, { onMessage: (ev) => {
@@ -1309,10 +1303,8 @@
       } catch (e) { /* ignore */ }
     } });
   }
-  // Changelog (Reiter Info): aus dem README auf GitHub – ist GitHub nicht erreichbar, aus der README-Kopie im
-  // OneDrive (Freigabelink "Jeder mit dem Link", download.aspx wie bei der Ortsliste). Leer = kein Ersatz.
+  // Changelog (Reiter Info): aus dem README auf GitHub
   const CHANGELOG_URL = 'https://raw.githubusercontent.com/TheFishflap/TamAuto/main/README.md';
-  const CHANGELOG_BACKUP_URL = 'https://thomee-my.sharepoint.com/personal/s_thomee_ib-thomee_de/_layouts/15/download.aspx?share=IQCK2PwHwnNhRr4Lx9-HoaRoAaAZTCa8rScTKR9mI84uDzU';
 
   const escHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   // "## Changelog" aus dem README in HTML umwandeln (### Version – Datum, "- " Punkte, **fett**, `Code`)
@@ -1346,14 +1338,9 @@
         onload: (r) => resolve(r.status === 200 ? r.responseText : null), onerror: () => resolve(null), ontimeout: () => resolve(null) });
     });
     (async () => {
-      let html = renderChangelog((await get(CHANGELOG_URL)) || ''), from = 'GitHub';
-      if (!html) { html = renderChangelog((await get(CHANGELOG_BACKUP_URL)) || ''); from = 'OneDrive (GitHub nicht erreichbar)'; }
-      if (html) { box.innerHTML = html; changelogLoaded = true; if (src) src.textContent = `· Quelle: ${from}`; }
-      else {
-        box.textContent = CHANGELOG_BACKUP_URL ? 'Changelog nicht erreichbar (GitHub und OneDrive) – später erneut versuchen.'
-          : 'Changelog nicht erreichbar (GitHub) – später erneut versuchen.';
-        if (src) src.textContent = '';
-      }
+      const html = renderChangelog((await get(CHANGELOG_URL)) || '');
+      if (html) { box.innerHTML = html; changelogLoaded = true; if (src) src.textContent = '· Quelle: GitHub'; }
+      else { box.textContent = 'Changelog nicht erreichbar (GitHub) – später erneut versuchen.'; if (src) src.textContent = ''; }
     })();
   }
   const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '0';
@@ -1425,37 +1412,24 @@
       onerror: () => resolve({ err: 'keine Verbindung' }), ontimeout: () => resolve({ err: 'Zeitüberschreitung' }),
     }));
   }
-  // GitHub und OneDrive parallel prüfen. GitHub zuerst: hat GitHub ein Update, wird es von dort installiert (Tampermonkey
-  // erkennt den Link sicher). OneDrive nur als Ersatz – GitHub nicht erreichbar oder ohne Update.
+  // Update nur über GitHub: Tampermonkey erkennt den .user.js-Link und öffnet seine Installationsseite
   async function checkUpdate(manual = false) {
     GM_setValue('lastUpdateCheck', Date.now());
     if (manual) updateButtonFeedback('Prüfe …');
-    const srcs = [['GitHub', UPDATE_URL], ['OneDrive', UPDATE_BACKUP_URL]].filter(([, u]) => u);
-    const res = await Promise.all(srcs.map(async ([name, url]) => Object.assign({ name, url }, await fetchVersion(url))));
-    const ok = res.filter((r) => r.v);
-    if (!ok.length) {
-      log(`Update-Prüfung: keine Quelle erreichbar (${res.map((r) => `${r.name}: ${r.err}`).join(', ')}) – aktueller Stand: v${VERSION}.`, manual ? 'err' : 'debug');
-      if (manual) updateButtonFeedback(`✗ GitHub und OneDrive nicht erreichbar – aktueller Stand: v${VERSION}`, '#c62828');
+    const gh = await fetchVersion(UPDATE_URL);
+    if (!gh.v) {
+      log(`Update-Prüfung: GitHub nicht erreichbar (${gh.err}) – aktueller Stand: v${VERSION}.`, manual ? 'err' : 'debug');
+      if (manual) updateButtonFeedback(`✗ GitHub nicht erreichbar – aktueller Stand: v${VERSION}`, '#c62828');
       return;
     }
-    // Installieren geht nur über GitHub (Tampermonkey erkennt den .user.js-Link und öffnet seine Installationsseite). Der OneDrive-Link wäre ein
-    // reiner Download der Datei – er wird nur angeboten, wenn GitHub nicht erreichbar ist. Hat GitHub die neue Version (Zwischenspeicher) noch nicht, wird gewartet.
-    const gh = res.find((r) => r.name === 'GitHub'), od = res.find((r) => r.name === 'OneDrive');
-    const best = gh && gh.v ? gh : (od && od.v ? od : null);
-    if (!gh || !gh.v) { /* GitHub nicht erreichbar → OneDrive als Ersatz */ }
-    else if (od && od.v && newerVersion(od.v, gh.v) && newerVersion(od.v, VERSION) && !newerVersion(gh.v, VERSION)) {
-      log(`Update ${od.v} liegt im OneDrive, GitHub liefert noch ${gh.v} – Installation erst, wenn GitHub die neue Version ausliefert (nächste Prüfung folgt).`, 'debug');
-      if (manual) updateButtonFeedback(`GitHub liefert noch v${gh.v} – später erneut prüfen`, '#b26a00');
-      return;
-    }
-    if (best && newerVersion(best.v, VERSION)) {
-      updateLink = best.name === 'OneDrive' ? `${best.url}&tm=tam-auto-annahme.user.js` : best.url;
-      log(`Update ${best.v} verfügbar (installiert: ${VERSION}, Quelle: ${best.name}${best.name === 'OneDrive' ? ' – nur Download, GitHub nicht erreichbar' : ''}).`, 'ok');
+    if (newerVersion(gh.v, VERSION)) {
+      updateLink = UPDATE_URL;
+      log(`Update ${gh.v} verfügbar (installiert: ${VERSION}).`, 'ok');
       const upd = document.getElementById('tamauto-update');
-      if (upd) { upd.href = updateLink; upd.textContent = `⬆ Update ${best.v} verfügbar – installieren`; upd.style.display = 'block'; }
-      markUpdateButton(best.v);
+      if (upd) { upd.href = updateLink; upd.textContent = `⬆ Update ${gh.v} verfügbar – installieren`; upd.style.display = 'block'; }
+      markUpdateButton(gh.v);
     } else if (manual) {
-      log(`Kein Update – ${VERSION} ist aktuell (geprüft: ${ok.map((r) => r.name).join(', ')}).`, 'ok');
+      log(`Kein Update – ${VERSION} ist aktuell.`, 'ok');
       updateButtonFeedback(`✓ Alles auf dem neuesten Stand (v${VERSION})`, '#2e7d32');
     }
   }
@@ -1609,46 +1583,7 @@
   let manualClickAt = 0;    // Zeitpunkt des letzten echten Klicks auf den Refresh-Pfeil
   let refreshNoteTimer = null;
 
-  // ---- TAM-Takt (Ist-Werte statt Schätzung)
-  // 1) Mitlesen: TAM schreibt nach jedem Laden "scheduling autorefreshing timer in X seconds" in die Konsole →
-  //    daraus ergibt sich der nächste TAM-Refresh auf die Sekunde.
-  // 2) Rückfall: Einstellung aus der Blätterleiste ("☑ Automatisch alle [2] Minuten aktualisieren");
-  //    TAM startet seinen Timer nach jedem Laden neu → nächster TAM-Refresh = letzter Refresh + Intervall.
   let lastAnyRefreshAt = 0;   // letzter Refresh gleich welcher Quelle (Script, TAM, manuell)
-  let lastTamRefreshAt = 0;   // letzte TAM-Aktualisierung
-  let tamNextAt = 0;          // nächster TAM-Refresh laut TAM-Meldung (0 = unbekannt)
-  let tamNextSeenAt = 0;      // wann die Meldung kam
-  function noteTamRefresh(now) { lastTamRefreshAt = now; }
-
-  // TAM-Konsolenmeldungen mitlesen (Seite und gleiche-Herkunft-iframes, da GWT oft in einem iframe läuft)
-  const TAM_TIMER_RE = /autorefresh\w*\s+timer\s+in\s+([\d.,]+)\s*s/i;
-  function hookConsole(win) {
-    try {
-      const c = win && win.console;
-      if (!c || c.__tamautoHooked) return;
-      ['log', 'info', 'debug', 'warn'].forEach((m) => {
-        const orig = c[m];
-        if (typeof orig !== 'function') return;
-        c[m] = function (...args) {
-          try {
-            const mt = args.map(String).join(' ').match(TAM_TIMER_RE);
-            if (mt) {
-              const sec = parseFloat(mt[1].replace(',', '.'));
-              if (sec >= 0 && sec < 3600) { tamNextSeenAt = Date.now(); tamNextAt = tamNextSeenAt + sec * 1000; }
-              return undefined; // nur mitlesen – TAM-Meldung nicht mehr in der Browser-Konsole ausgeben
-            }
-          } catch (e) { /* ignore */ }
-          return orig.apply(this, args);
-        };
-      });
-      c.__tamautoHooked = true;
-    } catch (e) { /* fremde Herkunft – nicht lesbar */ }
-  }
-  function hookAllConsoles() {
-    hookConsole(typeof unsafeWindow !== 'undefined' ? unsafeWindow : window);
-    document.querySelectorAll('iframe').forEach((f) => { try { hookConsole(f.contentWindow); } catch (e) { /* ignore */ } });
-    hookAllXhr();
-  }
 
   // ---- Silent Reload: TAMs eigene Tabellen-Anfrage (GWT-RPC "loadTeilauftraege" an /gwt-rpc/auftrag) beim
   // Aktualisieren im Reiter "Veröffentlichte Aufträge" mitschneiden. Das Script kann sie dann im Hintergrund
@@ -1688,28 +1623,7 @@
     hookXhr(typeof unsafeWindow !== 'undefined' ? unsafeWindow : window);
     document.querySelectorAll('iframe').forEach((f) => { try { hookXhr(f.contentWindow); } catch (e) { /* ignore */ } });
   }
-  hookAllConsoles();
-
-  // Einstellung aus der Blätterleiste: Checkbox + Minutenfeld direkt dahinter (IDs sind dynamisch → über Position)
-  function tamSetting() {
-    const tb = [...document.querySelectorAll('.x-toolbar')].filter(visible).find((t) => /minuten aktualisieren/i.test(text(t)));
-    if (!tb) return null;
-    const inputs = [...tb.querySelectorAll('input')];
-    const cb = inputs.find((i) => i.type === 'checkbox');
-    if (!cb) return null;
-    const min = inputs.slice(inputs.indexOf(cb) + 1).find((i) => i.type === 'text' && /^\d+([.,]\d+)?$/.test(i.value.trim()));
-    const minutes = min ? parseFloat(min.value.replace(',', '.')) : 1;
-    return { enabled: cb.checked, periodMs: Math.max(0.1, minutes) * 60000 };
-  }
-
-  // Nächster TAM-Refresh: Meldung (Ist-Wert) hat Vorrang, sonst letzter Refresh + eingestelltes Intervall
-  function tamNext() {
-    const s = tamSetting();
-    if (s && !s.enabled) return { at: 0, enabled: false, periodMs: s.periodMs, src: 'aus' };
-    if (tamNextAt && tamNextSeenAt >= lastAnyRefreshAt - 3000) return { at: tamNextAt, enabled: true, periodMs: s ? s.periodMs : 0, src: 'laut TAM' };
-    const periodMs = s ? s.periodMs : 60000;
-    return { at: lastAnyRefreshAt ? lastAnyRefreshAt + periodMs : 0, enabled: true, periodMs, src: 'berechnet' };
-  }
+  hookAllXhr();
 
   function noteExternalRefresh() {
     const src = Date.now() - manualClickAt < 15000 ? 'manuell' : 'TAM';
@@ -1717,7 +1631,6 @@
     refreshNoteTimer = setTimeout(() => {
       const now = Date.now();
       lastAnyRefreshAt = now;
-      if (src === 'TAM') noteTamRefresh(now);
       if (!cfg.enabled) log(`Refresh (${src}) – Tabelle neu geladen; Script gestoppt, kein Abgleich.`);
     }, 500);
     return src;
@@ -2452,7 +2365,7 @@
   // ---- Takt: läuft jede Sekunde, entscheidet aber anhand der TAM-Zeitbasis, ob ein eigener Refresh nötig ist
   let lastHousekeepAt = 0, lastBookRenderAt = 0;
   let lastCycleAt = 0;
-  // Arbeitszeit-Fenster (z. B. 08:00–18:00): nur darin laufen Auto-Refresh und Silent Reload
+  // Arbeitszeit-Fenster (z. B. 08:00–18:00): nur darin läuft der Silent Reload
   const hm = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '')); return m ? +m[1] * 60 + +m[2] : null; };
   function inSchedule(d = new Date()) {
     if (!cfg.schedOn) return true;
@@ -2471,22 +2384,6 @@
     }
     lastSchedState = s;
   }
-  const arActive = () => cfg.autoRefresh && cfg.intervalSec <= 60 && inSchedule();
-
-  // Muss das Script jetzt selbst refreshen? Nein, wenn seit dem letzten Refresh (egal welcher Quelle) noch
-  // kein Intervall vergangen ist oder die nächste TAM-Aktualisierung unmittelbar bevorsteht.
-  function ownRefreshDue(now) {
-    const iv = cfg.intervalSec * 1000;
-    if (now - lastAnyRefreshAt < iv - 700) return false; // Toleranz für den Sekundentakt
-    const t = tamNext();
-    if (t.enabled && t.at) {
-      const untilTam = t.at - now;                               // < 0 = TAM ist überfällig
-      const margin = Math.min(5000, iv / 3);
-      if (untilTam > -10000 && untilTam < margin) return false;  // TAM lädt gleich selbst (bis 10 s Verspätung abwarten)
-    }
-    return true;
-  }
-
   const fmtDur = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} min` : `${s} s`; };
   // Kompakter Überblick im minimierten Zustand: Status groß, nächster Refresh, letzter Auftrag, Trefferquote heute
   function renderMini(now) {
@@ -2521,7 +2418,7 @@
     el.textContent = txt;
   }
 
-  // Einmal refreshen (Refresh-Pfeil) und danach abgleichen – gemeinsam genutzt von Auto-Refresh,
+  // Einmal refreshen (Refresh-Pfeil) und danach abgleichen – gemeinsam genutzt von
   // Tabwechsel, Silent Reload und Push-Signal
   async function refreshAndCheck(reason) {
     if (busy || !onPublishedTab()) return false;
@@ -2601,32 +2498,6 @@
     (arr.length > 8 ? ' | …' : '');
   const silentStateText = (q) => `aktiv · letzte Abfrage ${new Date().toLocaleTimeString('de-DE')} (${q.ms} ms)` +
     (silentFoundCount ? ` · ${silentFoundCount} Auftr. silent gefunden` : '');
-  // Button "Jetzt testen": eine Abfrage sofort, Ergebnis ins Log – unabhängig vom eingestellten Intervall
-  async function silentTest() {
-    if (!tamLoadReq) { log('Silent-Test: Noch keine TAM-Anfrage übernommen – bitte einmal im Reiter „Veröffentlichte Aufträge“ aktualisieren (Refresh-Pfeil) und erneut testen.', 'err'); return; }
-    if (silentFetching) { log('Silent-Test: Abfrage läuft gerade – gleich erneut versuchen.', 'err'); return; }
-    silentFetching = true;
-    try {
-      const q = await silentQuery();
-      const grid = visibleGrid();
-      const inGrid = gridNrs(grid), cells = gridTexts(grid);
-      // ohne Einträge, die schon als "kein neuer Auftrag" bekannt sind (z. B. Ansprechpartner, nie in der Tabelle)
-      const fresh = [...q.tokens].filter((x) => !cells.has(x) && !silentIgnore.has(x));
-      log(`Silent-Test OK: Antwort in ${q.ms} ms (${q.bytes} Zeichen) · ${q.tokens.size ? `TAM meldet Daten (${q.tokens.size} Einträge)` : 'TAM meldet keine Aufträge'}` +
-        ` · in der Tabelle: ${inGrid.size} Auftr.` +
-        ` · nur bei TAM (noch nicht in der Tabelle): ${fresh.length ? silentLabel(fresh) : 'nichts – Tabelle ist aktuell'}` +
-        silentPlzInfo(q.tokens), 'ok');
-      silentState = silentStateText(q);
-      // neue Daten gefunden → wie beim Silent Reload sofort die Tabelle holen und abgleichen
-      if (fresh.length && cfg.enabled && onPublishedTab()) {
-        silentFetching = false;
-        log('Silent-Test: neue Daten → Tabelle jetzt aktualisieren und abgleichen.', 'ok');
-        await refreshAndCheck('Silent-Test');
-      }
-    } catch (e) {
-      log(`Silent-Test fehlgeschlagen: ${e.message}`, 'err'); silentState = `Fehler: ${e.message}`;
-    } finally { silentFetching = false; renderSilent(); }
-  }
   async function silentPoll() {
     const now = Date.now();
     if (!cfg.silentOn || !cfg.enabled || !license || busy || silentFetching || !onPublishedTab()) return;
@@ -2882,7 +2753,7 @@
       renderStatus();    // abgelaufene Zusatzliste ausblenden
       if (!busy && cfg.enabled) dismissMessages();
       dismissTamErrors(); // technische TAM-Fehlerfenster (z. B. TypeError auf Android) schließen // liegengebliebene TAM-Meldungen (z. B. "bereits vergeben") wegklicken
-      hookAllConsoles(); // später geladene TAM-iframes ebenfalls mitlesen
+      hookAllXhr(); // später geladene TAM-iframes ebenfalls mitschneiden
       scanAccepted();    // Auftragsbuch mit „Angenommene Aufträge“ abgleichen (nur wenn sichtbar und geändert)
       smartReload(now); // neue Version bereit → in ruhiger Phase neu laden
       const bookPage = document.getElementById('tamauto-page-book');
@@ -2890,18 +2761,15 @@
     }
     renderSync(now);
     if (busy || !onPublishedTab()) return;
-    if (arActive()) {
-      if (!ownRefreshDue(now)) return;
-      await refreshAndCheck('Refresh');
-    } else if (cfg.enabled && now - lastCycleAt > 60000) {
-      // Ohne Auto-Refresh gleicht die TAM-Aktualisierung ab; das hier ist nur ein Sicherheitsnetz
+    if (cfg.enabled && now - lastCycleAt > 60000) {
+      // Abgleich läuft über Silent Reload und TAM-Aktualisierung; das hier ist nur ein Sicherheitsnetz
       await cycle('Intervall');
     }
   }
 
   function restartTimer() {
     clearInterval(timer);
-    timer = setInterval(tick, 1000); // Sekundentakt; ob refresht wird, entscheidet ownRefreshDue()
+    timer = setInterval(tick, 1000); // Sekundentakt: Anzeige, Aufräumen, Sicherheitsnetz
   }
 
   // ------------------------------------------------------------------ Bedienfeld
@@ -3122,7 +2990,6 @@
             <span class="tamauto-chk">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-silent-on"> <b>Silent Reload</b></label>
               alle <input id="tamauto-silent" type="number" min="1" max="60" step="1" style="width:44px;margin:0"> s
-              <button id="tamauto-silent-test" title="Eine Hintergrund-Abfrage sofort ausführen und das Ergebnis ins Log schreiben (funktioniert auch, wenn Silent Reload aus ist)">Jetzt testen</button>
               <span class="tamauto-help" title="SILENT RELOAD – was es macht:
 Fragt den TAM-Server alle x Sekunden im Hintergrund nach veröffentlichten Aufträgen – mit genau der Anfrage, die TAM selbst beim Klick auf den Aktualisieren-Pfeil sendet (wird beim ersten Refresh im Reiter „Veröffentlichte Aufträge“ übernommen). Die Tabelle wird dabei NICHT neu gezeichnet. Nur wenn die Antwort einen neuen Auftrag enthält, aktualisiert das Script die Tabelle einmal und nimmt passende Aufträge an. „Jetzt testen“ zeigt im Log, was TAM gerade meldet.
 
@@ -3272,7 +3139,7 @@ Wichtig: Die Farben ändern nur die Anzeige der TAM-Oberfläche lokal in diesem 
           </table>
           <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd">
             <b>Changelog</b> <span id="tamauto-cl-src" style="color:#555;font-size:11px"></span>
-            <button id="tamauto-cl-reload" style="margin-left:4px" title="Changelog erneut laden (GitHub, sonst OneDrive)">Neu laden</button>
+            <button id="tamauto-cl-reload" style="margin-left:4px" title="Changelog erneut von GitHub laden">Neu laden</button>
             <div id="tamauto-changelog" style="max-height:240px;overflow:auto;font-size:11px;line-height:1.35;margin-top:2px;padding-right:4px"></div>
           </div>
           <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd">
@@ -3358,11 +3225,6 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
           </div>
         </div>
         <div id="tamauto-page-main" style="margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          <span style="display:none">
-            <label class="tamauto-chk"><input type="checkbox" id="tamauto-ar"> Auto-Refresh</label>
-            alle <input id="tamauto-int" type="number" min="10" style="width:48px;margin:0" value="${cfg.intervalSec}"> s
-            <span class="tamauto-help" title="Auto-Refresh lädt die Tabelle schneller neu, um neue Aufträge früher zu finden. Ein niedrigerer Wert bedeutet eine höhere Auslastung und sollte mit Bedacht gewählt werden, um Auffälligkeiten zu vermeiden. Standard: 60 s (aus), Minimum: 10 s. Am TAM-Takt ausgerichtet: Das Script liest mit, wann TAM selbst neu lädt (Einstellung „Automatisch alle … Minuten“), und lässt den eigenen Refresh aus, wenn TAM gleich ohnehin aktualisiert. Über 60 s schaltet sich der Auto-Refresh ab – der Abgleich läuft dann nur mit der TAM-eigenen Aktualisierung.">?</span>
-          </span>
           <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">
             <div><b>Ortsliste aus Excel <span id="tamauto-ol-count"></span></b>
               <span class="tamauto-help" title="PLZ/Orte aus dem Excel-Blatt „annehmen“. Aufträge mit diesen PLZ (bzw. Orten) werden angenommen – „44***“ = alle PLZ, die mit 44 beginnen. Ändern nur im Excel, danach „Neu laden“.">?</span>
@@ -3422,25 +3284,6 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
       log(cfg.enabled ? 'Gestartet' : 'Gestoppt'); renderStatus();
       if (cfg.enabled) cycle('Start');
     };
-    // Auto-Refresh: über 60 s aus (TAM aktualisiert selbst jede Minute → Abgleich synchron damit)
-    const renderAr = () => {
-      const over = cfg.intervalSec > 60;
-      $('tamauto-ar').checked = cfg.autoRefresh && !over;
-      $('tamauto-ar').disabled = over;
-      $('tamauto-int').value = cfg.intervalSec;
-    };
-    $('tamauto-ar').onchange = (e) => {
-      cfg.autoRefresh = e.target.checked; GM_setValue('autoRefreshV2', cfg.autoRefresh); lastRefreshOk = null;
-    };
-    $('tamauto-int').onchange = (e) => {
-      cfg.intervalSec = Math.max(10, parseInt(e.target.value, 10) || 60); GM_setValue('intervalSecV2', cfg.intervalSec);
-      if (cfg.intervalSec > 60 && cfg.autoRefresh) {
-        cfg.autoRefresh = false; GM_setValue('autoRefreshV2', false);
-        log('Intervall über 60 s: Auto-Refresh aus – Abgleich läuft synchron mit der TAM-Aktualisierung.', 'ok');
-      }
-      renderAr(); restartTimer();
-    };
-    renderAr();
     // Ohne gefundenes Update: nach Updates suchen. Mit Update: als Link die Installation öffnen.
     $('tamauto-upd').onclick = () => {
       if (pendingUpdate) { GM_setValue('updateClickedAt', Date.now()); GM_setValue('smartReload', null); window.open(updateLink, '_blank'); log(`Update ${pendingUpdate}: Installation geöffnet – nach der Installation lädt sich die Seite in einer ruhigen Phase neu.`); return; }
@@ -3591,7 +3434,6 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
       cfg.silentSec = Math.round(Math.min(60, Math.max(1, +e.target.value || 30)));
       e.target.value = cfg.silentSec; GM_setValue('silentSec', cfg.silentSec); silentChanged();
     };
-    $('tamauto-silent-test').onclick = () => silentTest();
 
     $('tamauto-pl-clear').onclick = () => { pushLog = []; savePushLog(); renderPushPage(); };
 
@@ -3639,7 +3481,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
       const b = $('tamauto-copylog');
       // nur die letzten 80 Zeilen (älteste zuerst) – reicht für eine Fehlermeldung; mehr lieber gezielt markieren
       const lines = logHistory.slice(-COPY_LINES);
-      const settings = `Einstellungen: Auto-Refresh ${cfg.autoRefresh ? `alle ${cfg.intervalSec} s` : 'aus'} · Silent Reload ` +
+      const settings = 'Einstellungen: Silent Reload ' +
         `${cfg.silentOn ? `alle ${cfg.silentSec} s` : 'aus'} · Verzögerung ` +
         `${cfg.delayOn ? `${cfg.delaySec} s${cfg.delayRandom ? ` + bis ${cfg.delayRandomMs} ms` : ''}` : 'aus'} · Ortsliste ` +
         `${places.plz.length} PLZ / ${places.orte.length} Orte · Sperrliste ${(places.block || { plz: [] }).plz.length} PLZ` +
@@ -3863,7 +3705,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     renderStatus();
   }
 
-  // Sofort prüfen, sobald sich die Tabelle ändert (Auto-Refresh, TAM-Autoaktualisierung, manueller Refresh, Tabwechsel)
+  // Sofort prüfen, sobald sich die Tabelle ändert (Silent Reload, TAM-Autoaktualisierung, manueller Refresh, Tabwechsel)
   let obsTimer = null;
   function scheduleCheck(reason = 'Nachprüfung') {
     clearTimeout(obsTimer);
