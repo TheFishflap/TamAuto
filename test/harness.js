@@ -119,7 +119,8 @@ function startTam(opts = {}) {
     if (/saveMerkmal/.test(rpcBody)) tam.saves.push(rpcBody);
     const body = !/\/gwt-rpc\//.test(url) ? '' : /saveMerkmal/.test(rpcBody) ? tam.rpcSave
       : /\/gwt-rpc\/workflow\/agent/.test(url) && /\|accept\|/.test(rpcBody) ? tam.acceptRpc(rpcBody, url) : tam.rpc;
-    return { ok: true, status: 200, text: async () => body, json: async () => ({}) };
+    const st = tam.ntfyStatus && /ntfy/.test(url) && o && o.method === 'POST' ? tam.ntfyStatus(url, o) : 200; // Test: ntfy-Antwort (z. B. 429)
+    return { ok: st < 300, status: st, headers: { get: () => null }, text: async () => body, json: async () => ({}) };
   };
   // kein Netz im Test (das Script schneidet TAMs Anfrage beim Senden mit); die Anfragen werden für die Tests mitgeschrieben (tam.xhrs)
   const xp = w.XMLHttpRequest.prototype;
@@ -271,8 +272,8 @@ function startTam(opts = {}) {
   };
   tam.onPublished = () => d.querySelector('li[id$="__AgentVeroeffentlichteAuftraege"]').classList.contains('x-tab-strip-active');
   // ntfy-Nachricht an alle Live-Verbindungen eines Kanals zustellen (wie ntfy per SSE)
-  tam.ntfy = (topicPart, obj) => sources.filter((x) => x.url.includes(topicPart) && x.readyState !== 2 && x.onmessage)
-    .forEach((x) => x.onmessage({ data: JSON.stringify({ event: 'message', message: JSON.stringify(obj) }) }));
+  tam.ntfy = (topicPart, obj, id) => sources.filter((x) => x.url.includes(topicPart) && x.readyState !== 2 && x.onmessage)
+    .forEach((x) => x.onmessage({ data: JSON.stringify(Object.assign({ event: 'message', message: JSON.stringify(obj) }, id ? { id } : {})) }));
   // Ereignis einer Live-Verbindung auslösen: 'open', 'keepalive' oder 'error' (closed: Verbindung endgültig zu)
   tam.esEmit = (topicPart, type, closed) => sources.filter((x) => x.url.includes(topicPart) && x.readyState !== 2).forEach((x) => {
     if (type === 'open') x.readyState = 1;

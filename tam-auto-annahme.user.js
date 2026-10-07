@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.30.0
+// @version      1.30.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -968,14 +968,21 @@
   }
   const ACC_CHUNK = 8; // ntfy erlaubt höchstens 4 KB je Nachricht
   // Senden mit Statusprüfung (ntfy antwortet bei Überlast mit 429/5xx, zu große Nachrichten mit 413) und bis zu 3 Versuchen; Fehler stehen im Log
-  async function ntfySend(topic, obj) {
+  // ntfy.sh erlaubt je IP-Adresse (Geräte im selben Büro teilen sie!) 250 Nachrichten am Tag und 60 Anfragen auf einmal (dann 1 je 5 s).
+  // Abgleich-Nachrichten (hi/bk) sind „optional“: ohne Zwischenspeicher bei ntfy (cache=no – sie werden beim Nachholen nicht erneut
+  // geladen) und bei HTTP 429 sofort 15 Minuten Pause statt Wiederholungen. Annahmen und Rückgaben werden weiter wiederholt.
+  let ntfyPauseUntil = 0;
+  async function ntfySend(topic, obj, optional = false) {
+    if (optional && Date.now() < ntfyPauseUntil) return false;
     let st = 'keine Antwort';
     for (let i = 0; i < 5; i++) { // Pausen: Retry-After von ntfy, sonst 4, 8, 16, 30 s
       let wait = Math.min(30, 4 * 2 ** i) * 1000;
       try {
-        const r = await licFetch(`${LIC_NTFY}/${topic}`, { method: 'POST', body: JSON.stringify(obj) });
+        const r = await licFetch(`${LIC_NTFY}/${topic}${optional ? '?cache=no' : ''}`, { method: 'POST', body: JSON.stringify(obj) });
         if (r && r.ok) { if (i) log(`Meldung an die anderen Geräte gesendet (Versuch ${i + 1}).`, 'debug'); return true; }
-        st = `HTTP ${r && r.status}`; if (r && r.status && r.status < 429 && r.status !== 408) break;
+        st = `HTTP ${r && r.status}`;
+        if (r && r.status === 429 && optional) { ntfyPauseUntil = Date.now() + 15 * 60e3; log('Auftragsbuch-Abgleich: ntfy-Limit erreicht (HTTP 429) – 15 Minuten Pause, Annahmen und Rückgaben werden weiter gemeldet.', 'err'); return false; }
+        if (r && r.status && r.status < 429 && r.status !== 408) break;
         const ra = Number(r && r.headers && r.headers.get && r.headers.get('Retry-After')); if (ra > 0 && ra <= 60) wait = Math.max(wait, ra * 1000);
       } catch (e) { st = e.message || 'Netzfehler'; }
       if (i < 4) await sleep(wait);
@@ -1044,15 +1051,17 @@
   // Meldungen vorhält. Nur auf dem geheimen Kanal (dort stehen Auftragsdaten); empfangene Angaben werden geprüft und gekürzt.
   const RUN_ID = Math.random().toString(36).slice(2, 10), BK_CHUNK = 10, BK_DAYS = 7, BK_MAX = 1000, HI_CHUNK = 250;
   let lastBkAt = 0;
-  function retPostSecure(msg) { return retChanP.then(async (ch) => (ch ? ntfySend(ch.topic, await sealMsg(ch, msg)) : false)).catch(() => false); }
+  function retPostSecure(msg) { return retChanP.then(async (ch) => (ch ? ntfySend(ch.topic, await sealMsg(ch, msg), msg.t === 'hi' || msg.t === 'bk') : false)).catch(() => false); }
   // Kurz-Hash einer Auftragsnummer (FNV-1a, 6 Zeichen): „hi“ nennt damit, was ein Gerät schon kennt – die anderen senden nur das Fehlende
   const nrHash = (nr) => { let h = 2166136261; for (const c of nrKey(nr)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36).padStart(6, '0'); };
   const bkSeen = new Set(); // Nummern, die andere Geräte seit der letzten Anfrage schon gesendet haben (nicht doppelt senden)
-  async function sendHi(man = false) {
+  async function sendHi(man = false, minAbstandMs = 10 * 60e3) {
+    if (!man && Date.now() - GM_getValue('lastHiAt', 0) < minAbstandMs) return false; // automatische Anfragen sparsam (Tageslimit bei ntfy)
     const von = Date.now() - BK_DAYS * 864e5, k = [...new Set(GM_getValue('orderbook', []).filter((e) => e.nr && new Date(e.ts).getTime() >= von).map((e) => nrHash(e.nr)))];
     const id = Math.random().toString(36).slice(2, 8), n = Math.max(1, Math.ceil(k.length / HI_CHUNK));
     let ok = false;
     for (let i = 0; i < n; i++) { ok = await retPostSecure(Object.assign({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID, id, p: i, n, k: k.slice(i * HI_CHUNK, (i + 1) * HI_CHUNK) }, man ? { man: 1 } : {})); if (!ok) break; if (i < n - 1) await sleep(600); }
+    if (ok) GM_setValue('lastHiAt', Date.now());
     if (ok) log(`Auftragsbuch-Abgleich angefordert: ${k.length} bekannte Aufträge gemeldet (${n} Nachricht${n > 1 ? 'en' : ''}).`, 'debug');
     return ok;
   }
@@ -1124,19 +1133,29 @@
   }
   // Kanal hören: Verpasstes nachholen (doppelte Meldungen schaden nicht), dann live
   function listenRet(topic, handle) {
+    // Jede ntfy-Meldung nur einmal verarbeiten (Kennung); Nachholen ab der zuletzt gesehenen Meldung statt immer 48 h (spart Datenvolumen:
+    // ntfy.sh zählt nachgeladene Meldungen zum Tageslimit von 200 MB je IP)
+    const seen = new Set();
+    let lastId = '';
+    const take = (raw, replay) => {
+      let id = '';
+      try { id = JSON.parse(raw).id || ''; } catch (e) { return; }
+      if (id) { if (seen.has(id)) return; seen.add(id); lastId = id; if (seen.size > 3000) seen.delete(seen.values().next().value); }
+      handle(raw, replay);
+    };
     const catchUp = () => {
-      const since = Math.floor((Date.now() - RET_KEEP_MS) / 1000); // Rückgaben 48 h; Annahmen filtert onRetMessage auf heute
+      const since = lastId || Math.floor((Date.now() - RET_KEEP_MS) / 1000); // erstes Mal: Rückgaben 48 h; Annahmen filtert onRetMessage auf heute
       licFetch(`${LIC_NTFY}/${topic}/json?poll=1&since=${since}`).then((r) => r.text())
-        .then((t) => t.split('\n').filter(Boolean).forEach((x) => handle(x, true))).catch(() => {});
+        .then((t) => t.split('\n').filter(Boolean).forEach((x) => take(x, true))).catch(() => {});
     };
     catchUp();
     setInterval(catchUp, 3 * 60e3); // alle 3 Minuten: ein im Hintergrund eingeschlafener Datenstrom (Android) verpasst sonst Annahmen anderer Geräte
     let hiddenAt = 0;
     document.addEventListener('visibilitychange', () => { // Android: Tab war im Hintergrund → sofort nachholen und Auftragsbuch bei den anderen Geräten anfordern
       if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
-      if (hiddenAt && Date.now() - hiddenAt > 60e3 && topic === retSecretTopic) { hiddenAt = 0; catchUp(); setTimeout(() => sendHi(true).catch(() => {}), 2000); }
+      if (hiddenAt && Date.now() - hiddenAt > 60e3 && topic === retSecretTopic) { hiddenAt = 0; catchUp(); setTimeout(() => sendHi(false, 30 * 60e3).catch(() => {}), 2000); } // höchstens alle 30 min
     });
-    return ntfyStream(`${LIC_NTFY}/${topic}/sse`, { onMessage: (ev) => handle(ev.data), onReconnect: catchUp });
+    return ntfyStream(`${LIC_NTFY}/${topic}/sse`, { onMessage: (ev) => take(ev.data, false), onReconnect: catchUp });
   }
   const ntfyBody = (raw) => { try { const m = JSON.parse(raw); return m.event === 'message' ? JSON.parse(m.message) : null; } catch (e) { return null; } };
   // Öffentlicher Kanal: ohne Kanal-Schlüssel wie bisher; mit Kanal-Schlüssel nur noch mitlesen (Übergang:

@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.30.1 – 2026-10-07
+- **ntfy-Limit (HTTP 429) behoben:** ntfy.sh erlaubt je IP-Adresse 250 Nachrichten am Tag und 200 MB Datenvolumen – Geräte im selben Netz teilen sich das. Das Nachholen alle 3 Minuten lud bisher jedes Mal alle Meldungen der letzten 48 h neu (im Log z. B. „9187 Einträge empfangen“). Jetzt: Nachholen nur ab der zuletzt gesehenen Meldung, jede Meldung wird nur einmal verarbeitet; Abgleich-Nachrichten (hi/bk) werden bei ntfy nicht zwischengespeichert; automatische Abgleich-Anfragen höchstens alle 10 min (Start) bzw. 30 min (Tab wieder sichtbar); bei HTTP 429 pausiert der Abgleich 15 Minuten – Annahmen und Rückgaben werden weiter gemeldet.
+
 ### 1.30.0 – 2026-10-07
 - **Aufgeräumt (nicht mehr benutzte Features entfernt):** Auto-Refresh samt Intervall-Einstellung und Taktberechnung (ersetzt durch den Silent Reload); Mitlesen der TAM-Konsole (TAM-Timer, stammte aus 1.x); OneDrive als Update- und Changelog-Quelle (Updates nur noch über GitHub); Button „Jetzt testen“ beim Silent Reload. Rund 145 Zeilen weniger.
 

@@ -185,6 +185,28 @@ describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
     assert.deepEqual(items.map((x) => x.n).sort(), [nr(5), nr(7)]);
   });
 
+  it('ntfy-Limit: hi/bk ohne Zwischenspeicher (cache=no), bei HTTP 429 sofort 15 min Pause; dieselbe ntfy-Meldung wird nur einmal verarbeitet', async () => {
+    const { ck, ret } = await withChannelKey();
+    const t = Date.now();
+    const untilA = async (fn, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(50); } return null; };
+    const postUrls = () => tam.fetches.filter((f) => f.url.includes(ret) && f.o && f.o.method === 'POST').map((f) => f.url);
+    assert.ok(await untilA(async () => postUrls().length, 9000), 'kein „hi“ nach dem Start');
+    assert.ok(postUrls().every((u) => /\?cache=no$/.test(u)), postUrls().join(' '));
+    // Doppelte Zustellung derselben Meldung (Live + Nachholen): nur einmal eingetragen
+    const acc = await K.encryptMsg(ck, { v: 1, t: 'acc', nrs: ['MW3199001'], by: 'Handy', at: t });
+    tam.ntfy(ret, acc, 'msg-1'); tam.ntfy(ret, acc, 'msg-1');
+    assert.ok(await until(() => (tam.store.get('orderbook') || []).some((e) => e.nr === 'MW3199001'), 3000));
+    await sleep(300);
+    assert.equal(tam.logs().filter((l) => /Von Handy angenommen: MW3199001/.test(l)).length, 1);
+    // 429 beim Abgleich → einmal versucht, Pause, Log; weitere Abgleich-Nachrichten werden gar nicht erst gesendet
+    tam.ntfyStatus = () => 429;
+    const n0 = postUrls().length;
+    tam.document.getElementById('tamauto-ob-sync').click();
+    assert.ok(await until(() => tam.logs().some((l) => /ntfy-Limit erreicht \(HTTP 429\) – 15 Minuten Pause/.test(l)), 5000), tam.logs().slice(-5).join('\n'));
+    await sleep(1500);
+    assert.equal(postUrls().length, n0 + 1, 'nach 429 weitere Abgleich-Nachrichten gesendet');
+  });
+
   it('Auftragsbuch-Abgleich: empfangene Aufträge werden geprüft und ergänzt; ältere als 7 Tage und Fremdes auf dem öffentlichen Kanal ignoriert', async () => {
     const { ck, ret } = await withChannelKey();
     const t = Date.now(), book = () => tam.store.get('orderbook') || [];
