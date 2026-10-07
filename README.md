@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.29.3 – 2026-10-07
+- **Silent Reload als harter Takt:** fragt genau alle x Sekunden ab; der Versatz nach einem Refresh (Rest aus der Auto-Refresh-Zeit, bis zur halben Intervalllänge Pause) entfällt.
+- **Weniger Dauerschleifen:** Die 250-ms-Suche nach neuen Zeilen entfällt (neue Zeilen meldet die Tabellenbeobachtung sofort); die Anzeige der stillen Annahme wird nur noch bei Änderung aktualisiert statt alle 5 s. Das Wegklicken von TAM-Meldungen (wichtig für Android) bleibt unverändert.
+
 ### 1.29.2 – 2026-10-07
 - **Log gruppiert:** Jede Zeile zeigt vorne das Feature, von dem sie ausgeht – z. B. `[Annahme]`, `[Web-Analyse]` (Silent Reload, Push-Signal, Tabellenbeobachtung), `[Auftragsbuch]`, `[MA-Management]`, `[Rückgabe]`, `[Ortsliste]`, `[Update]`, `[Lizenz]`, `[Start]`, `[TAM-Fenster]`, `[Stille Annahme]`, `[Einstellungen]`.
 

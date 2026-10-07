@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.29.2
+// @version      1.29.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1956,11 +1956,12 @@
   const GWT64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_';
   const gwtLong = (n) => { let v = BigInt(n), out = ''; do { out = GWT64[Number(v & 63n)] + out; v >>= 6n; } while (v > 0n); return out; };
   let acceptTpl = GM_getValue('acceptTpl', null);
+  let onAcceptTplChange = () => {}; // Anzeige in den Erweiterten Einstellungen
   function learnAcceptTpl(t) {
     if (!t || !t.body) return;
     const neu = !acceptTpl || acceptTpl.headers['X-GWT-Permutation'] !== t.headers['X-GWT-Permutation'] || acceptTpl.body.split('|')[1] !== t.body.split('|')[1];
     acceptTpl = { url: t.url, headers: t.headers, body: t.body, at: Date.now() };
-    GM_setValue('acceptTpl', acceptTpl);
+    GM_setValue('acceptTpl', acceptTpl); onAcceptTplChange();
     if (neu) log(`Stille Annahme: accept-Anfrage von TAM gelernt (Hash ${t.body.split('|')[1].slice(0, 8)}…, Permutation ${(t.headers['X-GWT-Permutation'] || '?').slice(0, 8)}…).`, cfg.silentAccept ? 'ok' : 'debug');
   }
   // accept-Anfrage für diese IDs aus der Vorlage bauen: Liste „<ArrayList>|n|<Long>|id|<Long>|id …“, der Rest (Transition) bleibt
@@ -1981,7 +1982,7 @@
     if (cfg.silentAcceptSixt && !istSixt(order.dienst)) return null; // nur Sixt: normale Annahme, kein Hinweis nötig
     if (!acceptTpl) return why('noch keine accept-Anfrage von TAM gelernt (erste normale Annahme nach dem Laden der Seite lernt sie)');
     const perm = tamLoadReq && tamLoadReq.headers && tamLoadReq.headers['X-GWT-Permutation'];
-    if (perm && acceptTpl.headers['X-GWT-Permutation'] && perm !== acceptTpl.headers['X-GWT-Permutation']) { acceptTpl = null; GM_setValue('acceptTpl', null); return why('TAM wurde aktualisiert (Permutation geändert), gelernte Anfrage verworfen'); }
+    if (perm && acceptTpl.headers['X-GWT-Permutation'] && perm !== acceptTpl.headers['X-GWT-Permutation']) { acceptTpl = null; GM_setValue('acceptTpl', null); onAcceptTplChange(); return why('TAM wurde aktualisiert (Permutation geändert), gelernte Anfrage verworfen'); }
     const tid = order.row ? text(order.row.querySelector('td.x-grid3-td-id')).replace(/\D/g, '') : '';
     if (!tid) return why('interne ID der Zeile unbekannt');
     const body = buildAcceptBody(acceptTpl, [tid]);
@@ -2631,10 +2632,6 @@
     if (!cfg.silentOn || !cfg.enabled || !license || busy || silentFetching || !onPublishedTab()) return;
     if (!inSchedule()) { if (!/Arbeitszeit/.test(silentState)) { silentState = `pausiert – außerhalb der Arbeitszeit (${cfg.schedFrom}–${cfg.schedTo})`; renderSilent(); } return; }
     if (now - lastSilentAt < cfg.silentSec * 1000) return;
-    // Versetzt zum Refresh: direkt nach einem Refresh (Auto-Refresh, TAM, manuell) ist die Tabelle frisch –
-    // Abfrage erst nach der Hälfte des kürzeren Intervalls → liegt mittig zwischen zwei Refreshes
-    const gapMs = Math.min(cfg.silentSec, arActive() ? cfg.intervalSec : cfg.silentSec) * 500;
-    if (now - lastAnyRefreshAt < gapMs) return;
     if (!tamLoadReq) { silentState = 'wartet auf den ersten Refresh (dabei wird TAMs Anfrage übernommen)'; renderSilent(); return; }
     lastSilentAt = now;
     silentFetching = true;
@@ -3580,7 +3577,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     const renderSilentAccept = () => { $('tamauto-silentaccept-state').textContent = !cfg.silentAccept ? 'aus' : acceptTpl ? `bereit – accept-Anfrage gelernt (${new Date(acceptTpl.at).toLocaleTimeString('de-DE')})${cfg.silentAcceptSixt ? ', nur Sixt' : ', alle Aufträge'}` : 'wartet auf die erste normale Annahme (lernt die Anfrage)'; };
     $('tamauto-silentaccept').onchange = (e) => { cfg.silentAccept = e.target.checked; GM_setValue('silentAccept', cfg.silentAccept); log(`Stille Annahme (Beta): ${cfg.silentAccept ? 'an' : 'aus'}.`, 'ok'); renderSilentAccept(); };
     $('tamauto-silentaccept-sixt').onchange = (e) => { cfg.silentAcceptSixt = e.target.checked; GM_setValue('silentAcceptSixt', cfg.silentAcceptSixt); log(`Stille Annahme: ${cfg.silentAcceptSixt ? 'nur Sixt-Aufträge' : 'alle Aufträge'}.`, 'ok'); renderSilentAccept(); };
-    renderSilentAccept(); setInterval(renderSilentAccept, 5000);
+    renderSilentAccept(); onAcceptTplChange = renderSilentAccept; // nur bei Änderung (Vorlage gelernt, Schalter)
     $('tamauto-silent-on').checked = cfg.silentOn;
     $('tamauto-silent').value = cfg.silentSec;
     const silentChanged = () => {
@@ -4304,11 +4301,10 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     buildPanel();
     watchGrid();
     wasOnPublished = onPublishedTab(); // Ausgangszustand für die Tabwechsel-Erkennung
-    setInterval(silentPoll, 250);  // Silent Reload (falls eingestellt)
+    setInterval(silentPoll, 250);  // Silent Reload: harter Takt alle x s (hier nur geprüft, ob die x s um sind – höchstens 0,25 s Versatz)
     startPush();                   // Push-Signal (App „TAM-Signal“) empfangen
     startReturns();                // Rückgaben der anderen Geräte empfangen
     startUpdateNotify();           // Update-Meldungen (ntfy) empfangen
-    setInterval(watchNewRows, 250); // neue Aufträge auch ohne erkannte Tabellenänderung sofort prüfen
     setInterval(dismissAllMessagesNow, 100); // Sofort-Wächter als Rückfallebene (falls ein Einblenden nicht als Änderung auffällt)
     const age = places.loadedAt ? Date.now() - new Date(places.loadedAt).getTime() : Infinity;
     // Excel (Ortsliste + Sperrliste) beim Start laden, wenn älter als 30 min oder altes Format, danach alle 30 min
