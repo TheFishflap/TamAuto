@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.32.1 – 2026-10-08
+- **Log mit Reiter und Status:** „Nehme an: …“ nennt den offenen Reiter und den Weg (still / über die Auftragskarte); das kopierte Log hat eine Zeile „Status beim Kopieren“ (Status, Reiter, Script läuft/gestoppt, Arbeitszeit, stille Annahme, Push-Signal).
+- **Abbruch genauer:** statt „Tab gewechselt oder Tabelle neu geladen“ steht jetzt der Grund – Reiter gewechselt (mit Name), Tabelle neu geladen oder „steht nicht mehr in der Tabelle (vermutlich vergeben)“.
+
 ### 1.32.0 – 2026-10-08
 - **Silent Reload mit Zufallsstreuung:** neues Feld „± s“ neben dem Takt (Standard **± 3 s**, 0 = genau im Takt). Jede Abfrage kommt zufällig früher oder später, z. B. bei 10 s ± 3 zwischen 7 und 13 s – der Abstand wirkt nicht mehr maschinell gleichmäßig, im Mittel bleibt es beim eingestellten Takt. Die Streuung ist nie größer als Takt − 1 s. Kopfzeile und Log zeigen „alle 10 s ± 3 s“.
 - **Stille Annahme „nur Sixt + ab 150 €“** (bisher „nur Sixt“): still werden Sixt-Aufträge **und alle Aufträge ab 150 €** angenommen (Terminpflicht – dort zählt die Schnelligkeit). Übrige Aufträge im Reiter „Veröffentlichte Aufträge“ über die Karte, in anderen Reitern warten sie. Status gelb „◐ still: Sixt + ab 150 €“.

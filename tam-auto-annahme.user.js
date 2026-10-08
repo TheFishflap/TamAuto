@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.32.0
+// @version      1.32.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -246,7 +246,7 @@
   // Log-Gruppe = Feature, von dem die Zeile ausgeht (erste passende Regel; sonst „Annahme“). Explizit über log(msg, level, gruppe).
   const LOG_GRUPPEN = [
     ['Stille Annahme', /^Stille Annahme/],
-    ['Annahme', /^(Angenommen|Nehme an|Annahme fehlgeschlagen|Dauer der Annahme):/],
+    ['Annahme', /^(Angenommen:|Nehme an:|Annahme fehlgeschlagen:|Dauer der Annahme:|Abbruch)/],
     ['MA-Management', /^MA-Management|^Mailtext|^Kontakte|Angenommene Aufträge \(still gelesen\)/],
     ['Annahme', / → Abgleich: /],
     ['Web-Analyse', /^(Silent|Push-Signal|Neue Zeile erkannt|Refresh \()|: neue Daten in TAM|: Abfrage fehlgeschlagen|nicht mehr veröffentlicht|wieder veröffentlicht/],
@@ -1498,6 +1498,8 @@
     if (state !== lastTabState) { if (lastTabState) log(`Tab: ${state}`); lastTabState = state; }
   }
 
+  // Name des gerade offenen TAM-Reiters (für Log und Statuszeile)
+  const offenerReiter = () => { const li = [...document.querySelectorAll('li.x-tab-strip-active[id*="__"]')].find(visible) || document.querySelector('li.x-tab-strip-active[id*="__"]'); return text(li && (li.querySelector('.x-tab-strip-text') || li)).replace(/^\[.*?\]\s*/, '') || 'unbekannt'; };
   function activeTabPanel() {
     return onPublishedTab() ? document.getElementById(cfg.tabPanelId) : null;
   }
@@ -2385,9 +2387,11 @@
         if (isDone(o.key) || isDone((o.nr || '').toUpperCase())) { log(`${o.key}: bereits zusammen mit einem anderen Auftrag angenommen.`, 'ok'); continue; }
         // Vor jeder Annahme erneut prüfen: richtiger Tab, Zeile noch in dieser Tabelle
         if (bg !== !onPublishedTab() || !annahmeAktiv() || annahmeGrid() !== grid || !grid.contains(o.row)) {
-          log('Abbruch: Tab gewechselt oder Tabelle neu geladen – keine Annahme.', 'err'); recheck = true; break;
+          const warum = bg !== !onPublishedTab() || !annahmeAktiv() ? `Reiter gewechselt (jetzt „${offenerReiter()}“)`
+            : annahmeGrid() !== grid ? 'Tabelle neu geladen' : `${o.key} steht nicht mehr in der Tabelle (vermutlich vergeben)`;
+          log(`Abbruch vor ${o.key}: ${warum} – keine Annahme, neu prüfen.`, 'err'); recheck = true; break;
         }
-        log(`Nehme an: ${desc}`);
+        log(`Nehme an: ${desc} · Reiter „${offenerReiter()}“${bg ? ' (nur still)' : cfg.silentAccept && acceptTpl && stillErlaubt(o) ? ' · still' : ' · über die Auftragskarte'}`);
         delayStats = { ms: 0, n: 0 };
         const t0 = Date.now();
         const ok = await acceptOrder(o);
@@ -3563,8 +3567,11 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
         `${cfg.delayOn ? `${cfg.delaySec} s${cfg.delayRandom ? ` + bis ${cfg.delayRandomMs} ms` : ''}` : 'aus'} · Ortsliste ` +
         `${places.plz.length} PLZ / ${places.orte.length} Orte · Sperrliste ${(places.block || { plz: [] }).plz.length} PLZ` +
         ` · Priorität ${prioText()}`;
+      const hs = $('tamauto-head-state');
+      const status = `Status beim Kopieren: ${hs ? hs.textContent : '?'} · Reiter „${offenerReiter()}“ · Script ${cfg.enabled ? 'läuft' : 'gestoppt'}${inSchedule() ? '' : ' (außerhalb der Arbeitszeit)'} · ` +
+        `Stille Annahme ${!cfg.silentAccept ? 'aus' : `an (${cfg.silentAcceptSixt ? 'nur Sixt + ab 150 €' : 'alle'}, ${acceptTpl ? 'gelernt' : 'lernt noch'})`} · Push-Signal ${cfg.pushOn ? 'an' : 'aus'}`;
       const txt = `TAM Auto-Annahme v${VERSION} · Log vom ${new Date().toLocaleString('de-DE')} · ${navigator.userAgent}\n` +
-        `${settings}\n(letzte ${lines.length} von ${logHistory.length} Zeilen)\n\n${lines.join('\n')}`;
+        `${settings}\n${status}\n(letzte ${lines.length} von ${logHistory.length} Zeilen)\n\n${lines.join('\n')}`;
       let ok = false;
       try { await navigator.clipboard.writeText(txt); ok = true; } catch (e) {
         const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select();

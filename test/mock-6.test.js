@@ -219,6 +219,16 @@ describe('Stille Annahme (Beta)', { skip }, () => {
     assert.equal(hs().textContent, '● bereit'); assert.equal(hs().style.color, 'rgb(46, 125, 50)');
   });
 
+  it('Log: „Nehme an“ nennt Reiter und Weg; kopiertes Log hat „Status beim Kopieren“ mit Reiter und stiller Annahme', async () => {
+    await learned({ running: true, silentOn: true });
+    assert.ok(tam.logs().some((l) => /Nehme an: MW3153893 .* · Reiter „Veröffentlichte Aufträge“ · über die Auftragskarte/.test(l)), tam.logs().slice(-8).join('\n'));
+    let clip = '';
+    Object.defineProperty(tam.window.navigator, 'clipboard', { value: { writeText: async (t) => { clip = t; } }, configurable: true });
+    tam.document.getElementById('tamauto-copylog').click();
+    assert.ok(await until(() => clip, 2000));
+    assert.match(clip, /\nStatus beim Kopieren: ● bereit · Reiter „Veröffentlichte Aufträge“ · Script läuft.* · Stille Annahme an \(alle, gelernt\)/);
+  });
+
   it('ⓘ neben „Stille Annahme“ klappt die Erklärung auf und wieder zu', async () => {
     tam = startTam({ gm: { places: KOELN } }); await tam.ready();
     const box = tam.document.getElementById('tamauto-sa-infobox');
