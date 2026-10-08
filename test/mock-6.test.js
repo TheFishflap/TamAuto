@@ -202,18 +202,9 @@ describe('Stille Annahme (Beta)', { skip }, () => {
     await sleep(1500);
   }
 
-  it('Status im Kopf: stille Annahme aus → „● bereit“; an ohne Vorlage → gelb „pausiert (lernt)“; nur Sixt → gelb „pausiert (nur Sixt)“; alle → grün „● bereit“', async () => {
+  it('Status im Kopf: im Reiter „Veröffentlichte Aufträge“ grün „● bereit“ – auch mit stiller Annahme „nur Sixt“ (andere Aufträge laufen über die Karte)', async () => {
     const hs = () => tam.document.getElementById('tamauto-head-state');
-    tam = startTam({ gm: { places: KOELN, running: true, silentOn: true } }); await tam.ready(); await sleep(1200);
-    assert.equal(hs().textContent, '● bereit');
-    assert.equal(tam.document.querySelectorAll('.tamauto-sa').length, 0, 'keine eigene Statuszeile');
-    tam.close();
-    tam = startTam({ gm: { places: KOELN, running: true, silentOn: true, silentAccept: true } }); await tam.ready(); await sleep(1200);
-    assert.equal(hs().textContent, '⏸ pausiert (lernt)');
-    tam.close();
     await learned({ running: true, silentOn: true, silentAcceptSixt: true });
-    assert.equal(hs().textContent, '⏸ pausiert (nur Sixt)'); assert.equal(hs().style.color, 'rgb(178, 106, 0)');
-    tam.document.getElementById('tamauto-silentaccept-sixt').click(); await sleep(1200);
     assert.equal(hs().textContent, '● bereit'); assert.equal(hs().style.color, 'rgb(46, 125, 50)');
   });
 

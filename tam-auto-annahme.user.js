@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.30.6
+// @version      1.30.7
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -2410,7 +2410,7 @@
   function renderMini(now) {
     const box = document.getElementById('tamauto-mini');
     if (!box || box.style.display === 'none') return;
-    const ein = stilleEinschraenkung(), [st, col] = !cfg.enabled ? ['■ GESTOPPT', '#c62828'] : !onPublishedTab() ? ['⏸ PAUSIERT', '#b26a00'] : ein ? [`⏸ PAUSIERT (${ein})`, '#b26a00'] : ['● AKTIV', '#2e7d32'];
+    const [st, col] = !cfg.enabled ? ['■ GESTOPPT', '#c62828'] : onPublishedTab() ? ['● AKTIV', '#2e7d32'] : ['⏸ PAUSIERT', '#b26a00'];
     const s = document.getElementById('tamauto-mini-state'); s.textContent = st; s.style.color = col;
     const next = silentHeader(now);
     document.getElementById('tamauto-mini-next').textContent = next;
@@ -2797,13 +2797,10 @@
   // ------------------------------------------------------------------ Bedienfeld
   function setStatus(s) { const el = document.getElementById('tamauto-status'); if (el) { el.textContent = s; el.style.display = s ? '' : 'none'; } } // leer = Zeile ausgeblendet
   // Kurzstatus in der Titelzeile (sichtbar im minimierten Zustand)
-  // Bei Silent Reload + stiller Annahme: grün nur, wenn alle Aufträge still angenommen werden; gelb „pausiert (nur Sixt)“ bzw. „(lernt)“
-  const stilleEinschraenkung = () => (!cfg.silentOn || !cfg.silentAccept ? '' : !acceptTpl ? 'lernt' : cfg.silentAcceptSixt ? 'nur Sixt' : '');
   function renderHeadState() {
     const hs = document.getElementById('tamauto-head-state');
     if (!hs) return;
-    const ein = stilleEinschraenkung();
-    const [txt, col] = !cfg.enabled ? ['■ gestoppt', '#c62828'] : !onPublishedTab() ? ['⏸ pausiert', '#b26a00'] : ein ? [`⏸ pausiert (${ein})`, '#b26a00'] : ['● bereit', '#2e7d32'];
+    const [txt, col] = !cfg.enabled ? ['■ gestoppt', '#c62828'] : onPublishedTab() ? ['● bereit', '#2e7d32'] : ['⏸ pausiert', '#b26a00'];
     hs.textContent = txt; hs.style.color = col;
   }
   function renderStatus() {
