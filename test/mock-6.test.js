@@ -219,6 +219,16 @@ describe('Stille Annahme (Beta)', { skip }, () => {
     assert.equal(hs().textContent, '● bereit'); assert.equal(hs().style.color, 'rgb(46, 125, 50)');
   });
 
+  it('ⓘ neben „Stille Annahme“ klappt die Erklärung auf und wieder zu', async () => {
+    tam = startTam({ gm: { places: KOELN } }); await tam.ready();
+    const box = tam.document.getElementById('tamauto-sa-infobox');
+    assert.equal(box.style.display, 'none');
+    tam.document.getElementById('tamauto-sa-info').click();
+    assert.equal(box.style.display, 'block'); assert.match(box.textContent, /einmal je Gerät/);
+    tam.document.getElementById('tamauto-sa-info').click();
+    assert.equal(box.style.display, 'none');
+  });
+
   it('Standard aus: normale Annahme über die Karte, keine stille Anfrage – die Vorlage wird trotzdem gelernt', async () => {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();

@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.31.3 – 2026-10-08
+- **ⓘ neben „Stille Annahme (Beta)“:** Antippen klappt eine übersichtliche Erklärung auf (was sie macht, Lernen einmal je Gerät, Verhalten je Reiter, „nur Sixt“, Status, Grenzen) – funktioniert auch auf Android (kein Darüberfahren nötig).
+
 ### 1.31.2 – 2026-10-08
 - Log: „Angenommen: … im Hintergrund (anderer Reiter offen)“ steht unter `[Annahme]` statt `[Start]`.
 

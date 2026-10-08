@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.31.2
+// @version      1.31.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -3164,7 +3164,16 @@ Wichtig: Die Farben ändern nur die Anzeige der TAM-Oberfläche lokal in diesem 
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
             <label class="tamauto-chk"><input type="checkbox" id="tamauto-silentaccept"> <b>Stille Annahme (Beta)</b></label>
             <label class="tamauto-chk" style="margin-left:8px"><input type="checkbox" id="tamauto-silentaccept-sixt"> nur Sixt</label>
-            <span class="tamauto-help" title="Beta: Statt über die Auftragskarte (Doppelklick, Annehmen, Haken, Bestätigen – rund 1,4 s) schickt das Script TAMs Annahme-Aufruf direkt ab (rund 0,2 s). Die Anfrage lernt es von der ersten normalen Annahme nach dem Laden der Seite; bis dahin und bei jedem Problem nimmt es wie bisher über die Auftragskarte an. Nur der Auftrag selbst wird angenommen (kein Warenkorb mit 0-km-Aufträgen). Alles steht ausführlich im Protokoll („Stille Annahme …“). Standard: aus.">?</span>
+            <span id="tamauto-sa-info" title="Erklärung ein-/ausblenden" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#1a4d8f;color:#fff;font:italic bold 11px Georgia,serif;cursor:pointer;margin-left:6px">i</span>
+            <div id="tamauto-sa-infobox" style="display:none;margin-top:4px;padding:6px 8px;background:#f3f6fb;border:1px solid #c5d3e8;border-radius:3px;line-height:1.45">
+              <b>Was sie macht:</b> nimmt Aufträge ohne Auftragskarte an – das Script schickt TAMs Annahme direkt ab (≈ 0,1 s statt ≈ 0,7–1,4 s).<br>
+              <b>Lernen:</b> einmal je Gerät. Die erste normale Annahme über die Karte zeigt dem Script, wie TAM annimmt; die Vorlage bleibt gespeichert (Neuladen, Neustart, Updates). Neu gelernt wird nur nach einem TAM-Update (automatisch erkannt) oder auf einem neuen/zurückgesetzten Gerät. Bis dahin: Status gelb „lernt“, Annahme wie gewohnt über die Karte.<br>
+              <b>Reiter:</b> „Veröffentlichte Aufträge“ offen → alles wird angenommen (still oder über die Karte). Anderer Reiter offen (z. B. „Angenommene Aufträge“) → nur still, ohne Reiterwechsel; die verdeckte Tabelle wird im Hintergrund aktualisiert.<br>
+              <b>nur Sixt:</b> still nur Sixt-Aufträge. Im Reiter „Veröffentlichte Aufträge“ laufen die übrigen über die Karte; in anderen Reitern warten sie, bis „Veröffentlichte Aufträge“ wieder offen ist.<br>
+              <b>Status:</b> <span style="color:#2e7d32">● bereit / ● still aktiv</span> · <span style="color:#b26a00">◐ still: nur Sixt</span> · <span style="color:#b26a00">⏸ pausiert</span> (anderer Reiter ohne stille Annahme).<br>
+              <b>Grenzen:</b> nur der Auftrag selbst (keine Warenkorb-Aufträge am selben Ort); kein Terminfenster – „Reserviert bis“ kommt aus „Angenommene Aufträge“. Bei unerwarteter Antwort nimmt das Script über die Karte an; „bereits vergeben“ gilt als nicht angenommen.<br>
+              <b>Protokoll:</b> ausführlich unter <code>[Stille Annahme]</code> im Log.
+            </div>
             <div id="tamauto-silentaccept-state" style="color:#555;font-size:11px;margin-top:2px"></div>
           </div>
           <!-- Console Log immer ganz unten – direkt über dem Protokoll, das darunter aufklappt -->
@@ -3471,6 +3480,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     // Silent Reload: Intervall in s, 0 = aus
     $('tamauto-silentaccept').checked = cfg.silentAccept; $('tamauto-silentaccept-sixt').checked = cfg.silentAcceptSixt;
     const renderSilentAccept = () => { $('tamauto-silentaccept-state').textContent = !cfg.silentAccept ? 'aus' : acceptTpl ? `bereit – accept-Anfrage gelernt (${new Date(acceptTpl.at).toLocaleTimeString('de-DE')})${cfg.silentAcceptSixt ? ', nur Sixt' : ', alle Aufträge'}` : 'wartet auf die erste normale Annahme (lernt die Anfrage)'; };
+    $('tamauto-sa-info').onclick = () => { const b = $('tamauto-sa-infobox'); b.style.display = b.style.display === 'none' ? 'block' : 'none'; };
     $('tamauto-silentaccept').onchange = (e) => { cfg.silentAccept = e.target.checked; GM_setValue('silentAccept', cfg.silentAccept); log(`Stille Annahme (Beta): ${cfg.silentAccept ? 'an' : 'aus'}.`, 'ok'); renderSilentAccept(); };
     $('tamauto-silentaccept-sixt').onchange = (e) => { cfg.silentAcceptSixt = e.target.checked; GM_setValue('silentAcceptSixt', cfg.silentAcceptSixt); log(`Stille Annahme: ${cfg.silentAcceptSixt ? 'nur Sixt-Aufträge' : 'alle Aufträge'}.`, 'ok'); renderSilentAccept(); };
     renderSilentAccept(); onAcceptTplChange = renderSilentAccept; // nur bei Änderung (Vorlage gelernt, Schalter)
