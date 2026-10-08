@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.32.7 – 2026-10-08
+- MA-Management: Button heißt **„SLA laden“** (lädt still SLA/Reservierungsende, Zeichen und Kontakte der angenommenen Aufträge); Anzeige „SLA geladen: n Aufträge · hh:mm“. Absender-Auswahl „– Backoffice wählen –“ mit den Backoffice-Einträgen aus dem Blatt „MA“.
+
 ### 1.32.6 – 2026-10-08
 - **Lizenz-Status mit Tab und Update:** Die Statusmeldung an die Lizenzverwaltung nennt zusätzlich den Tab (zwei offene TAM-Tabs oder ein noch nicht neu geladener Tab melden verschiedene Versionen) und ein bereitstehendes Update. Fehlgeschlagene Statusmeldungen stehen im Log.
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.32.6
+// @version      1.32.7
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -2972,7 +2972,7 @@
       const e = endeStr(o), h = stundenBis(e), tel = o.kontakt && o.kontakt.telefon ? o.kontakt.telefon : '';
       return `<tr><td>${{ rot: '🔴', gelb: '🟡' }[ampel(e)] || ''}${terminRed(o) ? '<b style="margin-left:2px" title="Reservierung läuft in ≤ 1 h aus (oder ist gerade abgelaufen)">🚩</b>' : ''}</td><td>${escHtml(o.nr)}</td><td>${escHtml(o.ref)}</td><td>${escHtml(`${o.plz} ${o.ort}`)}</td><td>${escHtml(e ? `${e}${h !== null ? ` (in ${h} h)` : ''}` : '')}</td><td>${escHtml(tel)}</td></tr>`;
     }).join('') : '<tr><td colspan="6" style="color:#555;padding:4px">Keine offenen Terminvereinbarungen (Aufträge der letzten 7 Tage, ab 150 €, Kürzel im Zeichen, noch ohne Tour).</td></tr>';
-    $('tamauto-ma-loadstate').textContent = maKontakte.at ? `Kontakte: ${maKontakte.map.size} · ${hhmm(new Date(maKontakte.at))}` : 'Kontakte: nicht geladen';
+    $('tamauto-ma-loadstate').textContent = maKontakte.at ? `SLA geladen: ${maKontakte.map.size} Aufträge · ${hhmm(new Date(maKontakte.at))}` : 'SLA: nicht geladen';
     // Cc und Absender: die Backoffice-Zeilen im Blatt „MA“
     const bo = ma.filter((x) => x.backoffice), withMail = bo.filter((k) => k.mail && !(k.k === 'LU' || /louis/i.test(k.name))); // Louis Thomee (LU) ist in Cc nicht wählbar
     const cc = $('tamauto-ma-cc'), sigC = withMail.map((k) => `${k.name || k.k}|${k.mail}`).join(';');
@@ -2984,7 +2984,7 @@
     const ab = $('tamauto-ma-absender'), names = bo.map((k) => k.name || k.k), sigA = names.join('|');
     if (ab.dataset.sig !== sigA) {
       ab.dataset.sig = sigA;
-      ab.innerHTML = '<option value="">(ohne Name)</option>' + names.map((n) => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
+      ab.innerHTML = `<option value="">${names.length ? '– Backoffice wählen –' : '(keine Backoffice-Einträge im Blatt „MA“)'}</option>` + names.map((n) => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
       const last = GM_getValue('maSender', ''); if (names.includes(last)) ab.value = last;
     }
     // Mail-Entwurf
@@ -3040,8 +3040,8 @@
     $('tamauto-ma-load').onclick = async () => {
       $('tamauto-ma-loadstate').textContent = 'lädt …';
       try { await loadPlacesFromSheet(true); } catch (e) { /* Fehler steht im Log */ } // Excel: Listen, MA, Marktgebiete, Kontakte
-      try { const n = await ladeMaKontakte(); maFehler = ''; log(`MA-Management: Kontakte zu ${n} Aufträgen geladen.`, 'ok'); }
-      catch (e) { maFehler = e.message; log(`MA-Management: Kontakte nicht geladen – ${e.message}`, 'err'); }
+      try { const n = await ladeMaKontakte(); maFehler = ''; log(`MA-Management: SLA, Zeichen und Kontakte zu ${n} Aufträgen geladen.`, 'ok'); }
+      catch (e) { maFehler = e.message; log(`MA-Management: SLA nicht geladen – ${e.message}`, 'err'); }
       renderMa();
     };
   }
@@ -3312,7 +3312,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
         <div id="tamauto-page-ma" style="display:none;margin:6px 0">
           <div class="tamauto-chk" style="gap:6px;flex-wrap:wrap">
             <b>Mitarbeiter</b> <select id="tamauto-ma-sel" style="max-width:200px"></select>
-            <button id="tamauto-ma-load" title="Kontakte und Telefonnummern aller angenommenen Aufträge bei TAM abfragen">Kontakte laden</button>
+            <button id="tamauto-ma-load" title="Angenommene Aufträge bei TAM still abfragen: SLA/Reservierungsende, Zeichen (Kürzel/Tour) sowie Kontakte und Telefonnummern – dazu die Excel-Listen">SLA laden</button>
             <span id="tamauto-ma-loadstate" style="color:#555"></span>
             <span class="tamauto-help" title="Offene Terminvereinbarungen des gewählten Mitarbeiters: Aufträge der letzten 7 Tage aus dem Auftragsbuch mit Terminpflicht (ab 150 € bzw. Status „Terminvereinbarung“), sein Kürzel steht in „Ihr Zeichen“, noch keine Tour mit Datum. Sortiert nach FIN. Telefon/Kontakt kommt aus TAMs Liste „Angenommene Aufträge“ (Knopf „Kontakte laden“).">?</span>
           </div>
@@ -3322,7 +3322,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
           <div style="margin-top:8px;padding-top:6px;border-top:2px solid #1a4d8f"><b>Mail an den Mitarbeiter</b> <span id="tamauto-ma-mailstate" style="color:#b36b00;font-size:11px"></span>
             <div class="tamauto-chk" style="gap:6px;flex-wrap:wrap;margin:4px 0">Baustein: neue Terminvereinbarung
               <span class="tamauto-help" title="Eine Mail: Aufträge mit Pflicht zur Terminvereinbarung (ab 150 € bzw. Status „Terminvereinbarung“), die der MA mit seinem Kürzel im Zeichen übernommen hat und die noch keine Tour mit Datum haben. Cc und Absender: die Backoffice-Zeilen im Blatt „MA“. Die Zahl in Klammern beim MA und am Reiter = offene Terminvereinbarungen.">?</span>
-              Absender <select id="tamauto-ma-absender"></select></div>
+              Absender <select id="tamauto-ma-absender" title="Absender der Mail: die Backoffice-Einträge aus dem Excel-Blatt „MA“ (Haken „Backoffice“)"></select></div>
             <div style="margin:2px 0">Cc: <span id="tamauto-ma-cc"></span></div>
             <input id="tamauto-ma-subject" style="width:100%;margin:2px 0">
             <textarea id="tamauto-ma-body" style="width:100%;height:150px;font:11px monospace"></textarea>

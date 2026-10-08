@@ -416,14 +416,14 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.ok(st.previousElementSibling && /Mail an den Mitarbeiter/.test(st.previousElementSibling.textContent) || /Mail an den Mitarbeiter/.test(st.parentElement.firstElementChild.textContent), 'Hinweis nicht neben der Überschrift');
   });
 
-  it('Kontakte laden: Telefon in Liste und Mail; Sixt ohne Nummer → leere Zeile', async () => {
+  it('SLA laden: Telefon in Liste und Mail; Sixt ohne Nummer → leere Zeile', async () => {
     await setup();
     tam.selectTab('AgentEigeneAuftraege');
     const x = new tam.window.XMLHttpRequest(); x.open('POST', 'https://tam.tuvsud.com/tam/gwt-rpc/auftrag'); x.send('7|0|3|u|a|loadTeilauftraege|1|2|3|');
     tam.selectTab('AgentVeroeffentlichteAuftraege');
     tam.rpc = '//OK[1,2,3,1,4,5,' + JSON.stringify(['x.model.auftraege.Teilauftrag/1', 'MW3190405', 'Frau Muster\n0171 1234567\nE-Mail: m@x.de', 'MW3190401', 'Herr Sixt\nE-Mail: s@x.de']) + ',0,7]';
     $('tamauto-ma-load').click();
-    assert.ok(await until(() => /Kontakte: 2/.test($('tamauto-ma-loadstate').textContent), 3000), $('tamauto-ma-hint').textContent);
+    assert.ok(await until(() => /SLA geladen: 2 Aufträge/.test($('tamauto-ma-loadstate').textContent), 3000), $('tamauto-ma-hint').textContent);
     assert.match($('tamauto-ma-body').value, /Frau Muster, Tel\. 0171 1234567/);
     assert.match($('tamauto-ma-body').value, /^MW3190401[^\n]*\| Tel\.\s*$/m);
     assert.match($('tamauto-ma-rows').textContent, /0171 1234567/);
@@ -449,7 +449,7 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.ok(help.classList.contains('tamauto-help')); assert.match(help.title, /zuerst „Mail öffnen“/);
   });
 
-  it('„Kontakte laden“ lädt auch die Excel einmal neu', async () => {
+  it('„SLA laden“ lädt auch die Excel einmal neu', async () => {
     await setup();
     const n = () => tam.requests.filter((o) => o.url.includes('IQDymsXIGo99')).length;
     const before = n();
