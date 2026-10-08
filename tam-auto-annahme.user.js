@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.32.7
+// @version      1.32.8
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1517,7 +1517,7 @@
       [state, color] = cfg.enabled ? ['Veröffentlichte Aufträge – ✔ bereit zum Annehmen', '#2e7d32']
         : ['Veröffentlichte Aufträge – gestoppt', '#555'];
     } else if (hintergrundModus()) {
-      [state, color] = [`${onAccepted ? 'Angenommene Aufträge' : other || 'anderer Reiter'} – ${cfg.silentAcceptSixt ? '◐ stille Annahme nur Sixt + ab 150 €' : '● stille Annahme aktiv'} (Beta, im Hintergrund)`, cfg.silentAcceptSixt ? '#b26a00' : '#2e7d32'];
+      [state, color] = [`${onAccepted ? 'Angenommene Aufträge' : other || 'anderer Reiter'} – ${cfg.silentAcceptSixt ? '◐ stille Annahme nur Sixt + ab 150 €' : '● stille Annahme aktiv'}`, cfg.silentAcceptSixt ? '#b26a00' : '#2e7d32'];
     } else if (onAccepted) {
       [state, color] = ['Angenommene Aufträge – ⏸ Annahme pausiert', '#b26a00'];
     } else {
@@ -3206,7 +3206,7 @@ Wichtig: Die Farben ändern nur die Anzeige der TAM-Oberfläche lokal in diesem 
             </div>
           </div>
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
-            <label class="tamauto-chk"><input type="checkbox" id="tamauto-silentaccept"> <b>Stille Annahme (Beta)</b></label>
+            <label class="tamauto-chk"><input type="checkbox" id="tamauto-silentaccept"> <b>Stille Annahme (Beta)</b></label><span id="tamauto-sa-ok" title="Annahme-Anfrage von TAM gelernt" style="display:none;color:#2e7d32;font-weight:bold;margin-left:3px">✓</span>
             <label class="tamauto-chk" style="margin-left:8px"><input type="checkbox" id="tamauto-silentaccept-sixt"> nur Sixt + ab 150 €</label>
             <span id="tamauto-sa-info" title="Erklärung ein-/ausblenden" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#1a4d8f;color:#fff;font:italic bold 11px Georgia,serif;cursor:pointer;margin-left:6px">i</span>
             <div id="tamauto-sa-infobox" style="display:none;margin-top:4px;padding:6px 8px;background:#f3f6fb;border:1px solid #c5d3e8;border-radius:3px;line-height:1.45">
@@ -3523,7 +3523,12 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
 
     // Silent Reload: Intervall in s, 0 = aus
     $('tamauto-silentaccept').checked = cfg.silentAccept; $('tamauto-silentaccept-sixt').checked = cfg.silentAcceptSixt;
-    const renderSilentAccept = () => { $('tamauto-silentaccept-state').textContent = !cfg.silentAccept ? 'aus' : acceptTpl ? `bereit – accept-Anfrage gelernt (${new Date(acceptTpl.at).toLocaleTimeString('de-DE')})${cfg.silentAcceptSixt ? ', nur Sixt + ab 150 €' : ', alle Aufträge'}` : 'wartet auf die erste normale Annahme (lernt die Anfrage)'; };
+    // Wichtig ist nur, ob gelernt ist: grüner Haken hinter „Stille Annahme“ und das Lerndatum
+    const renderSilentAccept = () => {
+      $('tamauto-sa-ok').style.display = acceptTpl ? '' : 'none';
+      $('tamauto-silentaccept-state').textContent = acceptTpl ? `gelernt am ${new Date(acceptTpl.at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+        : 'noch nicht gelernt – lernt bei der nächsten Annahme über die Auftragskarte';
+    };
     $('tamauto-sa-info').onclick = () => { const b = $('tamauto-sa-infobox'); b.style.display = b.style.display === 'none' ? 'block' : 'none'; };
     $('tamauto-silentaccept').onchange = (e) => { cfg.silentAccept = e.target.checked; GM_setValue('silentAccept', cfg.silentAccept); log(`Stille Annahme (Beta): ${cfg.silentAccept ? 'an' : 'aus'}.`, 'ok'); renderSilentAccept(); };
     $('tamauto-silentaccept-sixt').onchange = (e) => { cfg.silentAcceptSixt = e.target.checked; GM_setValue('silentAcceptSixt', cfg.silentAcceptSixt); log(`Stille Annahme: ${cfg.silentAcceptSixt ? 'nur Sixt-Aufträge und Aufträge ab 150 €' : 'alle Aufträge'}.`, 'ok'); renderSilentAccept(); };

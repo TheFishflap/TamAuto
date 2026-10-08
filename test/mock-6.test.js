@@ -243,6 +243,16 @@ describe('Stille Annahme (Beta)', { skip }, () => {
     assert.match(clip, /\nStatus beim Kopieren: ● bereit · Reiter „Veröffentlichte Aufträge“ · Script läuft.* · Stille Annahme an \(alle, gelernt\)/);
   });
 
+  it('grüner Haken und Lerndatum, sobald gelernt; vorher „noch nicht gelernt“', async () => {
+    tam = startTam({ gm: { places: KOELN } }); await tam.ready();
+    assert.equal(tam.document.getElementById('tamauto-sa-ok').style.display, 'none');
+    assert.match(tam.document.getElementById('tamauto-silentaccept-state').textContent, /^noch nicht gelernt/);
+    tam.close();
+    await learned();
+    assert.equal(tam.document.getElementById('tamauto-sa-ok').style.display, '');
+    assert.match(tam.document.getElementById('tamauto-silentaccept-state').textContent, /^gelernt am \d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}$/);
+  });
+
   it('ⓘ neben „Stille Annahme“ klappt die Erklärung auf und wieder zu', async () => {
     tam = startTam({ gm: { places: KOELN } }); await tam.ready();
     const box = tam.document.getElementById('tamauto-sa-infobox');

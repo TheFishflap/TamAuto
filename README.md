@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.32.8 – 2026-10-08
+- Stille Annahme: **grüner Haken ✓** hinter „Stille Annahme“, sobald die Annahme-Anfrage gelernt ist, darunter das **Lerndatum** („gelernt am 08.10.2026, 13:16“); sonst „noch nicht gelernt – lernt bei der nächsten Annahme über die Auftragskarte“. Der Zusatz „(Beta, im Hintergrund)“ in der Reiter-Statuszeile entfällt.
+
 ### 1.32.7 – 2026-10-08
 - MA-Management: Button heißt **„SLA laden“** (lädt still SLA/Reservierungsende, Zeichen und Kontakte der angenommenen Aufträge); Anzeige „SLA geladen: n Aufträge · hh:mm“. Absender-Auswahl „– Backoffice wählen –“ mit den Backoffice-Einträgen aus dem Blatt „MA“.
 
