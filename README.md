@@ -396,9 +396,6 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
-### 1.30.3 – 2026-10-08
-- **Datenmenge im Log:** Bei der ersten Hintergrund-Abfrage steht die Größe einer Abfrage im Log (Anfrage + Antwort), danach stündlich eine Zusammenfassung `[Web-Analyse]`: Anzahl Abfragen an TAM, Ø-Abstand, gesendete/empfangene Datenmenge, Ø-Antwortzeit.
-
 ### 1.30.2 – 2026-10-07
 - **Abgleich sparsamer (ntfy-Tageslimit 250 Nachrichten je IP):** Das „hi“ passt jetzt für bis zu 650 Aufträge in **eine** Nachricht (4-Zeichen-Hash statt 6 Zeichen in 250er-Teilen). Wird der Tab wieder sichtbar, holt das Script nur Verpasstes nach (ntfy hält Meldungen ~12 h); ein „hi“ gibt es dabei nur noch nach über 10 Stunden im Hintergrund.
 

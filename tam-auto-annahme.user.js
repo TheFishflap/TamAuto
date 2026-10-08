@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.30.3
+// @version      1.30.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -2473,17 +2473,6 @@
       return await Promise.race([run, guard]);
     } catch (e) { throw new Error(timedOut || /abort/i.test(e.message) ? `Zeitüberschreitung nach ${Math.round(ms / 1000)} s` : e.message); } finally { clearTimeout(timer); }
   }
-  // Datenmenge der Hintergrund-Abfragen (Silent Reload und Push-Signal): stündliche Zusammenfassung im Log
-  const abfrageStat = { n: 0, an: 0, von: 0, ms: 0, seit: Date.now() };
-  const kb = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1).replace('.', ',')} MB` : `${Math.round(b / 1024)} KB`);
-  function zaehleAbfrage(antwort, anfrage, ms) {
-    const st = abfrageStat; st.n++; st.von += antwort; st.an += anfrage; st.ms += ms;
-    if (st.n === 1) log(`Silent Reload: eine Abfrage = Anfrage ${kb(anfrage)} + Antwort ${kb(antwort)} (entpackt) in ${ms} ms.`, 'debug');
-    if (Date.now() - st.seit < 3600e3) return;
-    const min = Math.round((Date.now() - st.seit) / 60e3);
-    log(`Abfragen an TAM in den letzten ${min} min: ${st.n} (Ø alle ${Math.round(min * 60 / st.n)} s) · gesendet ${kb(st.an)}, empfangen ${kb(st.von)} entpackt (Ø ${kb(st.von / st.n)}, Ø ${Math.round(st.ms / st.n)} ms).`, 'info', 'Web-Analyse');
-    Object.assign(st, { n: 0, an: 0, von: 0, ms: 0, seit: Date.now() });
-  }
   async function silentQuery() {
     const t0 = Date.now();
     const res = await postText(tamLoadReq), txt = res.txt;
@@ -2497,7 +2486,6 @@
       .map((s) => { const u = s.toUpperCase(); if (!raw.has(u)) raw.set(u, s); return u; }));
     lastSilentRaw = raw;
     syncVanished(tokens);
-    zaehleAbfrage(txt.length, (tamLoadReq.body || '').length, Date.now() - t0);
     return { tokens, raw, ms: Date.now() - t0, bytes: txt.length };
   }
   // Tabelle aktuell halten ohne Neuladen: Aufträge, die in TAMs aktueller Antwort fehlen (inzwischen vergeben), lokal
