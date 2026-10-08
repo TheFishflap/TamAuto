@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.32.9
+// @version      1.33.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -908,20 +908,20 @@
         tr.appendChild(td);
       });
       const zurueck = istZurueck(e);
-      tr.title = `${e.dienst || ''}${zurueck ? ' · zurückgegeben' : ''}`; tr.dataset.nr = e.nr;
-      if (zurueck) Object.assign(tr.style, { textDecoration: 'line-through', color: '#888' }); // zurückgegebene Aufträge rausgestrichen
+      tr.title = `${e.dienst || ''}${zurueck ? ' · zurückgegeben' : ''}${e.weg ? ` · nicht mehr in „Angenommene Aufträge“ (abgelaufen oder zurückgegeben) – seit ${new Date(e.weg).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}`; tr.dataset.nr = e.nr;
+      if (zurueck || e.weg) Object.assign(tr.style, { textDecoration: 'line-through', color: '#888' }); // zurückgegebene bzw. nicht mehr angenommene Aufträge rausgestrichen
       tbody.appendChild(tr);
     });
     if (!rows.length) tbody.innerHTML = '<tr><td colspan="5" style="color:#555;padding:4px">Keine angenommenen Aufträge im Zeitraum.</td></tr>';
     // Unten: Anzahl Aufträge, Anzahl PLZ (mit Aufträgen je PLZ), Summe Euro
-    const gueltig = rows.filter((e) => !istZurueck(e)), zurueckN = rows.length - gueltig.length; // Zurückgegebene zählen nicht mit
+    const gueltig = rows.filter((e) => !istZurueck(e) && !e.weg), wegN = rows.filter((e) => e.weg && !istZurueck(e)).length, zurueckN = rows.length - gueltig.length - wegN; // Zurückgegebene / nicht mehr angenommene zählen nicht mit
     const perPlz = {};
     gueltig.forEach((e) => { perPlz[e.plz] = (perPlz[e.plz] || 0) + 1; });
     const sum = gueltig.reduce((a, e) => a + (e.preis || 0), 0);
     const noPrice = gueltig.filter((e) => e.preis == null).length;
     document.getElementById('tamauto-ob-sum').innerHTML =
       `<b>${gueltig.length} Aufträge</b> · <b>${Object.keys(perPlz).length} PLZ</b> · Summe gesamt <b>${fmtEuro(sum)}</b>` +
-      (noPrice ? ` <span style="color:#555">(${noPrice} ohne Preis)</span>` : '') + (zurueckN ? ` <span style="color:#555">· ${zurueckN} zurückgegeben (ausgenommen)</span>` : '');
+      (noPrice ? ` <span style="color:#555">(${noPrice} ohne Preis)</span>` : '') + (zurueckN ? ` <span style="color:#555">· ${zurueckN} zurückgegeben (ausgenommen)</span>` : '') + (wegN ? ` <span style="color:#555">· ${wegN} nicht mehr angenommen (ausgenommen)</span>` : '');
     renderHitRate(from);
     renderMa(); // MA-Management zeigt dieselben Aufträge
     updateMaBadge();
@@ -2900,6 +2900,29 @@
   let maKontakte = { map: new Map(), at: 0 };
   let maFehler = ''; // letzte Fehlermeldung beim Laden der Kontakte (bleibt sichtbar, bis es klappt)
   // Kontakte/Telefon aller angenommenen Aufträge: dieselbe Anfrage wie TAM, aber mit Seitengröße 1500 (TAM zeigt 500)
+  // Altaufträge: Steht ein Auftrag (älter als 30 min, letzte 7 Tage) im Auftragsbuch, aber nicht mehr in TAMs „Angenommene Aufträge“, gehört er nicht mehr
+  // uns (Reservierung abgelaufen oder zurückgegeben) → Markierung „weg“: raus aus dem MA-Management, im Auftragsbuch grau durchgestrichen, zählt nicht zur Summe.
+  // Taucht er wieder auf, fällt die Markierung weg. Nicht bereinigt wird, wenn die Liste voll sein könnte (TAM liefert höchstens 500 je Seite) oder auffällig
+  // viele auf einmal fehlen würden.
+  const LISTE_VOLL = 495;
+  function bereinigeAltauftraege(liste) {
+    if (!liste || liste.size < 20) return;
+    if (liste.size >= LISTE_VOLL) { if (!bereinigeAltauftraege.warn) { bereinigeAltauftraege.warn = 1; log(`Altaufträge: „Angenommene Aufträge“ hat ${liste.size} Einträge – die Liste könnte abgeschnitten sein, keine Bereinigung.`, 'info', 'MA-Management'); } return; }
+    const book = GM_getValue('orderbook', []), jetzt = Date.now(), von = jetzt - 7 * 864e5, neu = [], wieder = [];
+    const kandidaten = book.filter((e) => e.nr && !e.weg && new Date(e.ts).getTime() >= von && jetzt - new Date(e.ts).getTime() >= 30 * 60e3);
+    book.forEach((e) => {
+      const k = String(e.nr || '').toUpperCase(), t = new Date(e.ts).getTime();
+      if (!k) return;
+      if (liste.has(k)) { if (e.weg) { delete e.weg; wieder.push(k); } return; }
+      if (!e.weg && t >= von && jetzt - t >= 30 * 60e3) neu.push(k);
+    });
+    if (neu.length > 5 && neu.length > kandidaten.length * 0.3) { log(`Altaufträge: ${neu.length} von ${kandidaten.length} Aufträgen fehlen in „Angenommene Aufträge“ – unplausibel viele, keine Bereinigung.`, 'err', 'MA-Management'); neu.length = 0; }
+    const neuSet = new Set(neu);
+    book.forEach((e) => { if (neuSet.has(String(e.nr || '').toUpperCase())) e.weg = new Date(jetzt).toISOString(); });
+    if (neu.length || wieder.length) { GM_setValue('orderbook', book); renderOrderbook(); }
+    if (neu.length) log(`Nicht mehr in „Angenommene Aufträge“ (abgelaufen oder zurückgegeben): ${neu.join(', ')} – aus dem MA-Management genommen, im Auftragsbuch durchgestrichen.`, 'info', 'MA-Management');
+    if (wieder.length) log(`Wieder in „Angenommene Aufträge“: ${wieder.join(', ')} – Markierung aufgehoben.`, 'info', 'MA-Management');
+  }
   async function ladeMaKontakte() {
     // Anfrage: die mitgeschnittene der angenommenen Liste, sonst aus der der „Veröffentlichten“ abgeleitet (kein Reiterwechsel nötig)
     const abgeleitet = !tamAcceptedReq && tamLoadReq ? acceptedBodyFromPublished(tamLoadReq.body) : null;
@@ -2910,6 +2933,7 @@
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const bekannt = new Set(GM_getValue('orderbook', []).map((e) => String(e.nr || '').toUpperCase()).filter(Boolean));
     maKontakte = { map: parseListeKontakte(txt, bekannt), at: Date.now() };
+    bereinigeAltauftraege(maKontakte.map);
     const nz = wendeListenZeichenAn(parseListeZeichen(txt, (places.ma || []).map((m) => m.k), bekannt));
     if (nz) log(`Angenommene Aufträge (still gelesen): ${nz} Zeichen im Auftragsbuch ergänzt.`, 'debug');
     const v = [...maKontakte.map.values()], buch = maOrders();
@@ -2923,7 +2947,7 @@
   const maListe = () => (places.ma || []).map((m) => Object.assign({}, m));
   function maOrders() {
     const since = Date.now() - 7 * 864e5, seen = new Map();
-    GM_getValue('orderbook', []).filter((e) => e.nr && new Date(e.ts).getTime() >= since).forEach((e) => seen.set(String(e.nr).toUpperCase(), e));
+    GM_getValue('orderbook', []).filter((e) => e.nr && !e.weg && new Date(e.ts).getTime() >= since).forEach((e) => seen.set(String(e.nr).toUpperCase(), e)); // „weg“: nicht mehr in „Angenommene Aufträge“
     const known = maListe().map((m) => m.k), now = new Date();
     return [...seen.values()].map((e) => ({ nr: e.nr, preis: typeof e.preis === 'number' ? e.preis : null, plz: e.plz || '', ort: e.ort || '', strasse: e.strasse || '', dienst: e.dienst || '', status: e.status || '',
       sla: e.sla || '', ref: e.ref || '', zeichen: e.zeichen || '', resEnde: e.resEnde || '', terminWeg: e.terminWeg ? 1 : 0, tour: parseTourzeichen(e.zeichen, known, now), kontakt: maKontakte.map.get(String(e.nr).toUpperCase()) || null }));

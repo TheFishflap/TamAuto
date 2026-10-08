@@ -433,6 +433,52 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.match($('tamauto-ma-rows').textContent, /0171 1234567/);
   });
 
+  it('Altaufträge: fehlt ein Auftrag in „Angenommene Aufträge“ → aus dem MA-Management, im Auftragsbuch durchgestrichen; taucht er wieder auf → zurück', async () => {
+    const vor = (min) => new Date(Date.now() - min * 60e3).toISOString();
+    const book = [
+      { ts: vor(120), nr: 'MW3190401', plz: '44141', ort: 'Dortmund', dienst: 'Sixt Rückgabe', ref: 'WVWZZZ000B', preis: 200, zeichen: 'MK' },
+      { ts: vor(120), nr: 'MW3190405', plz: '50667', ort: 'Köln', dienst: 'Standard', ref: 'WVWZZZ000A', preis: 150, zeichen: 'MK neu' },
+      { ts: vor(5), nr: 'MW3190409', plz: '50667', ort: 'Köln', dienst: 'Standard', ref: 'WVWZZZ000C', preis: 160, zeichen: 'MK' }, // erst 5 min alt → nie bereinigen
+    ];
+    tam = startTam({ gm: { places: { ...KOELN, ma: MAS }, orderbook: book } });
+    await tam.ready(); open();
+    tam.selectTab('AgentEigeneAuftraege');
+    const x = new tam.window.XMLHttpRequest(); x.open('POST', 'https://tam.tuvsud.com/tam/gwt-rpc/auftrag'); x.send('7|0|3|u|a|loadTeilauftraege|1|2|3|');
+    tam.selectTab('AgentVeroeffentlichteAuftraege');
+    const liste = (nrs) => { const all = [...nrs, ...Array.from({ length: 25 }, (_, i) => `MW31999${String(i).padStart(2, '0')}`)];
+      return '//OK[' + all.map((_, i) => `1,${i + 2}`).join(',') + ',' + JSON.stringify(['x.model.auftraege.Teilauftrag/1', ...all]) + ',0,7]'; };
+    tam.rpc = liste(['MW3190405']);
+    $('tamauto-ma-load').click();
+    const weg = (nr) => (tam.store.get('orderbook').find((e) => e.nr === nr) || {}).weg;
+    assert.ok(await until(() => weg('MW3190401'), 3000), tam.logs().slice(-4).join('\n'));
+    assert.ok(!weg('MW3190405') && !weg('MW3190409'));
+    assert.doesNotMatch($('tamauto-ma-rows').textContent, /MW3190401/); assert.match($('tamauto-ma-rows').textContent, /MW3190405/);
+    assert.ok(tam.logs().some((l) => /Nicht mehr in „Angenommene Aufträge“ .*: MW3190401 –/.test(l)));
+    tam.document.querySelector('.tamauto-tabbtn[data-page="tamauto-page-book"]').click();
+    const row = [...tam.document.querySelectorAll('#tamauto-ob-rows tr')].find((r) => r.dataset.nr === 'MW3190401');
+    assert.equal(row.style.textDecoration, 'line-through'); assert.match(row.title, /nicht mehr in „Angenommene Aufträge“/);
+    assert.match(tam.document.getElementById('tamauto-ob-sum').textContent, /1 nicht mehr angenommen \(ausgenommen\)/);
+    // wieder da
+    tam.rpc = liste(['MW3190405', 'MW3190401']);
+    $('tamauto-ma-load').click();
+    assert.ok(await until(() => !weg('MW3190401'), 3000));
+    assert.ok(tam.logs().some((l) => /Wieder in „Angenommene Aufträge“: MW3190401/.test(l)));
+  });
+
+  it('Altaufträge: volle Liste (≥ 495) → keine Bereinigung', async () => {
+    const book = [{ ts: new Date(Date.now() - 7200e3).toISOString(), nr: 'MW3190401', plz: '44141', ort: 'Dortmund', preis: 200, zeichen: 'MK' }];
+    tam = startTam({ gm: { places: { ...KOELN, ma: MAS }, orderbook: book } });
+    await tam.ready(); open();
+    tam.selectTab('AgentEigeneAuftraege');
+    const x = new tam.window.XMLHttpRequest(); x.open('POST', 'https://tam.tuvsud.com/tam/gwt-rpc/auftrag'); x.send('7|0|3|u|a|loadTeilauftraege|1|2|3|');
+    tam.selectTab('AgentVeroeffentlichteAuftraege');
+    const all = Array.from({ length: 500 }, (_, i) => `MW31${String(i).padStart(5, '0')}`);
+    tam.rpc = '//OK[' + all.map((_, i) => `1,${i + 2}`).join(',') + ',' + JSON.stringify(['x.model.auftraege.Teilauftrag/1', ...all]) + ',0,7]';
+    $('tamauto-ma-load').click();
+    assert.ok(await until(() => tam.logs().some((l) => /könnte abgeschnitten sein, keine Bereinigung/.test(l)), 3000), tam.logs().slice(-4).join('\n'));
+    assert.ok(!tam.store.get('orderbook')[0].weg);
+  });
+
   it('„Mail öffnen“ öffnet als Popup, TAM bleibt im selben Tab', async () => {
     await setup();
     const calls = []; tam.window.open = (...x) => { calls.push(x); return null; };

@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.33.0 – 2026-10-08
+- **Altaufträge werden bereinigt:** Beim stillen Laden von „Angenommene Aufträge“ („SLA laden“, alle 30 min) prüft das Script, ob die Aufträge des Auftragsbuchs (letzte 7 Tage, älter als 30 min) dort noch stehen. Fehlt einer (Reservierung abgelaufen oder zurückgegeben), fällt er aus dem MA-Management (Liste, Mail, Zahl am Reiter); im Auftragsbuch steht er grau durchgestrichen („nicht mehr in Angenommene Aufträge – seit …“) und zählt nicht zur Summe. Taucht er wieder auf, ist die Markierung weg. Sicherungen: keine Bereinigung, wenn die Liste voll sein könnte (≥ 495 von höchstens 500) oder unplausibel viele auf einmal fehlen würden.
+
 ### 1.32.9 – 2026-10-08
 - MA-Management, Mail: Cc standardmäßig **alle abgewählt**; Kopfzeile der Mail nur noch **Absender** mit Auswahl (ohne „Mail an den Mitarbeiter“ / „Baustein: neue Terminvereinbarung“).
 - Schalter heißt nur noch „Stille Annahme“ (ohne „Beta“).
