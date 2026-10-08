@@ -202,6 +202,23 @@ describe('Stille Annahme (Beta)', { skip }, () => {
     await sleep(1500);
   }
 
+  it('Statusleiste: aus → nichts; an ohne Vorlage → gelb „lernt“; gelernt + nur Sixt → gelb „pausiert (nur Sixt)“; alle → grün', async () => {
+    const sa = () => [...tam.document.querySelectorAll('.tamauto-sa')];
+    const vis = () => sa().filter((e) => e.style.display !== 'none').map((e) => e.textContent);
+    tam = startTam({ gm: { places: KOELN } }); await tam.ready(); await sleep(1200);
+    assert.equal(sa().length, 2); assert.deepEqual(vis(), []);
+    tam.close();
+    tam = startTam({ gm: { places: KOELN, silentAccept: true } }); await tam.ready(); await sleep(1200);
+    assert.ok(vis().every((t) => /lernt/.test(t)) && vis().length === 2, vis().join(' | '));
+    tam.close();
+    await learned({ silentAcceptSixt: true });
+    assert.ok(vis().every((t) => t === 'Stille Annahme: pausiert (nur Sixt)'), vis().join(' | '));
+    assert.equal(sa()[0].style.background, 'rgb(255, 243, 205)');
+    tam.document.getElementById('tamauto-silentaccept-sixt').click(); await sleep(1200);
+    assert.ok(vis().every((t) => t === 'Stille Annahme: alle Aufträge'), vis().join(' | '));
+    assert.equal(sa()[0].style.background, 'rgb(230, 244, 234)');
+  });
+
   it('Standard aus: normale Annahme über die Karte, keine stille Anfrage – die Vorlage wird trotzdem gelernt', async () => {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();
