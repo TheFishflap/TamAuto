@@ -1418,11 +1418,7 @@
     Object.assign(b.style, { color: '#fff', background: '#2e7d32', borderColor: '#2e7d32', fontWeight: 'bold' });
   }
 
-  // Smartes Neuladen nach einem Update: Tampermonkey installiert im eigenen Takt (nicht beeinflussbar), eine offene Seite behält aber den alten Code, bis sie
-  // neu geladen wird. Steht eine neuere Version bereit, lädt das Script die Seite in einer ruhigen Phase selbst neu: keine Annahme, kein Fenster, keine
-  // Eingabe (außerhalb der Arbeitszeit 2 min, in der Arbeitszeit 10 min; nach Klick auf „Update“ 20 s). Höchstens einmal je Stunde und dreimal je Version –
-  // ist nach dem Neuladen noch die alte Version aktiv, hat Tampermonkey noch nicht aktualisiert; der Update-Knopf bleibt dann stehen.
-  // TAM fragt beim Verlassen der Seite nach („Seite verlassen?“) – für das gewollte Neuladen wird diese Rückfrage unterdrückt
+  // Eine offene Seite behält den alten Code, bis sie neu geladen wird; TAM fragt beim Verlassen nach („Seite verlassen?“).
   // Neuladen ohne „Seite verlassen?“: TAMs Rückfrage abschalten (auch gegen erneutes Setzen) und nacheinander drei Wege versuchen. Lebt die Seite
   // danach noch, hat der Browser das Neuladen blockiert → Hinweis im Log und als Benachrichtigung (dann einmal von Hand neu laden).
   // Nach dem Klick auf „Update installieren“ öffnet Tampermonkey seine Seite in einem neuen Tab. Kommt man von dort zurück (Tampermonkey schließt

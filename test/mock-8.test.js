@@ -213,7 +213,7 @@ describe('Stille Abfrage (Push-Signal)', { skip }, () => {
   });
 });
 
-// Smartes Neuladen nach einem Update: nur in ruhigen Phasen, mit Schutz gegen Schleifen
+// Neuladen nach einem Update: beim Zurückkommen aus Tampermonkey
 describe('Neuladen nach Update: beim Zurückkommen aus Tampermonkey', { skip }, () => {
   const { revocationList } = require('./harness');
   const xhr = (o) => o.url.includes('IQBmSNFRkXF5') ? { status: 200, responseText: revocationList() }
@@ -256,7 +256,7 @@ describe('Update-Quelle', { skip }, () => {
     : o.url.includes('raw.githubusercontent.com') ? (gh ? { status: 200, responseText: `// @version      ${gh}` } : { error: true })
       : o.url.includes('IQALfRz3JKDF') ? (od ? { status: 200, responseText: `// @version      ${od}` } : { error: true }) : { error: true };
   const btn = () => tam.document.getElementById('tamauto-upd');
-  const start = async (gh, od) => { tam = startTam({ gm: { places: KOELN, smartReloadIdleSec: 999 }, xhr: src(gh, od) }); await tam.ready(); await sleep(1500); };
+  const start = async (gh, od) => { tam = startTam({ gm: { places: KOELN }, xhr: src(gh, od) }); await tam.ready(); await sleep(1500); };
 
   it('GitHub hat die neue Version → Installation über den GitHub-Link', async () => {
     await start('99.0.0', '99.0.0');
