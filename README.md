@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.30.4 – 2026-10-08
+- Version 1.30.3 zurückgenommen (interne Messung, nicht für den Einsatz gedacht). Inhaltlich wie 1.30.2.
+
 ### 1.30.2 – 2026-10-07
 - **Abgleich sparsamer (ntfy-Tageslimit 250 Nachrichten je IP):** Das „hi“ passt jetzt für bis zu 650 Aufträge in **eine** Nachricht (4-Zeichen-Hash statt 6 Zeichen in 250er-Teilen). Wird der Tab wieder sichtbar, holt das Script nur Verpasstes nach (ntfy hält Meldungen ~12 h); ein „hi“ gibt es dabei nur noch nach über 10 Stunden im Hintergrund.
 
