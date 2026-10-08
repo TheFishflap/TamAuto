@@ -89,6 +89,14 @@ describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
     assert.match(pk || '', /^[A-Za-z0-9_-]{87}$/);
   });
 
+  it('Status-Meldung nennt den Tab (run) und ein bereitstehendes Update (upd, leer wenn keins)', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    assert.ok(await until(() => tam.posts(STATUS).some((m) => m.t === 'status'), 3000));
+    const m = tam.posts(STATUS).find((x) => x.t === 'status');
+    assert.match(m.run || '', /^[a-z0-9]{4,12}$/); assert.equal(m.upd, '');
+  });
+
   it('mit Kanal-Schlüssel: Annahme geht verschlüsselt an den geheimen Kanal, nicht an den öffentlichen', async () => {
     const { ck, ret } = await withChannelKey();
     tam.addOrder(ORDER);

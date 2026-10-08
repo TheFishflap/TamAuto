@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.32.5
+// @version      1.32.6
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -4121,8 +4121,11 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
   // Lebenszeichen für die Nutzerübersicht in der Lizenz-GUI
   function sendLicStatus() {
     if (!license) return;
+    // run = dieser Tab (zwei offene TAM-Tabs oder ein noch nicht neu geladener Tab melden verschiedene Versionen); upd = bereitstehendes Update
     deviceKey().then((k) => licPost(LIC_TOPIC_STATUS, { v: 1, t: 'status', id: installId(), name: license.name, ver: VERSION, exp: license.exp,
-      on: !!cfg.enabled, acct: tamAcct, pk: k.pub, ck: !!license.cke, at: Date.now() })).catch(() => {});
+      on: !!cfg.enabled, acct: tamAcct, pk: k.pub, ck: !!license.cke, at: Date.now(), run: RUN_ID, upd: pendingUpdate || '' }))
+      .then((r) => { if (r && r.ok === false) log(`Lizenz-Status nicht gesendet (HTTP ${r.status}).`, 'debug', 'Lizenz'); })
+      .catch((e) => log(`Lizenz-Status nicht gesendet (${e.message}).`, 'debug', 'Lizenz'));
   }
   // Auf neue Schlüssel für diese Installation hören (Freischaltung / Verlängerung) – aktiviert automatisch
   let licES = null;

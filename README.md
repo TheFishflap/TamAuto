@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.32.6 – 2026-10-08
+- **Lizenz-Status mit Tab und Update:** Die Statusmeldung an die Lizenzverwaltung nennt zusätzlich den Tab (zwei offene TAM-Tabs oder ein noch nicht neu geladener Tab melden verschiedene Versionen) und ein bereitstehendes Update. Fehlgeschlagene Statusmeldungen stehen im Log.
+
 ### 1.32.5 – 2026-10-08
 - **Auftragsbuch-Abgleich: Nummern mit Unterstrich fehlten.** Aufträge wie `S2112390_1` wurden weder per Annahme-Meldung noch im Auftragsbuch-Abgleich übertragen (die Prüfung erlaubte nur Buchstaben, Ziffern und „-“) – auf den anderen Geräten fehlten sie. Jetzt sind auch `_`, `.` und `/` erlaubt (bis 40 Zeichen).
 - MA-Management: Kontakte und Zeichen werden auch für Aufträge mit ungewöhnlicher Nummer gelesen, wenn sie im Auftragsbuch stehen.
