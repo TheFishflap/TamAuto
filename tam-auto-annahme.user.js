@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.32.4
+// @version      1.32.5
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -563,7 +563,7 @@
     return s.replace(/\\(?:x([0-9a-fA-F]{2})|u([0-9a-fA-F]{4})|(.))/g, (all, h, u, c) =>
       (h ? String.fromCharCode(parseInt(h, 16)) : u ? String.fromCharCode(parseInt(u, 16)) : ({ n: '\n', t: '\t', r: '\r' }[c] ?? c)));
   }
-  function parseListeKontakte(txt) {
+  function parseListeKontakte(txt, bekannt = new Set()) {
     if (!/^\/\/OK\[/.test(txt)) throw new Error(`TAM meldet ${String(txt).slice(0, 40)}`);
     const i = txt.indexOf(',["');
     if (i < 0) return new Map();
@@ -573,7 +573,7 @@
     const typ = table.findIndex((t) => /\.model\.auftraege\.Teilauftrag\//.test(t)) + 1;
     const out = new Map();
     if (!typ) return out;
-    const isNr = (t) => /^(MW\d{6,9}|[A-Z]{2}\d{6}|\d{8,10})(-\d{1,3})?$/.test(t); // 12-stellige Vertragsnummern sind keine AuftragsNr
+    const isNr = (t) => bekannt.has(String(t).toUpperCase()) || /^(MW\d{6,9}|[A-Z]{2}\d{6}|\d{8,10})(-\d{1,3})?$/.test(t); // 12-stellige Vertragsnummern sind keine AuftragsNr; andere Formate (z. B. S2112390_1), wenn sie im Auftragsbuch stehen
     const phoneRe = /^\+?\d[\d\s/\-().]{5,}\d$/;
     const kontakt = (t) => {
       const lines = t.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -628,7 +628,7 @@
   }
   // Ihr Zeichen je Auftrag aus der Listenantwort: im Datensatz steht der Zeichentext als Stringverweis; welcher es ist, erkennt man am Inhalt
   // (höchstens 20 Zeichen, ein bekanntes Kürzel, „?“ oder „… zurück“). Das ist eine Näherung – das Zeichen aus der Tabelle in TAM hat Vorrang.
-  function parseListeZeichen(txt, known = []) {
+  function parseListeZeichen(txt, known = [], bekannt = new Set()) {
     const out = new Map();
     if (!/^\/\/OK\[/.test(txt)) return out;
     const i = txt.indexOf(',["');
@@ -638,7 +638,7 @@
     while ((m = re.exec(tail))) table.push(gwtUnescape(m[1]));
     const typ = table.findIndex((t) => /\.model\.auftraege\.Teilauftrag\//.test(t)) + 1;
     if (!typ) return out;
-    const isNr = (t) => /^(MW\d{6,9}|[A-Z]{2}\d{6}|\d{8,10})(-\d{1,3})?$/.test(t);
+    const isNr = (t) => bekannt.has(String(t).toUpperCase()) || /^(MW\d{6,9}|[A-Z]{2}\d{6}|\d{8,10})(-\d{1,3})?$/.test(t);
     const istZeichen = (t) => { if (t.length > 20 || t.includes('\n') || isNr(t)) return false; const z = parseTourzeichen(t, known); return /^\?+$/.test(t) || z.rueckgabe || z.bekannt; };
     const starts = []; nums.forEach((v, p) => { if (v === typ) starts.push(p); });
     starts.forEach((p, k) => {
@@ -1055,7 +1055,8 @@
   }
   // Der Kanal ist nicht geheim (Name steht im Script): Meldungen streng prüfen. Rückgaben nur für Nummern, deren
   // Annahme heute gemeldet wurde – sonst könnte jeder beliebige Aufträge auf allen Geräten sperren.
-  const RET_NR = /^[A-Z0-9][A-Z0-9-]{3,19}$/;
+  // Auftragsnummern können beliebig aussehen (MW3217075, 1002692555, 9601216241-11, S2112390_1, CXXGAKCDE69290) – nur grob prüfen
+  const RET_NR = /^[A-Z0-9][A-Z0-9_.\/-]{3,39}$/;
   // Auftragsdaten aus einer Annahme-Meldung (nur vom geheimen Kanal) – streng geprüft und gekürzt
   function cleanDetails(det, nrs) {
     const out = {};
@@ -2907,8 +2908,9 @@
     const t0 = Date.now();
     const res = await postText(req), txt = res.txt;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    maKontakte = { map: parseListeKontakte(txt), at: Date.now() };
-    const nz = wendeListenZeichenAn(parseListeZeichen(txt, (places.ma || []).map((m) => m.k)));
+    const bekannt = new Set(GM_getValue('orderbook', []).map((e) => String(e.nr || '').toUpperCase()).filter(Boolean));
+    maKontakte = { map: parseListeKontakte(txt, bekannt), at: Date.now() };
+    const nz = wendeListenZeichenAn(parseListeZeichen(txt, (places.ma || []).map((m) => m.k), bekannt));
     if (nz) log(`Angenommene Aufträge (still gelesen): ${nz} Zeichen im Auftragsbuch ergänzt.`, 'debug');
     const v = [...maKontakte.map.values()], buch = maOrders();
     log(`MA-Management: Antwort ${Math.round(txt.length / 1024)} KB in ${Date.now() - t0} ms · ${tamAcceptedReq ? 'Anfrage von TAM' : 'Anfrage abgeleitet'} · ` +

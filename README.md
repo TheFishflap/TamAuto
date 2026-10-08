@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.32.5 – 2026-10-08
+- **Auftragsbuch-Abgleich: Nummern mit Unterstrich fehlten.** Aufträge wie `S2112390_1` wurden weder per Annahme-Meldung noch im Auftragsbuch-Abgleich übertragen (die Prüfung erlaubte nur Buchstaben, Ziffern und „-“) – auf den anderen Geräten fehlten sie. Jetzt sind auch `_`, `.` und `/` erlaubt (bis 40 Zeichen).
+- MA-Management: Kontakte und Zeichen werden auch für Aufträge mit ungewöhnlicher Nummer gelesen, wenn sie im Auftragsbuch stehen.
+
 ### 1.32.4 – 2026-10-08
 - **Neuladen nach Update – einfach:** Das smarte Neuladen in der ruhigen Phase (bis zu 6 Versuche) entfällt. Nach dem Klick auf „Update installieren“ lädt die Seite **in dem Moment neu, in dem man aus Tampermonkey zurückkommt** (Tampermonkey schließt seinen Tab nach „Aktualisieren“) – die neue Version ist sofort aktiv. TAMs Rückfrage „Seite verlassen?“ wird dabei unterdrückt; klappt das Neuladen nicht, steht ein Hinweis im Log (einmal von Hand neu laden).
 

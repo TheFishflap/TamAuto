@@ -211,6 +211,22 @@ describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
     assert.equal(postUrls().length, n0 + 1, 'nach 429 weitere Abgleich-Nachrichten gesendet');
   });
 
+  it('Nummern in anderen Formaten (S2112390_1, CXXGAKCDE69290) kommen per Annahme-Meldung und Abgleich an; eigenes Auftragsbuch sendet sie mit', async () => {
+    const { ck, ret } = await withChannelKey();
+    const t = Date.now(), book = () => tam.store.get('orderbook') || [];
+    assert.ok(await until(() => tam.live(ret).length, 5000), 'geheimer Kanal nicht verbunden');
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'acc', nrs: ['S2112390_1'], by: 'LouisMac', at: t, det: { S2112390_1: { p: '46047', o: 'Oberhausen', d: 'Audi Wandlung/Rückabwicklung', e: 91.25 } } }));
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'bk', nrs: ['CXXGAKCDE69290'], at: t, items: [{ n: 'CXXGAKCDE69290', t: t - 60e3, b: 'LouisMac', p: '45309', o: 'Essen', e: 80.2 }] }));
+    assert.ok(await until(() => book().some((e) => e.nr === 'S2112390_1' && e.by === 'LouisMac' && e.preis === 91.25), 3000), JSON.stringify(book()) + tam.logs().slice(-12).join('\n'));
+    assert.ok(await until(() => book().some((e) => e.nr === 'CXXGAKCDE69290' && e.ort === 'Essen'), 3000), JSON.stringify(book()));
+    // eigenes Auftragsbuch: Nummer mit Unterstrich wird beim Abgleich mitgesendet
+    tam.store.set('orderbook', [{ ts: new Date(t - 60e3).toISOString(), nr: 'S2112391_2', plz: '46047', ort: 'Oberhausen' }]);
+    const untilA = async (fn, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(50); } return null; };
+    const posted = async () => Promise.all(tam.posts(ret).map((m) => K.decryptMsg(ck, m)));
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'hi', nrs: [], at: Date.now(), src: 'anderes', man: 1, id: 'x', p: 0, n: 1, ks: '' }));
+    assert.ok(await untilA(async () => (await posted()).some((m) => m.t === 'bk' && m.items.some((x) => x.n === 'S2112391_2')), 16000), 'nicht gesendet');
+  });
+
   it('Auftragsbuch-Abgleich: empfangene Aufträge werden geprüft und ergänzt; ältere als 7 Tage und Fremdes auf dem öffentlichen Kanal ignoriert', async () => {
     const { ck, ret } = await withChannelKey();
     const t = Date.now(), book = () => tam.store.get('orderbook') || [];
