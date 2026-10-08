@@ -87,6 +87,20 @@ describe('Nach der Annahme sofort zurück (P2 Tabwechsel)', { skip }, () => {
     assert.ok((tam.store.get('orderbook') || []).some((e) => e.nr === ORDER.nr), '1. Auftrag fehlt im Auftragsbuch');
   });
 
+  it('„bereits vergeben“, danach meldet ein eigenes Gerät die Annahme → grüne Korrektur, Trefferquote „von eigenen Geräten“', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    const B = { nr: 'MW3153894', plz: '50825', ort: 'Köln', onOpen: (t) => setTimeout(() => t.showMessage('Auftrag bereits vergeben!', 'Sie können die Auftragskarte nicht mehr anzeigen lassen da der Auftrag bereits vergeben wurde.'), 50) };
+    tam.addOrder(B);
+    assert.ok(await until(() => tam.logs().some((l) => /Annahme fehlgeschlagen: MW3153894/.test(l)), 15000), tam.logs().slice(-6).join('\n'));
+    assert.equal(tam.store.get('hitstats').MW3153894.s, 'vergeben');
+    tam.ntfy('tamret-', { v: 1, t: 'acc', nrs: ['MW3153894'], by: 'LouisOnePlus', at: Date.now() });
+    assert.ok(await until(() => tam.logs().some((l) => /Korrektur: MW3153894 war nicht an ein anderes Büro vergeben – LouisOnePlus hat ihn angenommen/.test(l)), 3000), tam.logs().slice(-4).join('\n'));
+    assert.equal(tam.store.get('hitstats').MW3153894.s, 'intern');
+    const line = [...tam.document.querySelectorAll('#tamauto-log div')].find((d) => /Korrektur: MW3153894/.test(d.textContent));
+    assert.equal(line.style.color, 'rgb(46, 125, 50)');
+  });
+
   it('TAM meldet nach „Bestätigen“ „bereits vergeben“ → Buchung wird korrigiert', async () => {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();

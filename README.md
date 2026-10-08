@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.32.2 – 2026-10-08
+- **Grüne Korrektur im Log:** Ging ein Auftrag hier verloren („bereits vergeben“, Annahme fehlgeschlagen oder vor der Annahme aus der Tabelle verschwunden) und meldet danach ein eigenes Gerät die Annahme, steht `Korrektur: … war nicht an ein anderes Büro vergeben – <Gerät> hat ihn angenommen.` in Grün. In der Trefferquote zählt er als angenommen („davon n von eigenen Geräten“) statt als „bereits vergeben“.
+
 ### 1.32.1 – 2026-10-08
 - **Log mit Reiter und Status:** „Nehme an: …“ nennt den offenen Reiter und den Weg (still / über die Auftragskarte); das kopierte Log hat eine Zeile „Status beim Kopieren“ (Status, Reiter, Script läuft/gestoppt, Arbeitszeit, stille Annahme, Push-Signal).
 - **Abbruch genauer:** statt „Tab gewechselt oder Tabelle neu geladen“ steht jetzt der Grund – Reiter gewechselt (mit Name), Tabelle neu geladen oder „steht nicht mehr in der Tabelle (vermutlich vergeben)“.

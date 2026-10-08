@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.32.1
+// @version      1.32.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -873,10 +873,11 @@
     const rows = Object.values(hitStats()).filter((e) => new Date(e.ts) >= from);
     const c = (s) => rows.filter((e) => e.s === s).length;
     const passend = rows.length - c('gesperrt');           // veröffentlicht, PLZ stimmt (ohne gesperrte)
-    const angenommen = c('angenommen');
-    const vergeben = c('vergeben');                        // war beim Öffnen schon vergeben
+    const intern = c('intern');                            // hier verloren, aber von einem eigenen Gerät angenommen
+    const angenommen = c('angenommen') + intern;
+    const vergeben = c('vergeben');                        // war beim Öffnen schon vergeben (an ein anderes Büro)
     const verfuegbar = passend - vergeben - c('passend');  // tatsächlich verfügbar = versucht und nicht schon vergeben
-    el.innerHTML = `<b>Trefferquote</b> · ${passend} passend (PLZ stimmt) · <b style="color:#2e7d32">${angenommen} angenommen</b> · ` +
+    el.innerHTML = `<b>Trefferquote</b> · ${passend} passend (PLZ stimmt) · <b style="color:#2e7d32">${angenommen} angenommen</b>${intern ? ` (davon ${intern} von eigenen Geräten)` : ''} · ` +
       `${vergeben} bereits vergeben · ${c('fehler')} Fehler` + (c('gesperrt') ? ` · ${c('gesperrt')} gesperrt` : '') +
       `<br>Angenommen von passenden: <b>${pct(angenommen, passend)}</b> · von tatsächlich verfügbaren: <b>${pct(angenommen, verfuegbar)}</b>`;
   }
@@ -1009,6 +1010,23 @@
   // Annahmen anderer Geräte ins Auftragsbuch (Spalte „Von“ = Lizenzname), hier nicht mehr annehmen, Zeile ausblenden.
   // Die eigene Meldung kommt als Echo zurück – Aufträge, die heute schon im Auftragsbuch stehen, werden übersprungen.
   // PLZ, Ort und Preis ergänzt der Abgleich mit „Angenommene Aufträge“.
+  // Hier verlorene Aufträge („bereits vergeben“, Annahme fehlgeschlagen, aus der Tabelle verschwunden): meldet danach ein eigenes Gerät die Annahme,
+  // steht eine grüne Korrektur im Log – es war nicht an ein anderes Büro vergeben (Trefferquote: „von eigenen Geräten“)
+  const verloren = new Map(); // Nr → Zeitpunkt
+  function merkeVerloren(nr) {
+    const k = nrKey(nr); if (!k) return;
+    verloren.forEach((t, x) => { if (Date.now() - t > 2 * 3600e3) verloren.delete(x); });
+    // Meldung des anderen Geräts kam schon vorher an → sofort korrigieren
+    const since = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    const e = GM_getValue('orderbook', []).find((b) => b.ts >= since && b.by && nrKey(b.nr) === k);
+    if (e) { setTimeout(() => korrigiere(k, e.by), 0); return; }
+    verloren.set(k, Date.now());
+  }
+  function korrigiere(x, who) {
+    verloren.delete(x);
+    const m = hitStats(); if (m[x]) { m[x].s = 'intern'; GM_setValue('hitstats', m); }
+    log(`Korrektur: ${x} war nicht an ein anderes Büro vergeben – ${who} hat ihn angenommen.`, 'ok', 'Annahme');
+  }
   function addRemoteAccepts(nrs, by, at, det = {}) {
     const book = GM_getValue('orderbook', []);
     const since = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
@@ -1033,6 +1051,7 @@
     hideAcceptedRows(add);
     renderOrderbook();
     log(`Von ${who} angenommen: ${add.join(', ')} – im Auftragsbuch eingetragen.`, 'hint');
+    add.filter((x) => verloren.has(x)).forEach((x) => korrigiere(x, who));
   }
   // Der Kanal ist nicht geheim (Name steht im Script): Meldungen streng prüfen. Rückgaben nur für Nummern, deren
   // Annahme heute gemeldet wurde – sonst könnte jeder beliebige Aufträge auf allen Geräten sperren.
@@ -2174,7 +2193,7 @@
     const nrs = main ? [o.nr, ...bulkOf(o)] : [bad];
     hideAcceptedRows(nrs, true);
     const vergeben = /bereits|vergeben|nicht mehr verfügbar|falschen Status/i.test(reason);
-    nrs.forEach((x) => markDone(x, `Annahme fehlgeschlagen (${vergeben ? 'vergeben' : 'Fehler'}, nach „Bestätigen“)`, FAIL_RETRY_MS));
+    nrs.forEach((x) => { markDone(x, `Annahme fehlgeschlagen (${vergeben ? 'vergeben' : 'Fehler'}, nach „Bestätigen“)`, FAIL_RETRY_MS); merkeVerloren(x); });
     saveDone();
     const up = new Set(nrs.map((x) => String(x).toUpperCase()));
     const book = GM_getValue('orderbook', []);
@@ -2389,6 +2408,7 @@
         if (bg !== !onPublishedTab() || !annahmeAktiv() || annahmeGrid() !== grid || !grid.contains(o.row)) {
           const warum = bg !== !onPublishedTab() || !annahmeAktiv() ? `Reiter gewechselt (jetzt „${offenerReiter()}“)`
             : annahmeGrid() !== grid ? 'Tabelle neu geladen' : `${o.key} steht nicht mehr in der Tabelle (vermutlich vergeben)`;
+          if (/nicht mehr in der Tabelle/.test(warum)) merkeVerloren(o.key);
           log(`Abbruch vor ${o.key}: ${warum} – keine Annahme, neu prüfen.`, 'err'); recheck = true; break;
         }
         log(`Nehme an: ${desc} · Reiter „${offenerReiter()}“${bg ? ' (nur still)' : cfg.silentAccept && acceptTpl && stillErlaubt(o) ? ' · still' : ' · über die Auftragskarte'}`);
@@ -2407,7 +2427,7 @@
           log(`Angenommen: ${desc}${plus}${via}${wo}`, 'ok'); notify('TAM: Auftrag angenommen', desc + plus);
           bookAccepted(o); n++;
         } else {
-          log(`Annahme fehlgeschlagen: ${desc}`, 'err');
+          log(`Annahme fehlgeschlagen: ${desc}`, 'err'); merkeVerloren(o.nr || o.key);
           notify('TAM: Annahme fehlgeschlagen', desc);
           markDone(o.key, `Annahme fehlgeschlagen${o.failReason ? ` (${o.failReason})` : ''}`, FAIL_RETRY_MS); // nicht sofort erneut versuchen
         }
