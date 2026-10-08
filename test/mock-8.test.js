@@ -214,46 +214,38 @@ describe('Stille Abfrage (Push-Signal)', { skip }, () => {
 });
 
 // Smartes Neuladen nach einem Update: nur in ruhigen Phasen, mit Schutz gegen Schleifen
-describe('Smartes Neuladen nach einem Update', { skip }, () => {
+describe('Neuladen nach Update: beim Zurückkommen aus Tampermonkey', { skip }, () => {
   const { revocationList } = require('./harness');
   const xhr = (o) => o.url.includes('IQBmSNFRkXF5') ? { status: 200, responseText: revocationList() }
     : o.url.includes('raw.githubusercontent.com') ? { status: 200, responseText: '// ==UserScript==\n// @version      99.0.0\n// ==/UserScript==' } : { error: true };
-  const reloads = () => tam.logs().filter((l) => /Seite wird in der ruhigen Phase neu geladen/.test(l)).length;
-  const base = { places: KOELN, smartReloadIdleSec: 1 };
+  const reloadLog = () => tam.logs().some((l) => /Zurück aus Tampermonkey – Seite wird neu geladen/.test(l));
+  const btn = () => tam.document.getElementById('tamauto-upd');
 
-  it('neuere Version bereit + ruhig → Seite wird neu geladen (Versuch 1/3), Schutzmarke gesetzt', async () => {
-    tam = startTam({ gm: base, xhr });
+  it('ohne Klick auf „Update installieren“ lädt nichts neu – auch nicht bei Fokuswechsel', async () => {
+    tam = startTam({ gm: { places: KOELN }, xhr });
     await tam.ready();
-    assert.ok(await until(() => reloads() === 1, 12000), tam.logs().slice(-5).join('\n'));
-    assert.deepEqual([tam.store.get('smartReload').ver, tam.store.get('smartReload').n], ['99.0.0', 1]);
-  });
-  it('höchstens einmal je Stunde und dreimal je Version', async () => {
-    tam = startTam({ gm: { ...base, smartReload: { ver: '99.0.0', n: 1, at: Date.now() - 600e3 } }, xhr });
-    await tam.ready(); await sleep(7000);
-    assert.equal(reloads(), 0, 'schon vor 10 min neu geladen');
-    tam.close();
-    tam = startTam({ gm: { ...base, smartReload: { ver: '99.0.0', n: 3, at: Date.now() - 7200e3 } }, xhr });
-    await tam.ready(); await sleep(7000);
-    assert.equal(reloads(), 0, 'dreimal reicht');
-  });
-  it('kein Neuladen, solange Eingaben kommen oder ein Fenster offen ist', async () => {
-    tam = startTam({ gm: { ...base, smartReloadIdleSec: 60 }, xhr });
-    await tam.ready(); await sleep(7000);
-    assert.equal(reloads(), 0, 'trotz kürzlicher Eingabe');
-  });
-  it('Ziel erreicht (installierte Version ≥ Marke) → Schutzmarke wird gelöscht', async () => {
-    tam = startTam({ gm: { places: KOELN, smartReload: { ver: '1.0.0', n: 1, at: Date.now() } } });
-    await tam.ready();
-    assert.equal(tam.store.get('smartReload'), null);
+    assert.ok(await until(() => /Update 99\.0\.0 installieren/.test(btn().textContent), 5000));
+    await sleep(1600);
+    tam.window.dispatchEvent(new tam.window.Event('focus'));
+    await sleep(500);
+    assert.ok(!reloadLog());
   });
 
-  it('nach dem Klick auf „Update“: mehrere Versuche im Abstand von 90 s (Bestätigung in Tampermonkey dauert); TAMs Rückfrage beim Verlassen wird unterdrückt', async () => {
-    tam = startTam({ gm: { ...base, updateClickedAt: Date.now(), smartReload: { ver: '99.0.0', n: 1, at: Date.now() - 100e3 } }, xhr });
+  it('Klick auf „Update installieren“ → Tampermonkey-Tab; beim Zurückkommen sofort neu laden (Rückfrage unterdrückt, Wege im Log)', async () => {
+    tam = startTam({ gm: { places: KOELN }, xhr });
+    tam.window.open = () => null;
     tam.window.onbeforeunload = () => 'Seite verlassen?';
     await tam.ready();
-    assert.ok(await until(() => reloads() === 1, 12000), tam.logs().slice(-5).join('\n'));
-    assert.equal(tam.store.get('smartReload').n, 2);
-    assert.ok(await until(() => tam.window.onbeforeunload === null, 3000), 'Rückfrage nicht unterdrückt');
+    assert.ok(await until(() => /Update 99\.0\.0 installieren/.test(btn().textContent), 5000));
+    btn().click();
+    tam.window.dispatchEvent(new tam.window.Event('focus')); // direkt nach dem Klick: noch nicht
+    await sleep(300);
+    assert.ok(!reloadLog(), 'zu früh neu geladen');
+    await sleep(1500);
+    tam.window.dispatchEvent(new tam.window.Event('focus')); // zurück aus Tampermonkey
+    assert.ok(await until(reloadLog, 2000), tam.logs().slice(-4).join('\n'));
+    assert.ok(await until(() => tam.logs().some((l) => /Neuladen über location\.reload\(\)/.test(l)), 2000));
+    assert.equal(tam.window.onbeforeunload, null, 'Rückfrage nicht unterdrückt');
   });
 });
 

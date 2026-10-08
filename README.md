@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.32.4 – 2026-10-08
+- **Neuladen nach Update – einfach:** Das smarte Neuladen in der ruhigen Phase (bis zu 6 Versuche) entfällt. Nach dem Klick auf „Update installieren“ lädt die Seite **in dem Moment neu, in dem man aus Tampermonkey zurückkommt** (Tampermonkey schließt seinen Tab nach „Aktualisieren“) – die neue Version ist sofort aktiv. TAMs Rückfrage „Seite verlassen?“ wird dabei unterdrückt; klappt das Neuladen nicht, steht ein Hinweis im Log (einmal von Hand neu laden).
+
 ### 1.32.2 – 2026-10-08
 - **Grüne Korrektur im Log:** Ging ein Auftrag hier verloren („bereits vergeben“, Annahme fehlgeschlagen oder vor der Annahme aus der Tabelle verschwunden) und meldet danach ein eigenes Gerät die Annahme, steht `Korrektur: … war nicht an ein anderes Büro vergeben – <Gerät> hat ihn angenommen.` in Grün. In der Trefferquote zählt er als angenommen („davon n von eigenen Geräten“) statt als „bereits vergeben“.
 

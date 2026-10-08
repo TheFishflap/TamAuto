@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.32.2
+// @version      1.32.4
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1422,32 +1422,46 @@
   // neu geladen wird. Steht eine neuere Version bereit, lädt das Script die Seite in einer ruhigen Phase selbst neu: keine Annahme, kein Fenster, keine
   // Eingabe (außerhalb der Arbeitszeit 2 min, in der Arbeitszeit 10 min; nach Klick auf „Update“ 20 s). Höchstens einmal je Stunde und dreimal je Version –
   // ist nach dem Neuladen noch die alte Version aktiv, hat Tampermonkey noch nicht aktualisiert; der Update-Knopf bleibt dann stehen.
-  let lastInputAt = Date.now();
-  ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => document.addEventListener(ev, () => { lastInputAt = Date.now(); }, { capture: true, passive: true }));
   // TAM fragt beim Verlassen der Seite nach („Seite verlassen?“) – für das gewollte Neuladen wird diese Rückfrage unterdrückt
+  // Neuladen ohne „Seite verlassen?“: TAMs Rückfrage abschalten (auch gegen erneutes Setzen) und nacheinander drei Wege versuchen. Lebt die Seite
+  // danach noch, hat der Browser das Neuladen blockiert → Hinweis im Log und als Benachrichtigung (dann einmal von Hand neu laden).
+  // Nach dem Klick auf „Update installieren“ öffnet Tampermonkey seine Seite in einem neuen Tab. Kommt man von dort zurück (Tampermonkey schließt
+  // den Tab nach „Aktualisieren“), lädt diese Seite sofort neu – die neue Version ist dann aktiv. (Wer dort abbricht, bekommt die alte Version neu geladen.)
+  let updateGeklicktAt = 0;
+  const zurueckAusTampermonkey = () => {
+    if (!updateGeklicktAt || document.visibilityState === 'hidden') return;
+    const t = Date.now() - updateGeklicktAt;
+    if (t < 1500 || t > 30 * 60e3) return; // direkt nach dem Klick noch nicht; nach 30 min nicht mehr
+    updateGeklicktAt = 0;
+    log(`Zurück aus Tampermonkey – Seite wird neu geladen (neue Version ${pendingUpdate || ''} wird aktiv).`, 'ok', 'Update');
+    setTimeout(neuLadenOhneRueckfrage, 300);
+  };
+  document.addEventListener('visibilitychange', zurueckAusTampermonkey);
+  addEventListener('focus', zurueckAusTampermonkey);
   function neuLadenOhneRueckfrage() {
-    try {
-      const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-      W.onbeforeunload = null; window.onbeforeunload = null;
-      [W, window].forEach((w) => w.addEventListener('beforeunload', (e) => { e.stopImmediatePropagation(); }, true));
-    } catch (e) { /* ignorieren */ }
-    location.reload();
+    const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    try { W.onbeforeunload = null; window.onbeforeunload = null; } catch (e) { /* ignorieren */ }
+    [W, window].forEach((w) => { try { Object.defineProperty(w, 'onbeforeunload', { configurable: true, get: () => null, set: () => {} }); } catch (e) { /* ignorieren */ } });
+    try { [W, window].forEach((w) => w.addEventListener('beforeunload', (e) => { e.stopImmediatePropagation(); }, true)); } catch (e) { /* ignorieren */ }
+    const wege = [
+      ['location.reload()', () => W.location.reload()],
+      ['location.replace()', () => W.location.replace(W.location.href)],
+      ['location.href', () => { W.location.href = W.location.href; }],
+    ];
+    let i = 0;
+    const weiter = () => {
+      if (i >= wege.length) {
+        log('Neuladen hat nicht geklappt (der Browser hat es blockiert) – bitte die Seite einmal von Hand neu laden (F5), dann ist die neue Version aktiv.', 'err', 'Update');
+        notify('TAM Auto-Annahme: Update bereit', 'Bitte die TAM-Seite einmal neu laden (F5).');
+        return;
+      }
+      const [name, fn] = wege[i++];
+      log(`Neuladen über ${name} …`, 'debug', 'Update');
+      try { fn(); } catch (e) { log(`Neuladen über ${name} fehlgeschlagen (${e.message}).`, 'err', 'Update'); }
+      setTimeout(weiter, 4000);
+    };
+    weiter();
   }
-  function smartReload(now = Date.now()) {
-    if (!pendingUpdate || !license || busy || currentAcceptNr || accSyncing || startRunning || visibleWindows().length || now - lastAcceptAt < 60e3) return false;
-    const sr = GM_getValue('smartReload', null), mine = sr && sr.ver === pendingUpdate ? sr : { ver: pendingUpdate, n: 0, at: 0 };
-    const geklickt = now - GM_getValue('updateClickedAt', 0) < 30 * 60e3; // nach dem Klick dauert die Bestätigung in Tampermonkey: mehrere Versuche im Abstand von 90 s
-    if (mine.n >= (geklickt ? 6 : 3) || now - mine.at < (geklickt ? 90e3 : 3600e3)) return false;
-    const ruhig = (GM_getValue('smartReloadIdleSec', 0) * 1000) || (geklickt ? 30e3 : inSchedule() ? 600e3 : 120e3); // smartReloadIdleSec: nur für Tests
-    if (now - lastInputAt < ruhig) return false;
-    GM_setValue('smartReload', { ver: pendingUpdate, n: mine.n + 1, at: now });
-    log(`Neue Version ${pendingUpdate} bereit – Seite wird in der ruhigen Phase neu geladen (Versuch ${mine.n + 1}/${geklickt ? 6 : 3}).`, 'ok');
-    setTimeout(neuLadenOhneRueckfrage, 400);
-    return true;
-  }
-  // Nach dem Neuladen: Ziel erreicht → Schutzmarke löschen
-  { const sr = GM_getValue('smartReload', null); if (sr && !newerVersion(sr.ver, VERSION)) GM_setValue('smartReload', null); }
-
   // Version einer Quelle abfragen → { v } oder { err }
   function fetchVersion(url) {
     return new Promise((resolve) => GM_xmlhttpRequest({
@@ -2840,7 +2854,6 @@
       dismissTamErrors(); // technische TAM-Fehlerfenster (z. B. TypeError auf Android) schließen // liegengebliebene TAM-Meldungen (z. B. "bereits vergeben") wegklicken
       hookAllXhr(); // später geladene TAM-iframes ebenfalls mitschneiden
       scanAccepted();    // Auftragsbuch mit „Angenommene Aufträge“ abgleichen (nur wenn sichtbar und geändert)
-      smartReload(now); // neue Version bereit → in ruhiger Phase neu laden
       const bookPage = document.getElementById('tamauto-page-book');
       if (bookPage && bookPage.style.display !== 'none' && now - lastBookRenderAt > 60000) { lastBookRenderAt = now; renderOrderbook(); } // Markierungen wandern mit der Zeit
     }
@@ -3381,7 +3394,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     };
     // Ohne gefundenes Update: nach Updates suchen. Mit Update: als Link die Installation öffnen.
     $('tamauto-upd').onclick = () => {
-      if (pendingUpdate) { GM_setValue('updateClickedAt', Date.now()); GM_setValue('smartReload', null); window.open(updateLink, '_blank'); log(`Update ${pendingUpdate}: Installation geöffnet – nach der Installation lädt sich die Seite in einer ruhigen Phase neu.`); return; }
+      if (pendingUpdate) { updateGeklicktAt = Date.now(); window.open(updateLink, '_blank'); log(`Update ${pendingUpdate}: Installation in Tampermonkey geöffnet – nach „Aktualisieren“ dort lädt sich diese Seite beim Zurückkehren neu.`); return; }
       checkUpdate(true);
     };
     if (pendingUpdate) markUpdateButton(pendingUpdate); // Update wurde schon vor dem Aufbau des Bedienfelds gefunden
