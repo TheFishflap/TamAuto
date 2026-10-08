@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.31.1
+// @version      1.31.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -245,6 +245,7 @@
   // Log-Gruppe = Feature, von dem die Zeile ausgeht (erste passende Regel; sonst „Annahme“). Explizit über log(msg, level, gruppe).
   const LOG_GRUPPEN = [
     ['Stille Annahme', /^Stille Annahme/],
+    ['Annahme', /^(Angenommen|Nehme an|Annahme fehlgeschlagen|Dauer der Annahme):/],
     ['MA-Management', /^MA-Management|^Mailtext|^Kontakte|Angenommene Aufträge \(still gelesen\)/],
     ['Annahme', / → Abgleich: /],
     ['Web-Analyse', /^(Silent|Push-Signal|Neue Zeile erkannt|Refresh \()|: neue Daten in TAM|: Abfrage fehlgeschlagen|nicht mehr veröffentlicht|wieder veröffentlicht/],

@@ -22,6 +22,7 @@ describe('Log-Gruppen', () => {
     ['Silent Reload → Abgleich: 14 Aufträge in Tabelle, 14 offen, 3 passend', 'Annahme'],
     ['MW3214069 · 45897 Gelsenkirchen · Arval → TREFFER → wird angenommen', 'Annahme'],
     ['Nehme an: MW3214086 · 35066 Frankenberg (Eder) · 76,65 €', 'Annahme'],
+    ['Angenommen: MW3217075 · 51063 Köln · Toyota Kinto · 69,35 € · per Silent Reload gefunden · im Hintergrund (anderer Reiter offen)', 'Annahme'],
     ['Stille Annahme MW1: sende accept (ID 1 = B)', 'Stille Annahme'],
     ['Rückgabe gemeldet: MW1 – 48 h nicht annehmen.', 'Rückgabe'],
     ['Ortslisten unverändert – Ortsliste "annehmen": 35 PLZ', 'Ortsliste'],

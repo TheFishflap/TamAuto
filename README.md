@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.31.2 – 2026-10-08
+- Log: „Angenommen: … im Hintergrund (anderer Reiter offen)“ steht unter `[Annahme]` statt `[Start]`.
+
 ### 1.31.1 – 2026-10-08
 - Log: „Treffer, aber gesperrt“ steht in der Farbe der Sperrliste (braun, wie die gesperrte Zeile in TAM) statt rot und ohne „[Fehler]“ – eine Sperre ist kein Fehler.
 
