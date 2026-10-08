@@ -244,6 +244,63 @@ describe('Stille Annahme (Beta)', { skip }, () => {
     assert.ok(tam.posts('tamret-').some((m) => m.t === 'acc' && m.nrs.includes(SIXT2.nr)), 'Annahme nicht gemeldet');
   });
 
+  it('Hintergrund (Beta): Reiter „Angenommene Aufträge“ offen → neuer Auftrag still angenommen, ohne Karte und ohne Reiterwechsel; Status „● still aktiv“', async () => {
+    await learned({ running: true, silentOn: true });
+    await sleep(2500); // Nachkontrolle der ersten Annahme vorbei (sie holt sonst „Veröffentlichte Aufträge“ zurück)
+    tam.selectTab('AgentEigeneAuftraege');
+    await sleep(1200);
+    assert.ok(!tam.onPublished());
+    assert.equal(tam.document.getElementById('tamauto-head-state').textContent, '● still aktiv');
+    tam.addOrder(SIXT2);
+    assert.ok(await until(() => tam.accepted.includes(SIXT2.nr), 15000), tam.logs().slice(-8).join('\n'));
+    assert.deepEqual(tam.dblclicks, [FIRST.nr], 'Auftragskarte geöffnet');
+    assert.ok(!tam.onPublished(), 'Reiter gewechselt');
+    assert.ok(tam.logs().some((l) => /Angenommen: MW3153999 .*im Hintergrund/.test(l)), tam.logs().slice(-6).join('\n'));
+    assert.ok((tam.store.get('orderbook') || []).some((e) => e.nr === SIXT2.nr));
+  });
+
+  it('Hintergrund + Silent Reload: neue Daten bei TAM → Refresh-Pfeil der VERDECKTEN Tabelle wird geklickt, Reiter bleibt', async () => {
+    await learned({ running: true, silentOn: true, silentSec: 2 });
+    const bar = [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-toolbar')].find((x) => /Einträge pro Seite/.test(x.textContent));
+    bar.querySelectorAll('.x-btn')[4].querySelector('button').click(); // TAM-Anfrage übernehmen
+    await sleep(2500);
+    tam.selectTab('AgentEigeneAuftraege');
+    await sleep(500);
+    const r0 = tam.refreshes;
+    tam.rpc = '//OK[1,2,' + JSON.stringify(['x.model.auftraege.Teilauftrag/1', 'MW3153999', '50825']) + ',0,7]';
+    assert.ok(await until(() => tam.refreshes > r0, 8000), tam.logs().slice(-6).join('\n'));
+    assert.ok(!tam.onPublished(), 'Reiter gewechselt');
+    assert.ok(tam.logs().some((l) => /Silent Reload: neue Daten in TAM/.test(l)));
+  });
+
+  it('Hintergrund + „nur Sixt“: normaler Auftrag wartet (nicht als fehlgeschlagen gemerkt) und wird nach Rückkehr zu „Veröffentlichte Aufträge“ über die Karte angenommen', async () => {
+    await learned({ running: true, silentOn: true, silentAcceptSixt: true });
+    await sleep(2500);
+    tam.selectTab('AgentEigeneAuftraege');
+    await sleep(1200);
+    assert.ok(!tam.onPublished());
+    assert.equal(tam.document.getElementById('tamauto-head-state').textContent, '◐ still: nur Sixt');
+    const NORMAL = { nr: 'MW3153998', plz: '50825', ort: 'Köln', id: '3709953', dienst: 'Zustandsbericht' };
+    tam.addOrder(NORMAL);
+    assert.ok(await until(() => tam.logs().some((l) => /MW3153998: im Hintergrund nur still möglich \(Einstellung „nur Sixt“\)/.test(l)), 8000), tam.logs().slice(-6).join('\n'));
+    assert.ok(!tam.accepted.includes(NORMAL.nr)); assert.equal(acceptFetches().length, 0);
+    assert.ok(!((tam.store.get('doneInfo') || {})[NORMAL.nr]), 'als erledigt/fehlgeschlagen gemerkt');
+    tam.selectTab('AgentVeroeffentlichteAuftraege');
+    assert.ok(await until(() => tam.accepted.includes(NORMAL.nr), 15000), tam.logs().slice(-6).join('\n'));
+    assert.ok(tam.dblclicks.includes(NORMAL.nr), 'nicht über die Karte');
+  });
+
+  it('Hintergrund ohne stille Annahme: nichts angenommen, Status „⏸ pausiert“', async () => {
+    tam = startTam({ gm: { places: KOELN, running: true, silentOn: true } });
+    await tam.ready();
+    tam.selectTab('AgentEigeneAuftraege');
+    await sleep(1200);
+    assert.equal(tam.document.getElementById('tamauto-head-state').textContent, '⏸ pausiert');
+    tam.addOrder(SIXT2);
+    await sleep(2500);
+    assert.ok(!tam.accepted.includes(SIXT2.nr)); assert.deepEqual(tam.dblclicks, []);
+  });
+
   it('„nur Sixt“: ein normaler Auftrag läuft weiter über die Karte', async () => {
     await learned({ silentAcceptSixt: true });
     tam.addOrder({ ...SIXT2, nr: 'MW3153998', id: '3709953', dienst: 'Standard' });

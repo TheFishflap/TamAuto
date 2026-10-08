@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.30.8
+// @version      1.31.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1483,6 +1483,8 @@
     if (onPublishedTab()) {
       [state, color] = cfg.enabled ? ['Veröffentlichte Aufträge – ✔ bereit zum Annehmen', '#2e7d32']
         : ['Veröffentlichte Aufträge – gestoppt', '#555'];
+    } else if (hintergrundModus()) {
+      [state, color] = [`${onAccepted ? 'Angenommene Aufträge' : other || 'anderer Reiter'} – ${cfg.silentAcceptSixt ? '◐ stille Annahme nur Sixt' : '● stille Annahme aktiv'} (Beta, im Hintergrund)`, cfg.silentAcceptSixt ? '#b26a00' : '#2e7d32'];
     } else if (onAccepted) {
       [state, color] = ['Angenommene Aufträge – ⏸ Annahme pausiert', '#b26a00'];
     } else {
@@ -1503,6 +1505,15 @@
     if (!panel) return null;
     return [...panel.querySelectorAll('.x-grid3')].find(visible) || null;
   }
+
+  // Beta „stille Annahme im Hintergrund“: Ist ein anderer Reiter offen (z. B. „Angenommene Aufträge“), liegt „Veröffentlichte Aufträge“ verdeckt
+  // daneben. Mit eingeschalteter und gelernter stiller Annahme wird diese verdeckte Tabelle aktualisiert und gelesen – angenommen wird dann NUR still
+  // (ohne Auftragskarte, also kein Reiterwechsel); mit „nur Sixt“ nur Sixt-Aufträge, die übrigen warten, bis „Veröffentlichte Aufträge“ wieder offen ist.
+  const pubPanel = () => document.getElementById(cfg.tabPanelId);
+  const hintergrundModus = () => !!(cfg.enabled && cfg.silentOn && cfg.silentAccept && acceptTpl && !onPublishedTab() && pubPanel() && pubPanel().querySelector('.x-grid3'));
+  const annahmeAktiv = () => onPublishedTab() || hintergrundModus();
+  const annahmePanel = () => (onPublishedTab() ? activeTabPanel() : hintergrundModus() ? pubPanel() : null);
+  const annahmeGrid = () => (onPublishedTab() ? visibleGrid() : hintergrundModus() ? pubPanel().querySelector('.x-grid3') : null);
 
   let lastColInfo = '';
   let lastColsOk = false;
@@ -1549,11 +1560,12 @@
   // Refresh-Pfeil in der Blätterleiste unten (|< < Seite > >| ⟳). Reihenfolge der Symbol-Buttons:
   // Erste, Zurück, Weiter, Letzte, Aktualisieren → der 5. Symbol-Button.
   let refreshInfoLogged = false;
-  function findRefreshButton(panel) {
-    const bar = [...panel.querySelectorAll('.x-toolbar')].filter(visible)
+  function findRefreshButton(panel, verdeckt = false) {
+    const bar = [...panel.querySelectorAll('.x-toolbar')].filter((tb) => verdeckt || visible(tb))
       .find((tb) => /einträge pro seite/i.test(text(tb)));
     if (!bar) return null;
-    const iconBtns = [...bar.querySelectorAll('.x-btn')].filter((b) => visible(b) && !text(b));
+    // verdeckt (Hintergrund): Sichtbarkeit nicht prüfbar – nur ausgeblendete Buttons (display:none am Button selbst) überspringen
+    const iconBtns = [...bar.querySelectorAll('.x-btn')].filter((b) => (verdeckt ? !b.classList.contains('x-hide-display') && b.style.display !== 'none' : visible(b)) && !text(b));
     const btn = iconBtns[4] || null;
     if (!refreshInfoLogged) {
       log(btn ? `Refresh-Button gefunden (Symbol 5 von ${iconBtns.length})`
@@ -1565,11 +1577,11 @@
 
   // Klickt den Refresh-Pfeil und prüft, ob die Tabelle wirklich neu geladen wurde.
   async function refreshGrid() {
-    const panel = activeTabPanel();
+    const panel = annahmePanel(), verdeckt = !onPublishedTab();
     if (!panel) return false;
-    const btn = findRefreshButton(panel);
-    if (!btn) return false;
-    const grid = visibleGrid();
+    const btn = findRefreshButton(panel, verdeckt);
+    if (!btn) { if (verdeckt) log('Hintergrund: Refresh-Pfeil der verdeckten Tabelle „Veröffentlichte Aufträge“ nicht gefunden.', 'err', 'Stille Annahme'); return false; }
+    const grid = annahmeGrid();
     const body = grid && grid.querySelector('.x-grid3-body');
     const firstRow = grid && grid.querySelector('.x-grid3-row');
     if (firstRow) firstRow.dataset.tamautoMark = '1';
@@ -1579,9 +1591,9 @@
     const t0 = Date.now();
     // bis zu 10 s: Lade-Maske gesehen und wieder weg, oder Zeilen neu gerendert
     await waitFor(() => {
-      const mask = [...panel.querySelectorAll('.x-mask-loading, .ext-el-mask')].some(visible);
+      const mask = [...panel.querySelectorAll('.x-mask-loading, .ext-el-mask')].some((m) => verdeckt || visible(m)); // verdeckt: Sichtbarkeit nicht prüfbar
       if (mask) { maskSeen = true; return false; }
-      const g = visibleGrid();
+      const g = annahmeGrid();
       const rowNow = g && g.querySelector('.x-grid3-row');
       const rerendered = (firstRow && (!firstRow.isConnected || !rowNow || !rowNow.dataset.tamautoMark)) ||
         (!firstRow && rowNow) || (g && g.querySelector('.x-grid3-body') !== body);
@@ -1589,6 +1601,10 @@
     }, 10000, 100);
     const ok = maskSeen || Date.now() - t0 < 10000;
     if (ok) lastAnyRefreshAt = Date.now();
+    if (verdeckt) { // Beta-Protokoll: klappt das Aktualisieren der verdeckten Tabelle im echten TAM?
+      const g = annahmeGrid();
+      log(`Hintergrund: verdeckte Tabelle „Veröffentlichte Aufträge“ ${ok ? `aktualisiert in ${Date.now() - t0} ms (${maskSeen ? 'Lade-Maske gesehen' : 'Zeilen neu gezeichnet'})` : 'nach 10 s unverändert'} · ${g ? g.querySelectorAll('.x-grid3-row').length : 0} Zeilen.`, ok ? 'debug' : 'err', 'Stille Annahme');
+    }
     if (ok !== lastRefreshOk) {
       log(ok ? 'Refresh funktioniert – Tabelle wurde neu geladen.' :
         'Refresh-Klick ohne Wirkung (Tabelle nicht neu geladen). Bitte melden.', ok ? 'ok' : 'err');
@@ -1945,11 +1961,16 @@
     try { return await acceptOrderInner(order); } finally { currentAcceptNr = ''; }
   }
   async function acceptOrderInner(order) {
-    if (!onPublishedTab()) { log('Abbruch: nicht im Tab "Veröffentlichte Aufträge".', 'err'); return false; }
+    const bg = !onPublishedTab();
+    if (bg && !hintergrundModus()) { log('Abbruch: nicht im Tab "Veröffentlichte Aufträge".', 'err'); return false; }
     const nr = (order.nr || '').trim();
     if (!nr) { log('Keine AuftragsNr in der Zeile (Spalte „AuftragsNr“ leer).', 'err'); return false; } // Format egal
     const stille = await silentAcceptTry(order, nr); // Beta: ohne Auftragskarte
     if (stille !== null) return stille;
+    if (bg) { // im Hintergrund gibt es keine Auftragskarte (kein Reiterwechsel)
+      log(`${nr}: im Hintergrund nur still möglich${cfg.silentAcceptSixt && !istSixt(order.dienst) ? ' (Einstellung „nur Sixt“)' : ''} – wartet, bis „Veröffentlichte Aufträge“ offen ist.`, 'info', 'Stille Annahme');
+      order.failReason = 'reiter'; return false;
+    }
 
     // 1) Doppelklick -> "Auftragskarte zu MW…"
     // Noch offenes Auftragsfenster (Karte oder Detailansicht) eines ANDEREN Auftrags vorher schließen – es verdeckt
@@ -2278,17 +2299,18 @@
     recheck = false; // Tabelle wird jetzt frisch gelesen
     clearTimeout(obsTimer); // ausstehende Nachprüfung ist damit erledigt
     const prevGridNrs = lastGridNrs;
-    lastGridNrs = gridNrs(visibleGrid()); // Stand für das Sicherheitsnetz (auch bei vorzeitigem Abbruch → kein Dauer-Neustart)
+    lastGridNrs = gridNrs(annahmeGrid()); // Stand für das Sicherheitsnetz (auch bei vorzeitigem Abbruch → kein Dauer-Neustart)
     // nach einem Silent-Reload-Refresh: neu aufgetauchte Aufträge als "per Silent Reload gefunden" merken
     if (reason === 'Silent Reload') lastGridNrs.forEach((x) => { if (!prevGridNrs.has(x) && !silentFound.has(x)) { silentFound.add(x); silentFoundCount++; } });
     if (/^Push-Signal/.test(reason)) lastGridNrs.forEach((x) => { if (!prevGridNrs.has(x)) pushFound.add(x); });
     lastCycleAt = Date.now();
     try {
       if (!places.plz.length && !places.orte.length) { log('Keine Ortsliste geladen – übersprungen.', 'err'); return; }
-      if (!onPublishedTab()) {
+      const bg = !onPublishedTab(); // Beta: verdeckte Tabelle, nur stille Annahme
+      if (bg && !hintergrundModus()) {
         setStatus(`Pausiert – Tab "${cfg.tabName}" ist nicht aktiv`); updateTabStatus(); return;
       }
-      const grid = visibleGrid();
+      const grid = annahmeGrid();
       if (!grid) { log('Keine Auftragstabelle im Tab "Veröffentlichte Aufträge" gefunden.', 'err'); return; }
       const all = readOrders(grid).map((o) => Object.assign(o, { key: o.nr || o.ref }));
       rememberRows(all);
@@ -2333,7 +2355,7 @@
 
       // Protokoll: jeder Abgleich eine Zeile, jeden Auftrag einmalig mit Entscheidung
       if (reason !== 'Intervall' || hits.length || blockedHits.length || noKey.length) // der minütliche Routine-Abgleich ohne Treffer wird nicht mehr protokolliert
-      log(`${reason} → Abgleich: ${all.length} Aufträge in Tabelle, ${orders.length} offen, ${hits.length} passend, ` +
+      log(`${reason}${bg ? ' (Hintergrund)' : ''} → Abgleich: ${all.length} Aufträge in Tabelle, ${orders.length} offen, ${hits.length} passend, ` +
         (blockedHits.length ? `${blockedHits.length} gesperrt, ` : '') +
         `${old.length} bereits bearbeitet` + (noKey.length ? `, ${noKey.length} ohne AuftragsNr` : ''), hits.length ? 'ok' : 'info');
       if (noKey.length && lastSummary !== 'NOKEY') log(lastColInfo, 'err');
@@ -2357,13 +2379,14 @@
         // Schon mit einem anderen Auftrag im Warenkorb (Bulk) angenommen → nicht erneut versuchen
         if (isDone(o.key) || isDone((o.nr || '').toUpperCase())) { log(`${o.key}: bereits zusammen mit einem anderen Auftrag angenommen.`, 'ok'); continue; }
         // Vor jeder Annahme erneut prüfen: richtiger Tab, Zeile noch in dieser Tabelle
-        if (!onPublishedTab() || visibleGrid() !== grid || !grid.contains(o.row)) {
+        if (bg !== !onPublishedTab() || !annahmeAktiv() || annahmeGrid() !== grid || !grid.contains(o.row)) {
           log('Abbruch: Tab gewechselt oder Tabelle neu geladen – keine Annahme.', 'err'); recheck = true; break;
         }
         log(`Nehme an: ${desc}`);
         delayStats = { ms: 0, n: 0 };
         const t0 = Date.now();
         const ok = await acceptOrder(o);
+        if (!ok && o.failReason === 'reiter') { delete o.failReason; continue; } // im Hintergrund nicht still möglich → wartet auf „Veröffentlichte Aufträge“
         log(`Dauer der Annahme: ${Date.now() - t0} ms` + (delayStats.n
           ? ` · davon Verzögerung gesamt: ${delayStats.ms} ms (${delayStats.n} Schritte)` : ' · ohne Verzögerung'), 'debug');
         trackResult(o, ok ? 'angenommen' : o.failReason === 'vergeben' ? 'vergeben' : 'fehler');
@@ -2371,7 +2394,8 @@
           const plus = bulkOf(o).length ? ` + ${bulkLabel(o)}` : '';
           const via = pushFound.has((o.nr || '').toUpperCase()) ? ' · per Push-Signal gefunden'
             : silentFound.has((o.nr || '').toUpperCase()) ? ' · per Silent Reload gefunden' : '';
-          log(`Angenommen: ${desc}${plus}${via}`, 'ok'); notify('TAM: Auftrag angenommen', desc + plus);
+          const wo = bg ? ' · im Hintergrund (anderer Reiter offen)' : '';
+          log(`Angenommen: ${desc}${plus}${via}${wo}`, 'ok'); notify('TAM: Auftrag angenommen', desc + plus);
           bookAccepted(o); n++;
         } else {
           log(`Annahme fehlgeschlagen: ${desc}`, 'err');
@@ -2413,7 +2437,8 @@
   function renderMini(now) {
     const box = document.getElementById('tamauto-mini');
     if (!box || box.style.display === 'none') return;
-    const [st, col] = !cfg.enabled ? ['■ GESTOPPT', '#c62828'] : onPublishedTab() ? ['● AKTIV', '#2e7d32'] : ['⏸ PAUSIERT', '#b26a00'];
+    const [st, col] = !cfg.enabled ? ['■ GESTOPPT', '#c62828'] : onPublishedTab() ? ['● AKTIV', '#2e7d32']
+      : hintergrundModus() ? (cfg.silentAcceptSixt ? ['◐ STILL: NUR SIXT', '#b26a00'] : ['● STILL AKTIV', '#2e7d32']) : ['⏸ PAUSIERT', '#b26a00'];
     const s = document.getElementById('tamauto-mini-state'); s.textContent = st; s.style.color = col;
     const next = silentHeader(now);
     document.getElementById('tamauto-mini-next').textContent = next;
@@ -2446,7 +2471,7 @@
   // Einmal refreshen (Refresh-Pfeil) und danach abgleichen – gemeinsam genutzt von
   // Tabwechsel, Silent Reload und Push-Signal
   async function refreshAndCheck(reason) {
-    if (busy || !onPublishedTab()) return false;
+    if (busy || !annahmeAktiv()) return false;
     busy = true; // eigene Tabellenänderungen beim Refresh nicht doppelt auswerten
     ownRefresh = true;
     let refreshed = false;
@@ -2525,7 +2550,7 @@
     (silentFoundCount ? ` · ${silentFoundCount} Auftr. silent gefunden` : '');
   async function silentPoll() {
     const now = Date.now();
-    if (!cfg.silentOn || !cfg.enabled || !license || busy || silentFetching || !onPublishedTab()) return;
+    if (!cfg.silentOn || !cfg.enabled || !license || busy || silentFetching || !annahmeAktiv()) return;
     if (!inSchedule()) { if (!/Arbeitszeit/.test(silentState)) { silentState = `pausiert – außerhalb der Arbeitszeit (${cfg.schedFrom}–${cfg.schedTo})`; renderSilent(); } return; }
     if (now - lastSilentAt < cfg.silentSec * 1000) return;
     if (!tamLoadReq) { silentState = 'wartet auf den ersten Refresh (dabei wird TAMs Anfrage übernommen)'; renderSilent(); return; }
@@ -2537,7 +2562,7 @@
       silentFails = 0;
       // neu = Text, der weder in der Tabelle steht, noch in der vorigen Antwort war, noch sich schon einmal
       // als "kein neuer Auftrag" erwiesen hat
-      const cells = gridTexts(visibleGrid());
+      const cells = gridTexts(annahmeGrid());
       const fresh = [...tokens].filter((x) => !cells.has(x) && !silentSeen.has(x) && !silentIgnore.has(x));
       silentState = silentStateText(q);
       if (!fresh.length) { silentSeen = tokens; return; }
@@ -2679,7 +2704,7 @@
     renderPush();
     log(`Push-Signal von ${from}${lat}${lat2} → TAM abfragen`, 'ok');
     if (!cfg.enabled || !license) { log('Push-Signal: Script gestoppt – keine Abfrage.', 'debug'); setPushResult(entry, 'Script gestoppt – keine Abfrage'); return; }
-    if (!onPublishedTab()) { log('Push-Signal: nicht im Reiter „Veröffentlichte Aufträge“ – keine Abfrage.', 'err'); setPushResult(entry, 'nicht im Reiter „Veröffentlichte Aufträge“'); return; }
+    if (!annahmeAktiv()) { log('Push-Signal: nicht im Reiter „Veröffentlichte Aufträge“ – keine Abfrage.', 'err'); setPushResult(entry, 'nicht im Reiter „Veröffentlichte Aufträge“'); return; }
     const jitter = Math.round(Math.random() * 1500);
     setPushResult(entry, `fragt TAM ab (nach ${jitter} ms) …`);
     setTimeout(() => pushQuery(from, entry), jitter);
@@ -2704,7 +2729,7 @@
     silentFetching = true;
     try {
       const q = await silentQuery();
-      const cells = gridTexts(visibleGrid());
+      const cells = gridTexts(annahmeGrid());
       const fresh = [...q.tokens].filter((x) => !cells.has(x) && !silentIgnore.has(x));
       if (!fresh.length) return { s: 'nothing', ms: q.ms };
       log(`${reason}: neue Daten in TAM (${silentLabel(fresh)})${silentPlzInfo(q.tokens)} → Tabelle aktualisieren`, 'ok');
@@ -2785,7 +2810,7 @@
       if (bookPage && bookPage.style.display !== 'none' && now - lastBookRenderAt > 60000) { lastBookRenderAt = now; renderOrderbook(); } // Markierungen wandern mit der Zeit
     }
     renderSync(now);
-    if (busy || !onPublishedTab()) return;
+    if (busy || !annahmeAktiv()) return;
     if (cfg.enabled && now - lastCycleAt > 60000) {
       // Abgleich läuft über Silent Reload und TAM-Aktualisierung; das hier ist nur ein Sicherheitsnetz
       await cycle('Intervall');
@@ -2803,7 +2828,8 @@
   function renderHeadState() {
     const hs = document.getElementById('tamauto-head-state');
     if (!hs) return;
-    const [txt, col] = !cfg.enabled ? ['■ gestoppt', '#c62828'] : onPublishedTab() ? ['● bereit', '#2e7d32'] : ['⏸ pausiert', '#b26a00'];
+    const [txt, col] = !cfg.enabled ? ['■ gestoppt', '#c62828'] : onPublishedTab() ? ['● bereit', '#2e7d32']
+      : hintergrundModus() ? (cfg.silentAcceptSixt ? ['◐ still: nur Sixt', '#b26a00'] : ['● still aktiv', '#2e7d32']) : ['⏸ pausiert', '#b26a00'];
     hs.textContent = txt; hs.style.color = col;
   }
   function renderStatus() {

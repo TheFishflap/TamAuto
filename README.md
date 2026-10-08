@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.31.0 – 2026-10-08
+- **Stille Annahme im Hintergrund (Beta):** Ist die stille Annahme an (und gelernt), nimmt das Script auch an, während ein anderer Reiter offen ist – z. B. „Angenommene Aufträge“ beim Eintragen der Kürzel. Silent Reload und Push-Signal laufen weiter; bei neuen Daten wird die verdeckte Tabelle „Veröffentlichte Aufträge“ aktualisiert und gelesen, angenommen wird **nur still** (keine Auftragskarte, kein Reiterwechsel). Mit „nur Sixt“ nur Sixt-Aufträge – die übrigen warten (nicht als fehlgeschlagen gemerkt) und werden angenommen, sobald „Veröffentlichte Aufträge“ wieder offen ist.
+- **Status je Reiter:** „Veröffentlichte Aufträge“ grün „● bereit“; anderer Reiter mit stiller Annahme **grün „● still aktiv“** (alle) bzw. **gelb „◐ still: nur Sixt“**; ohne stille Annahme wie bisher „⏸ pausiert“. Ausführliches Beta-Protokoll `[Stille Annahme]` (Aktualisieren der verdeckten Tabelle, wartende Aufträge).
+
 ### 1.30.8 – 2026-10-08
 - **Fehlzuordnung behoben:** Meldete TAM beim **zweiten** Auftrag am selben Ort „Auftrag bereits vergeben!“ (Meldung ohne Auftragsnummer), wurde das dem ersten, erfolgreich angenommenen Auftrag zugeschrieben – er galt als „NICHT angenommen“ und fiel aus dem Auftragsbuch. Meldungen ohne Nummer gehören jetzt zur zuletzt begonnenen Annahme.
 - Beim Nachholen verpasster Meldungen werden alte Auftragsbuch-Antworten nicht mehr erneut verarbeitet (im Log z. B. „3200 Einträge empfangen“ direkt nach dem Neuladen).
