@@ -277,3 +277,27 @@ describe('Update-Quelle', { skip }, () => {
   });
 });
 
+
+describe('Silent Reload mit Zufallsstreuung', { skip }, () => {
+  it('Abstände streuen um den Takt (± Streuung, nie unter 1 s); Kopfzeile zeigt „± n“; Streuung höchstens Takt − 1', async () => {
+    tam = startTam({ gm: { places: KOELN, running: true, silentOn: true, silentSec: 3, silentJitter: 2 } });
+    await tam.ready();
+    const bar = [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-toolbar')].find((x) => /Einträge pro Seite/.test(x.textContent));
+    bar.querySelectorAll('.x-btn')[4].querySelector('button').click(); // TAM-Anfrage übernehmen
+    const times = [];
+    const n0 = tam.fetches.length;
+    const t0 = Date.now();
+    while (Date.now() - t0 < 16000) {
+      const n = tam.fetches.filter((f, i) => i >= n0 && /gwt-rpc\/auftrag/.test(f.url)).length;
+      if (n > times.length) times.push(Date.now());
+      await sleep(20);
+    }
+    const gaps = times.slice(1).map((x, i) => x - times[i]);
+    assert.ok(gaps.length >= 3, `zu wenige Abfragen: ${gaps}`);
+    assert.ok(gaps.every((g) => g >= 900 && g <= 5400), `Abstände ${gaps}`);
+    assert.ok(new Set(gaps.map((g) => Math.round(g / 250))).size > 1, `keine Streuung: ${gaps}`);
+    const head = tam.document.getElementById('tamauto-sync').textContent;
+    assert.match(head, /\(alle 3 s ± 2 s\)$/);
+    assert.equal(tam.document.getElementById('tamauto-silent-jit').value, '2');
+  });
+});

@@ -73,6 +73,7 @@ function startTam(opts = {}) {
   const store = new Map(Object.entries({
     installId: INSTALL_ID, licenseKey: licenseKey(), delayOnV2: false, running: true,
     silentOn: false, // Silent Reload (Standard im Script: an) läuft in der Arbeitszeit mit und würde die Tests von der Tageszeit abhängig machen; silentOn: 'default' = Standard des Scripts
+    silentJitter: 0, // Zufallsstreuung des Silent Reload (Script-Standard ± 3 s) – Tests mit festem Takt; eigener Test setzt sie
     startTabs: false, // Start-Routine (beide Reiter öffnen) stört die übrigen Tests nicht; eigener Test setzt true
     accSyncAt: Date.now(), // MA-Management gleicht beim Öffnen mit TAM ab – in den übrigen Tests nicht
     places: { v: 2, plz: [], orte: [], block: { plz: [], orte: [] }, loadedAt: new Date().toISOString(), source: 'Test' },

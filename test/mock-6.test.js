@@ -289,10 +289,10 @@ describe('Stille Annahme (Beta)', { skip }, () => {
     tam.selectTab('AgentEigeneAuftraege');
     await sleep(1200);
     assert.ok(!tam.onPublished());
-    assert.equal(tam.document.getElementById('tamauto-head-state').textContent, '◐ still: nur Sixt');
+    assert.equal(tam.document.getElementById('tamauto-head-state').textContent, '◐ still: Sixt + ab 150 €');
     const NORMAL = { nr: 'MW3153998', plz: '50825', ort: 'Köln', id: '3709953', dienst: 'Zustandsbericht' };
     tam.addOrder(NORMAL);
-    assert.ok(await until(() => tam.logs().some((l) => /MW3153998: im Hintergrund nur still möglich \(Einstellung „nur Sixt“\)/.test(l)), 8000), tam.logs().slice(-6).join('\n'));
+    assert.ok(await until(() => tam.logs().some((l) => /MW3153998: im Hintergrund nur still möglich \(Einstellung „nur Sixt \+ ab 150 €“\)/.test(l)), 8000), tam.logs().slice(-6).join('\n'));
     assert.ok(!tam.accepted.includes(NORMAL.nr)); assert.equal(acceptFetches().length, 0);
     assert.ok(!((tam.store.get('doneInfo') || {})[NORMAL.nr]), 'als erledigt/fehlgeschlagen gemerkt');
     tam.selectTab('AgentVeroeffentlichteAuftraege');
@@ -311,11 +311,18 @@ describe('Stille Annahme (Beta)', { skip }, () => {
     assert.ok(!tam.accepted.includes(SIXT2.nr)); assert.deepEqual(tam.dblclicks, []);
   });
 
-  it('„nur Sixt“: ein normaler Auftrag läuft weiter über die Karte', async () => {
+  it('„nur Sixt + ab 150 €“: normaler Auftrag unter 150 € läuft weiter über die Karte', async () => {
     await learned({ silentAcceptSixt: true });
-    tam.addOrder({ ...SIXT2, nr: 'MW3153998', id: '3709953', dienst: 'Standard' });
+    tam.addOrder({ ...SIXT2, nr: 'MW3153998', id: '3709953', dienst: 'Standard', preis: '149,99 €' });
     assert.ok(await until(() => tam.accepted.includes('MW3153998'), 15000));
     assert.deepEqual(tam.dblclicks, [FIRST.nr, 'MW3153998']); assert.equal(acceptFetches().length, 0);
+  });
+
+  it('„nur Sixt + ab 150 €“: normaler Auftrag ab 150 € wird still angenommen', async () => {
+    await learned({ silentAcceptSixt: true });
+    tam.addOrder({ ...SIXT2, nr: 'MW3153997', id: '3709954', dienst: 'Minderwertgutachten', preis: '150,75 €' });
+    assert.ok(await until(() => tam.accepted.includes('MW3153997'), 15000), tam.logs().slice(-5).join('\n'));
+    assert.deepEqual(tam.dblclicks, [FIRST.nr], 'lief über die Karte'); assert.equal(acceptFetches().length, 1);
   });
 
   it('TAM meldet „bereits vergeben“ → kein Rückfall, Annahme fehlgeschlagen verbucht', async () => {

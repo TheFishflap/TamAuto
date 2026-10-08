@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.31.3
+// @version      1.32.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -83,9 +83,10 @@
       preis: ['preis', 'keine', 'keine'], tabelle: ['keine', 'keine', 'keine'] })[GM_getValue('prioMode', 'ort')] || ['anzahl', 'summe', 'preis']),
     // Silent Reload: an/aus per Checkbox, Intervall 1–60 s. Früher hieß 0 s „aus“ → einmalig übernommen
     silentAccept: GM_getValue('silentAccept', false),     // Stille Annahme (Beta): accept-Aufruf direkt an TAM statt über die Auftragskarte – Standard aus
-    silentAcceptSixt: GM_getValue('silentAcceptSixt', true), // … nur für Sixt-Aufträge
+    silentAcceptSixt: GM_getValue('silentAcceptSixt', true), // … nur für Sixt-Aufträge und Aufträge ab 150 €
     silentOn: GM_getValue('silentOn', true),            // Standard an (ersetzt den Auto-Refresh); wer ihn ausgeschaltet hat, behält das
     silentSec: GM_getValue('silentSec', 0) || 30,       // Standard 30 s, sonst der eingestellte Wert
+    silentJitter: GM_getValue('silentJitter', 3),       // Zufallsstreuung ± s je Abfrage (Abstand nicht maschinell gleichmäßig), 0 = aus
     // Arbeitszeit: außerhalb pausiert der Silent Reload (Einstellungen bleiben erhalten) – fest 08:00–18:00, nicht einstellbar
     schedOn: true,
     schedFrom: '08:00',
@@ -1486,7 +1487,7 @@
       [state, color] = cfg.enabled ? ['Veröffentlichte Aufträge – ✔ bereit zum Annehmen', '#2e7d32']
         : ['Veröffentlichte Aufträge – gestoppt', '#555'];
     } else if (hintergrundModus()) {
-      [state, color] = [`${onAccepted ? 'Angenommene Aufträge' : other || 'anderer Reiter'} – ${cfg.silentAcceptSixt ? '◐ stille Annahme nur Sixt' : '● stille Annahme aktiv'} (Beta, im Hintergrund)`, cfg.silentAcceptSixt ? '#b26a00' : '#2e7d32'];
+      [state, color] = [`${onAccepted ? 'Angenommene Aufträge' : other || 'anderer Reiter'} – ${cfg.silentAcceptSixt ? '◐ stille Annahme nur Sixt + ab 150 €' : '● stille Annahme aktiv'} (Beta, im Hintergrund)`, cfg.silentAcceptSixt ? '#b26a00' : '#2e7d32'];
     } else if (onAccepted) {
       [state, color] = ['Angenommene Aufträge – ⏸ Annahme pausiert', '#b26a00'];
     } else {
@@ -1510,7 +1511,7 @@
 
   // Beta „stille Annahme im Hintergrund“: Ist ein anderer Reiter offen (z. B. „Angenommene Aufträge“), liegt „Veröffentlichte Aufträge“ verdeckt
   // daneben. Mit eingeschalteter und gelernter stiller Annahme wird diese verdeckte Tabelle aktualisiert und gelesen – angenommen wird dann NUR still
-  // (ohne Auftragskarte, also kein Reiterwechsel); mit „nur Sixt“ nur Sixt-Aufträge, die übrigen warten, bis „Veröffentlichte Aufträge“ wieder offen ist.
+  // (ohne Auftragskarte, also kein Reiterwechsel); mit „nur Sixt + ab 150 €“ nur diese, die übrigen warten, bis „Veröffentlichte Aufträge“ wieder offen ist.
   const pubPanel = () => document.getElementById(cfg.tabPanelId);
   const hintergrundModus = () => !!(cfg.enabled && cfg.silentOn && cfg.silentAccept && acceptTpl && !onPublishedTab() && pubPanel() && pubPanel().querySelector('.x-grid3'));
   const annahmeAktiv = () => onPublishedTab() || hintergrundModus();
@@ -1930,10 +1931,12 @@
     return [...p.slice(0, 3 + n), ...st.slice(0, i), String(A), String(tids.length), ...tids.flatMap((t) => [String(L), gwtLong(t)]), ...st.slice(i + 2 + 2 * cnt)].join('|');
   }
   // Ergebnis: true = angenommen, false = TAM meldet „vergeben“, null = nicht möglich → Annahme über die Auftragskarte
+  // „nur Sixt + ab 150 €“: still nur Sixt-Aufträge und alle Aufträge ab 150 € (Terminpflicht – wo es auf Schnelligkeit ankommt)
+  const stillErlaubt = (o) => !cfg.silentAcceptSixt || istSixt(o.dienst) || (parseEuro(o.preis) || 0) >= 150;
   async function silentAcceptTry(order, nr) {
     if (!cfg.silentAccept) return null;
     const why = (t) => { log(`Stille Annahme ${nr}: ${t} – nehme über die Auftragskarte an.`, 'info'); return null; };
-    if (cfg.silentAcceptSixt && !istSixt(order.dienst)) return null; // nur Sixt: normale Annahme, kein Hinweis nötig
+    if (!stillErlaubt(order)) return null; // „nur Sixt + ab 150 €“: übrige Aufträge normal, kein Hinweis nötig
     if (!acceptTpl) return why('noch keine accept-Anfrage von TAM gelernt (erste normale Annahme nach dem Laden der Seite lernt sie)');
     const perm = tamLoadReq && tamLoadReq.headers && tamLoadReq.headers['X-GWT-Permutation'];
     if (perm && acceptTpl.headers['X-GWT-Permutation'] && perm !== acceptTpl.headers['X-GWT-Permutation']) { acceptTpl = null; GM_setValue('acceptTpl', null); onAcceptTplChange(); return why('TAM wurde aktualisiert (Permutation geändert), gelernte Anfrage verworfen'); }
@@ -1970,7 +1973,7 @@
     const stille = await silentAcceptTry(order, nr); // Beta: ohne Auftragskarte
     if (stille !== null) return stille;
     if (bg) { // im Hintergrund gibt es keine Auftragskarte (kein Reiterwechsel)
-      log(`${nr}: im Hintergrund nur still möglich${cfg.silentAcceptSixt && !istSixt(order.dienst) ? ' (Einstellung „nur Sixt“)' : ''} – wartet, bis „Veröffentlichte Aufträge“ offen ist.`, 'info', 'Stille Annahme');
+      log(`${nr}: im Hintergrund nur still möglich${!stillErlaubt(order) ? ' (Einstellung „nur Sixt + ab 150 €“)' : ''} – wartet, bis „Veröffentlichte Aufträge“ offen ist.`, 'info', 'Stille Annahme');
       order.failReason = 'reiter'; return false;
     }
 
@@ -2440,7 +2443,7 @@
     const box = document.getElementById('tamauto-mini');
     if (!box || box.style.display === 'none') return;
     const [st, col] = !cfg.enabled ? ['■ GESTOPPT', '#c62828'] : onPublishedTab() ? ['● AKTIV', '#2e7d32']
-      : hintergrundModus() ? (cfg.silentAcceptSixt ? ['◐ STILL: NUR SIXT', '#b26a00'] : ['● STILL AKTIV', '#2e7d32']) : ['⏸ PAUSIERT', '#b26a00'];
+      : hintergrundModus() ? (cfg.silentAcceptSixt ? ['◐ STILL: SIXT + AB 150 €', '#b26a00'] : ['● STILL AKTIV', '#2e7d32']) : ['⏸ PAUSIERT', '#b26a00'];
     const s = document.getElementById('tamauto-mini-state'); s.textContent = st; s.style.color = col;
     const next = silentHeader(now);
     document.getElementById('tamauto-mini-next').textContent = next;
@@ -2457,7 +2460,7 @@
 
   // Kopfzeile (aufgeklappt und minimiert): nur noch der Silent Reload
   const silentHeader = (now) => (!cfg.silentOn ? 'Silent Reload aus' : !inSchedule() ? `⏾ außerhalb der Arbeitszeit – Silent Reload pausiert (bis ${cfg.schedFrom})`
-    : !tamLoadReq ? 'Silent Reload wartet auf den ersten Refresh' : `Silent Reload in ${fmtDur(Math.max(0, lastSilentAt + cfg.silentSec * 1000 - now))} (alle ${cfg.silentSec} s)`);
+    : !tamLoadReq ? 'Silent Reload wartet auf den ersten Refresh' : `Silent Reload in ${fmtDur(Math.max(0, lastSilentAt + (silentGapMs || cfg.silentSec * 1000) - now))} (${silentTaktText()})`);
   function renderSync(now) {
     renderMini(now);
     renderHeadState();
@@ -2487,6 +2490,11 @@
   // AuftragsNr, die weder in der Tabelle steht noch in der vorigen Antwort war → Tabelle einmal aktualisieren
   // (Refresh-Pfeil) und abgleichen. Die Tabelle selbst bleibt sonst unberührt (kein Flackern).
   let lastSilentAt = 0, silentSeen = new Set(), silentFails = 0, silentState = '';
+  // Abstand bis zur nächsten Abfrage: Takt ± Zufallsstreuung (nie unter 1 s), je Abfrage neu gewürfelt
+  const jitterMax = () => Math.max(0, Math.min(cfg.silentJitter, cfg.silentSec - 1));
+  const neuerAbstand = () => Math.round((cfg.silentSec + (Math.random() * 2 - 1) * jitterMax()) * 1000);
+  let silentGapMs = 0;
+  const silentTaktText = () => `alle ${cfg.silentSec} s${jitterMax() ? ` ± ${jitterMax()} s` : ''}`;
   let silentFoundCount = 0;             // in dieser Sitzung per Silent Reload gefundene Aufträge
   const silentFound = new Set();         // deren AuftragsNrn → Vermerk "per Silent Reload gefunden" im Log
   const pushFound = new Set();           // AuftragsNrn, die nach einem Push-Signal neu in der Tabelle standen
@@ -2554,9 +2562,10 @@
     const now = Date.now();
     if (!cfg.silentOn || !cfg.enabled || !license || busy || silentFetching || !annahmeAktiv()) return;
     if (!inSchedule()) { if (!/Arbeitszeit/.test(silentState)) { silentState = `pausiert – außerhalb der Arbeitszeit (${cfg.schedFrom}–${cfg.schedTo})`; renderSilent(); } return; }
-    if (now - lastSilentAt < cfg.silentSec * 1000) return;
+    if (!silentGapMs) silentGapMs = neuerAbstand();
+    if (now - lastSilentAt < silentGapMs) return;
     if (!tamLoadReq) { silentState = 'wartet auf den ersten Refresh (dabei wird TAMs Anfrage übernommen)'; renderSilent(); return; }
-    lastSilentAt = now;
+    lastSilentAt = now; silentGapMs = neuerAbstand();
     silentFetching = true;
     try {
       const q = await silentQuery();
@@ -2831,7 +2840,7 @@
     const hs = document.getElementById('tamauto-head-state');
     if (!hs) return;
     const [txt, col] = !cfg.enabled ? ['■ gestoppt', '#c62828'] : onPublishedTab() ? ['● bereit', '#2e7d32']
-      : hintergrundModus() ? (cfg.silentAcceptSixt ? ['◐ still: nur Sixt', '#b26a00'] : ['● still aktiv', '#2e7d32']) : ['⏸ pausiert', '#b26a00'];
+      : hintergrundModus() ? (cfg.silentAcceptSixt ? ['◐ still: Sixt + ab 150 €', '#b26a00'] : ['● still aktiv', '#2e7d32']) : ['⏸ pausiert', '#b26a00'];
     hs.textContent = txt; hs.style.color = col;
   }
   function renderStatus() {
@@ -3042,7 +3051,7 @@
           <div style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd">
             <span class="tamauto-chk">
               <label class="tamauto-chk"><input type="checkbox" id="tamauto-silent-on"> <b>Silent Reload</b></label>
-              alle <input id="tamauto-silent" type="number" min="1" max="60" step="1" style="width:44px;margin:0"> s
+              alle <input id="tamauto-silent" type="number" min="1" max="60" step="1" style="width:44px;margin:0"> s ± <input id="tamauto-silent-jit" type="number" min="0" max="30" step="1" title="Zufallsstreuung: jede Abfrage kommt zufällig bis zu so viele Sekunden früher oder später (0 = genau im Takt)" style="width:38px;margin:0"> s
               <span class="tamauto-help" title="SILENT RELOAD – was es macht:
 Fragt den TAM-Server alle x Sekunden im Hintergrund nach veröffentlichten Aufträgen – mit genau der Anfrage, die TAM selbst beim Klick auf den Aktualisieren-Pfeil sendet (wird beim ersten Refresh im Reiter „Veröffentlichte Aufträge“ übernommen). Die Tabelle wird dabei NICHT neu gezeichnet. Nur wenn die Antwort einen neuen Auftrag enthält, aktualisiert das Script die Tabelle einmal und nimmt passende Aufträge an. „Jetzt testen“ zeigt im Log, was TAM gerade meldet.
 
@@ -3163,14 +3172,14 @@ Wichtig: Die Farben ändern nur die Anzeige der TAM-Oberfläche lokal in diesem 
           </div>
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
             <label class="tamauto-chk"><input type="checkbox" id="tamauto-silentaccept"> <b>Stille Annahme (Beta)</b></label>
-            <label class="tamauto-chk" style="margin-left:8px"><input type="checkbox" id="tamauto-silentaccept-sixt"> nur Sixt</label>
+            <label class="tamauto-chk" style="margin-left:8px"><input type="checkbox" id="tamauto-silentaccept-sixt"> nur Sixt + ab 150 €</label>
             <span id="tamauto-sa-info" title="Erklärung ein-/ausblenden" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#1a4d8f;color:#fff;font:italic bold 11px Georgia,serif;cursor:pointer;margin-left:6px">i</span>
             <div id="tamauto-sa-infobox" style="display:none;margin-top:4px;padding:6px 8px;background:#f3f6fb;border:1px solid #c5d3e8;border-radius:3px;line-height:1.45">
               <b>Was sie macht:</b> nimmt Aufträge ohne Auftragskarte an – das Script schickt TAMs Annahme direkt ab (≈ 0,1 s statt ≈ 0,7–1,4 s).<br>
               <b>Lernen:</b> einmal je Gerät. Die erste normale Annahme über die Karte zeigt dem Script, wie TAM annimmt; die Vorlage bleibt gespeichert (Neuladen, Neustart, Updates). Neu gelernt wird nur nach einem TAM-Update (automatisch erkannt) oder auf einem neuen/zurückgesetzten Gerät. Bis dahin: Status gelb „lernt“, Annahme wie gewohnt über die Karte.<br>
               <b>Reiter:</b> „Veröffentlichte Aufträge“ offen → alles wird angenommen (still oder über die Karte). Anderer Reiter offen (z. B. „Angenommene Aufträge“) → nur still, ohne Reiterwechsel; die verdeckte Tabelle wird im Hintergrund aktualisiert.<br>
-              <b>nur Sixt:</b> still nur Sixt-Aufträge. Im Reiter „Veröffentlichte Aufträge“ laufen die übrigen über die Karte; in anderen Reitern warten sie, bis „Veröffentlichte Aufträge“ wieder offen ist.<br>
-              <b>Status:</b> <span style="color:#2e7d32">● bereit / ● still aktiv</span> · <span style="color:#b26a00">◐ still: nur Sixt</span> · <span style="color:#b26a00">⏸ pausiert</span> (anderer Reiter ohne stille Annahme).<br>
+              <b>nur Sixt + ab 150 €:</b> still nur Sixt-Aufträge und alle Aufträge ab 150 €. Im Reiter „Veröffentlichte Aufträge“ laufen die übrigen über die Karte; in anderen Reitern warten sie, bis „Veröffentlichte Aufträge“ wieder offen ist.<br>
+              <b>Status:</b> <span style="color:#2e7d32">● bereit / ● still aktiv</span> · <span style="color:#b26a00">◐ still: Sixt + ab 150 €</span> · <span style="color:#b26a00">⏸ pausiert</span> (anderer Reiter ohne stille Annahme).<br>
               <b>Grenzen:</b> nur der Auftrag selbst (keine Warenkorb-Aufträge am selben Ort); kein Terminfenster – „Reserviert bis“ kommt aus „Angenommene Aufträge“. Bei unerwarteter Antwort nimmt das Script über die Karte an; „bereits vergeben“ gilt als nicht angenommen.<br>
               <b>Protokoll:</b> ausführlich unter <code>[Stille Annahme]</code> im Log.
             </div>
@@ -3479,16 +3488,16 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
 
     // Silent Reload: Intervall in s, 0 = aus
     $('tamauto-silentaccept').checked = cfg.silentAccept; $('tamauto-silentaccept-sixt').checked = cfg.silentAcceptSixt;
-    const renderSilentAccept = () => { $('tamauto-silentaccept-state').textContent = !cfg.silentAccept ? 'aus' : acceptTpl ? `bereit – accept-Anfrage gelernt (${new Date(acceptTpl.at).toLocaleTimeString('de-DE')})${cfg.silentAcceptSixt ? ', nur Sixt' : ', alle Aufträge'}` : 'wartet auf die erste normale Annahme (lernt die Anfrage)'; };
+    const renderSilentAccept = () => { $('tamauto-silentaccept-state').textContent = !cfg.silentAccept ? 'aus' : acceptTpl ? `bereit – accept-Anfrage gelernt (${new Date(acceptTpl.at).toLocaleTimeString('de-DE')})${cfg.silentAcceptSixt ? ', nur Sixt + ab 150 €' : ', alle Aufträge'}` : 'wartet auf die erste normale Annahme (lernt die Anfrage)'; };
     $('tamauto-sa-info').onclick = () => { const b = $('tamauto-sa-infobox'); b.style.display = b.style.display === 'none' ? 'block' : 'none'; };
     $('tamauto-silentaccept').onchange = (e) => { cfg.silentAccept = e.target.checked; GM_setValue('silentAccept', cfg.silentAccept); log(`Stille Annahme (Beta): ${cfg.silentAccept ? 'an' : 'aus'}.`, 'ok'); renderSilentAccept(); };
-    $('tamauto-silentaccept-sixt').onchange = (e) => { cfg.silentAcceptSixt = e.target.checked; GM_setValue('silentAcceptSixt', cfg.silentAcceptSixt); log(`Stille Annahme: ${cfg.silentAcceptSixt ? 'nur Sixt-Aufträge' : 'alle Aufträge'}.`, 'ok'); renderSilentAccept(); };
+    $('tamauto-silentaccept-sixt').onchange = (e) => { cfg.silentAcceptSixt = e.target.checked; GM_setValue('silentAcceptSixt', cfg.silentAcceptSixt); log(`Stille Annahme: ${cfg.silentAcceptSixt ? 'nur Sixt-Aufträge und Aufträge ab 150 €' : 'alle Aufträge'}.`, 'ok'); renderSilentAccept(); };
     renderSilentAccept(); onAcceptTplChange = renderSilentAccept; // nur bei Änderung (Vorlage gelernt, Schalter)
     $('tamauto-silent-on').checked = cfg.silentOn;
     $('tamauto-silent').value = cfg.silentSec;
     const silentChanged = () => {
-      silentState = ''; lastSilentAt = 0; renderSilent();
-      log(cfg.silentOn ? `Silent Reload an: alle ${cfg.silentSec} s Hintergrund-Abfrage` +
+      silentState = ''; lastSilentAt = 0; silentGapMs = 0; renderSilent();
+      log(cfg.silentOn ? `Silent Reload an: ${silentTaktText()} Hintergrund-Abfrage` +
         (!inSchedule() ? ' (startet mit der Arbeitszeit).' : tamLoadReq ? '.' : ' (startet nach dem nächsten Refresh).') : 'Silent Reload aus.');
       if (cfg.silentOn && cfg.silentSec < 5) log(`Achtung: ${Math.round(3600 / cfg.silentSec)} Anfragen/Stunde an TAM – hohe Serverlast, nur kurzzeitig nutzen.`, 'err');
     };
@@ -3496,6 +3505,11 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     $('tamauto-silent').onchange = (e) => {
       cfg.silentSec = Math.round(Math.min(60, Math.max(1, +e.target.value || 30)));
       e.target.value = cfg.silentSec; GM_setValue('silentSec', cfg.silentSec); silentChanged();
+    };
+    $('tamauto-silent-jit').value = cfg.silentJitter;
+    $('tamauto-silent-jit').onchange = (e) => {
+      cfg.silentJitter = Math.round(Math.min(30, Math.max(0, +e.target.value || 0)));
+      e.target.value = cfg.silentJitter; GM_setValue('silentJitter', cfg.silentJitter); silentChanged();
     };
 
     $('tamauto-pl-clear').onclick = () => { pushLog = []; savePushLog(); renderPushPage(); };
@@ -3545,7 +3559,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
       // nur die letzten 80 Zeilen (älteste zuerst) – reicht für eine Fehlermeldung; mehr lieber gezielt markieren
       const lines = logHistory.slice(-COPY_LINES);
       const settings = 'Einstellungen: Silent Reload ' +
-        `${cfg.silentOn ? `alle ${cfg.silentSec} s` : 'aus'} · Verzögerung ` +
+        `${cfg.silentOn ? silentTaktText() : 'aus'} · Verzögerung ` +
         `${cfg.delayOn ? `${cfg.delaySec} s${cfg.delayRandom ? ` + bis ${cfg.delayRandomMs} ms` : ''}` : 'aus'} · Ortsliste ` +
         `${places.plz.length} PLZ / ${places.orte.length} Orte · Sperrliste ${(places.block || { plz: [] }).plz.length} PLZ` +
         ` · Priorität ${prioText()}`;

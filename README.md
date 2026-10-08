@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.32.0 – 2026-10-08
+- **Silent Reload mit Zufallsstreuung:** neues Feld „± s“ neben dem Takt (Standard **± 3 s**, 0 = genau im Takt). Jede Abfrage kommt zufällig früher oder später, z. B. bei 10 s ± 3 zwischen 7 und 13 s – der Abstand wirkt nicht mehr maschinell gleichmäßig, im Mittel bleibt es beim eingestellten Takt. Die Streuung ist nie größer als Takt − 1 s. Kopfzeile und Log zeigen „alle 10 s ± 3 s“.
+- **Stille Annahme „nur Sixt + ab 150 €“** (bisher „nur Sixt“): still werden Sixt-Aufträge **und alle Aufträge ab 150 €** angenommen (Terminpflicht – dort zählt die Schnelligkeit). Übrige Aufträge im Reiter „Veröffentlichte Aufträge“ über die Karte, in anderen Reitern warten sie. Status gelb „◐ still: Sixt + ab 150 €“.
+
 ### 1.31.3 – 2026-10-08
 - **ⓘ neben „Stille Annahme (Beta)“:** Antippen klappt eine übersichtliche Erklärung auf (was sie macht, Lernen einmal je Gerät, Verhalten je Reiter, „nur Sixt“, Status, Grenzen) – funktioniert auch auf Android (kein Darüberfahren nötig).
 
