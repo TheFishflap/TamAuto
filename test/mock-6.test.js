@@ -219,7 +219,7 @@ describe('Stille Annahme (Beta)', { skip }, () => {
   const FIRST = { ...ORDER, id: '3709951' };
   const acceptFetches = () => tam.fetches.filter((f) => /gwt-rpc\/workflow\/agent/.test(f.url) && /\|accept\|/.test(String((f.o && f.o.body) || '')));
   async function learned(gm = {}) {
-    tam = startTam({ gm: { places: KOELN, silentAccept: true, silentAcceptSixt: false, ...gm } });
+    tam = startTam({ fakeHour: 12, gm: { places: KOELN, silentAccept: true, silentAcceptSixt: false, ...gm } }); // Arbeitszeit (Silent Reload)
     await tam.ready();
     tam.addOrder(FIRST); // erste Annahme: normal über die Karte – dabei lernt das Script die Anfrage
     assert.ok(await until(() => tam.accepted.includes(FIRST.nr), 15000), tam.logs().slice(-4).join('\n'));

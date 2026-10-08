@@ -155,7 +155,7 @@ describe('Auftragsbuch und Bildschirm', { skip }, () => {
 describe('Stille Abfrage (Push-Signal)', { skip }, () => {
   const PUSH = 'tam-zrd6g634b4wej7aqhsycc9qm';
   async function ready(gm = {}) {
-    tam = startTam({ gm: { places: KOELN, pushOnV3: true, ...gm } });
+    tam = startTam({ fakeHour: 12, gm: { places: KOELN, pushOnV3: true, ...gm } }); // Arbeitszeit (Kopfzeile/Silent Reload)
     await tam.ready();
     // einmal von TAM aktualisieren lassen → Script übernimmt TAMs Anfrage
     const bar = [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-toolbar')].find((x) => /Einträge pro Seite/.test(x.textContent));
@@ -272,7 +272,7 @@ describe('Update-Quelle', { skip }, () => {
 
 describe('Silent Reload mit Zufallsstreuung', { skip }, () => {
   it('Abstände streuen um den Takt (± Streuung, nie unter 1 s); Kopfzeile zeigt „± n“; Streuung höchstens Takt − 1', async () => {
-    tam = startTam({ gm: { places: KOELN, running: true, silentOn: true, silentSec: 3, silentJitter: 2 } });
+    tam = startTam({ fakeHour: 12, gm: { places: KOELN, running: true, silentOn: true, silentSec: 3, silentJitter: 2 } }); // Arbeitszeit, sonst pausiert der Silent Reload
     await tam.ready();
     const bar = [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-toolbar')].find((x) => /Einträge pro Seite/.test(x.textContent));
     bar.querySelectorAll('.x-btn')[4].querySelector('button').click(); // TAM-Anfrage übernehmen
