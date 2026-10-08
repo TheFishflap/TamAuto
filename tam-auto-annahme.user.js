@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.31.0
+// @version      1.31.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -272,6 +272,7 @@
       if (level === 'ok') d.style.color = '#2e7d32';
       if (level === 'debug') d.style.color = '#888';
       if (level === 'hint') d.style.color = '#1a4d8f'; // Hinweis: blau
+      if (level === 'block') d.style.color = '#6d4c41'; // gesperrt: Farbe der Sperrliste (wie die gesperrte Zeile in TAM), kein Fehler
       box.prepend(d);
       while (box.childNodes.length > 200) box.lastChild.remove();
     }
@@ -2368,7 +2369,7 @@
         const why = bl ? `Treffer, aber gesperrt: ${bl} → nicht angenommen`
           : matches(o) ? 'TREFFER → wird angenommen'
             : `kein Treffer (PLZ ${o.plz || '?'} und Ort "${o.ort || '?'}" nicht in Ortsliste)`;
-        log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, bl ? 'err' : matches(o) ? 'ok' : 'info');
+        log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, bl ? 'block' : matches(o) ? 'ok' : 'info');
       });
       let n = 0;
       if (hits.length > 1) log(`Reihenfolge (${prioText()}): ${hits.map((o) =>
