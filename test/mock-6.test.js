@@ -202,21 +202,19 @@ describe('Stille Annahme (Beta)', { skip }, () => {
     await sleep(1500);
   }
 
-  it('Statusleiste: aus → nichts; an ohne Vorlage → gelb „lernt“; gelernt + nur Sixt → gelb „pausiert (nur Sixt)“; alle → grün', async () => {
-    const sa = () => [...tam.document.querySelectorAll('.tamauto-sa')];
-    const vis = () => sa().filter((e) => e.style.display !== 'none').map((e) => e.textContent);
-    tam = startTam({ gm: { places: KOELN } }); await tam.ready(); await sleep(1200);
-    assert.equal(sa().length, 2); assert.deepEqual(vis(), []);
+  it('Status im Kopf: stille Annahme aus → „● bereit“; an ohne Vorlage → gelb „pausiert (lernt)“; nur Sixt → gelb „pausiert (nur Sixt)“; alle → grün „● bereit“', async () => {
+    const hs = () => tam.document.getElementById('tamauto-head-state');
+    tam = startTam({ gm: { places: KOELN, running: true, silentOn: true } }); await tam.ready(); await sleep(1200);
+    assert.equal(hs().textContent, '● bereit');
+    assert.equal(tam.document.querySelectorAll('.tamauto-sa').length, 0, 'keine eigene Statuszeile');
     tam.close();
-    tam = startTam({ gm: { places: KOELN, silentAccept: true } }); await tam.ready(); await sleep(1200);
-    assert.ok(vis().every((t) => /lernt/.test(t)) && vis().length === 2, vis().join(' | '));
+    tam = startTam({ gm: { places: KOELN, running: true, silentOn: true, silentAccept: true } }); await tam.ready(); await sleep(1200);
+    assert.equal(hs().textContent, '⏸ pausiert (lernt)');
     tam.close();
-    await learned({ silentAcceptSixt: true });
-    assert.ok(vis().every((t) => t === 'Stille Annahme: pausiert (nur Sixt)'), vis().join(' | '));
-    assert.equal(sa()[0].style.background, 'rgb(255, 243, 205)');
+    await learned({ running: true, silentOn: true, silentAcceptSixt: true });
+    assert.equal(hs().textContent, '⏸ pausiert (nur Sixt)'); assert.equal(hs().style.color, 'rgb(178, 106, 0)');
     tam.document.getElementById('tamauto-silentaccept-sixt').click(); await sleep(1200);
-    assert.ok(vis().every((t) => t === 'Stille Annahme: alle Aufträge'), vis().join(' | '));
-    assert.equal(sa()[0].style.background, 'rgb(230, 244, 234)');
+    assert.equal(hs().textContent, '● bereit'); assert.equal(hs().style.color, 'rgb(46, 125, 50)');
   });
 
   it('Standard aus: normale Annahme über die Karte, keine stille Anfrage – die Vorlage wird trotzdem gelernt', async () => {

@@ -396,8 +396,8 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
-### 1.30.5 – 2026-10-08
-- **Stille Annahme in der Statusleiste** (aufgeklappt und minimiert, neben „Silent Reload in x s“): **grün** „Stille Annahme: alle Aufträge“, **gelb** „Stille Annahme: pausiert (nur Sixt)“ bzw. „lernt (erste Annahme über die Karte)“; ausgeschaltet wird nichts angezeigt.
+### 1.30.6 – 2026-10-08
+- **Stille Annahme in der vorhandenen Statusanzeige** (keine eigene Zeile): Sind Silent Reload und stille Annahme an, zeigt der Status **grün** „● bereit / AKTIV“ nur, wenn alle Aufträge still angenommen werden; mit „nur Sixt“ **gelb** „⏸ pausiert (nur Sixt)“, solange die Vorlage noch fehlt „⏸ pausiert (lernt)“.
 
 ### 1.30.4 – 2026-10-08
 - Version 1.30.3 zurückgenommen (interne Messung, nicht für den Einsatz gedacht). Inhaltlich wie 1.30.2.

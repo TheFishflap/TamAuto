@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.30.5
+// @version      1.30.6
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -2410,7 +2410,7 @@
   function renderMini(now) {
     const box = document.getElementById('tamauto-mini');
     if (!box || box.style.display === 'none') return;
-    const [st, col] = !cfg.enabled ? ['■ GESTOPPT', '#c62828'] : onPublishedTab() ? ['● AKTIV', '#2e7d32'] : ['⏸ PAUSIERT', '#b26a00'];
+    const ein = stilleEinschraenkung(), [st, col] = !cfg.enabled ? ['■ GESTOPPT', '#c62828'] : !onPublishedTab() ? ['⏸ PAUSIERT', '#b26a00'] : ein ? [`⏸ PAUSIERT (${ein})`, '#b26a00'] : ['● AKTIV', '#2e7d32'];
     const s = document.getElementById('tamauto-mini-state'); s.textContent = st; s.style.color = col;
     const next = silentHeader(now);
     document.getElementById('tamauto-mini-next').textContent = next;
@@ -2428,20 +2428,9 @@
   // Kopfzeile (aufgeklappt und minimiert): nur noch der Silent Reload
   const silentHeader = (now) => (!cfg.silentOn ? 'Silent Reload aus' : !inSchedule() ? `⏾ außerhalb der Arbeitszeit – Silent Reload pausiert (bis ${cfg.schedFrom})`
     : !tamLoadReq ? 'Silent Reload wartet auf den ersten Refresh' : `Silent Reload in ${fmtDur(Math.max(0, lastSilentAt + cfg.silentSec * 1000 - now))} (alle ${cfg.silentSec} s)`);
-  // Stille Annahme in der Statusleiste: grün = alle Aufträge, gelb = nur Sixt bzw. noch nicht bereit (erste Annahme läuft über die Karte); aus = nichts
-  function renderStilleBadge() {
-    const st = !cfg.silentAccept ? null : !acceptTpl ? ['Stille Annahme: lernt (erste Annahme über die Karte)', '#fff3cd', '#7a5b00']
-      : cfg.silentAcceptSixt ? ['Stille Annahme: pausiert (nur Sixt)', '#fff3cd', '#7a5b00'] : ['Stille Annahme: alle Aufträge', '#e6f4ea', '#1e6b34'];
-    document.querySelectorAll('.tamauto-sa').forEach((el) => {
-      el.style.display = st ? '' : 'none';
-      if (!st) return;
-      el.textContent = st[0];
-      Object.assign(el.style, { background: st[1], color: st[2], marginLeft: '6px', padding: '0 5px', borderRadius: '3px', fontWeight: 'bold' });
-    });
-  }
   function renderSync(now) {
     renderMini(now);
-    renderStilleBadge();
+    renderHeadState();
     const pi = document.getElementById('tamauto-prio-info');
     if (pi) pi.textContent = `Priorität: ${prioText()}`;
     const el = document.getElementById('tamauto-sync');
@@ -2808,10 +2797,13 @@
   // ------------------------------------------------------------------ Bedienfeld
   function setStatus(s) { const el = document.getElementById('tamauto-status'); if (el) { el.textContent = s; el.style.display = s ? '' : 'none'; } } // leer = Zeile ausgeblendet
   // Kurzstatus in der Titelzeile (sichtbar im minimierten Zustand)
+  // Bei Silent Reload + stiller Annahme: grün nur, wenn alle Aufträge still angenommen werden; gelb „pausiert (nur Sixt)“ bzw. „(lernt)“
+  const stilleEinschraenkung = () => (!cfg.silentOn || !cfg.silentAccept ? '' : !acceptTpl ? 'lernt' : cfg.silentAcceptSixt ? 'nur Sixt' : '');
   function renderHeadState() {
     const hs = document.getElementById('tamauto-head-state');
     if (!hs) return;
-    const [txt, col] = !cfg.enabled ? ['■ gestoppt', '#c62828'] : onPublishedTab() ? ['● bereit', '#2e7d32'] : ['⏸ pausiert', '#b26a00'];
+    const ein = stilleEinschraenkung();
+    const [txt, col] = !cfg.enabled ? ['■ gestoppt', '#c62828'] : !onPublishedTab() ? ['⏸ pausiert', '#b26a00'] : ein ? [`⏸ pausiert (${ein})`, '#b26a00'] : ['● bereit', '#2e7d32'];
     hs.textContent = txt; hs.style.color = col;
   }
   function renderStatus() {
@@ -2994,7 +2986,7 @@
       <div id="tamauto-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:move;white-space:nowrap">
         <b style="margin-right:auto">TAM Auto-Annahme v${VERSION}</b><span id="tamauto-head-state" style="display:none;font-weight:bold"></span><button id="tamauto-toggle" title="Automatische Annahme starten / stoppen"></button><span id="tamauto-min" style="cursor:pointer;padding:0 4px;font-weight:bold;font-size:22px;line-height:18px;min-width:18px;text-align:center;color:#1a4d8f">–</span></div>
       <div id="tamauto-mini" style="display:none;margin-top:2px;line-height:1.4;font-size:11px">
-        <div><span id="tamauto-mini-state" style="font-weight:bold"></span> · <span id="tamauto-mini-next"></span><span class="tamauto-sa"></span></div>
+        <div><span id="tamauto-mini-state" style="font-weight:bold"></span> · <span id="tamauto-mini-next"></span></div>
         <div style="color:#555"><span id="tamauto-mini-last"></span> · <span id="tamauto-mini-rate"></span></div>
       </div>
       <div id="tamauto-body">
@@ -3002,7 +2994,7 @@
         <div id="tamauto-tab" style="font-weight:bold;margin:4px 0"></div>
         <div id="tamauto-places"></div>
         <div id="tamauto-status" style="color:#555;display:none"></div>
-        <div style="color:#555"><span id="tamauto-sync"></span><span class="tamauto-sa"></span></div>
+        <div style="color:#555"><span id="tamauto-sync"></span></div>
         <div id="tamauto-prio-info" style="color:#555" title="Ändern unter „Erweiterte Einstellungen“ → Priorität"></div>
         <div id="tamauto-tabbar" style="display:flex;flex-wrap:wrap;gap:0 2px;margin-top:6px">
           <button class="tamauto-tabbtn" data-page="tamauto-page-main">Bedienung</button>
