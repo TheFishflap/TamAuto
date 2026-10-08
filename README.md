@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.30.8 – 2026-10-08
+- **Fehlzuordnung behoben:** Meldete TAM beim **zweiten** Auftrag am selben Ort „Auftrag bereits vergeben!“ (Meldung ohne Auftragsnummer), wurde das dem ersten, erfolgreich angenommenen Auftrag zugeschrieben – er galt als „NICHT angenommen“ und fiel aus dem Auftragsbuch. Meldungen ohne Nummer gehören jetzt zur zuletzt begonnenen Annahme.
+- Beim Nachholen verpasster Meldungen werden alte Auftragsbuch-Antworten nicht mehr erneut verarbeitet (im Log z. B. „3200 Einträge empfangen“ direkt nach dem Neuladen).
+
 ### 1.30.7 – 2026-10-08
 - Status im Kopf wieder wie vor 1.30.5: im Reiter „Veröffentlichte Aufträge“ grün (alle Aufträge werden angenommen – still oder über die Karte), sonst gelb „pausiert“. Die Anzeige „nur Sixt“ aus 1.30.5/1.30.6 entfällt.
 

@@ -76,6 +76,17 @@ describe('Nach der Annahme sofort zurück (P2 Tabwechsel)', { skip }, () => {
     assert.ok(Date.now() - jumpedAt < 500, `Rückkehr nach ${Date.now() - jumpedAt} ms`);
   });
 
+  it('„bereits vergeben“ beim 2. Auftrag am Ort (Meldung ohne Nummer) wird nicht dem 1., angenommenen Auftrag zugeordnet', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    const B = { nr: 'MW3153894', plz: '50825', ort: 'Köln', onOpen: (t) => setTimeout(() => t.showMessage('Auftrag bereits vergeben!', 'Sie können die Auftragskarte nicht mehr anzeigen lassen da der Auftrag bereits vergeben wurde.'), 50) };
+    tam.addOrder(ORDER); tam.addOrder(B);
+    assert.ok(await until(() => tam.accepted.includes(ORDER.nr) && tam.logs().some((l) => /Annahme fehlgeschlagen: MW3153894/.test(l)), 15000), tam.logs().slice(-8).join('\n'));
+    await sleep(3000); // Nachkontrolle des 1. Auftrags vorbei
+    assert.ok(!tam.logs().some((l) => /MW3153893: nachträglich/.test(l)), tam.logs().slice(-8).join('\n'));
+    assert.ok((tam.store.get('orderbook') || []).some((e) => e.nr === ORDER.nr), '1. Auftrag fehlt im Auftragsbuch');
+  });
+
   it('TAM meldet nach „Bestätigen“ „bereits vergeben“ → Buchung wird korrigiert', async () => {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();

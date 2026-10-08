@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.30.7
+// @version      1.30.8
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1116,6 +1116,7 @@
     // „hi“ nur live beantworten (beim Nachholen alter Meldungen würden sonst alle Geräte erneut ihr Auftragsbuch senden); „man“ = von Hand angefordert, dann ohne Sperrzeit
     if (secure && d.t === 'hi') { if (!replay && d.src !== RUN_ID && new Date(d.at || 0).toLocaleDateString('sv-SE') === today()) { bkSeen.clear(); onHi(d); } return; }
     if (secure && d.t === 'bk') {
+      if (replay) return; // Antworten auf ein „hi“ kommen live; alte (vor 1.30.1 noch zwischengespeicherte) beim Nachholen nicht erneut verarbeiten
       if (Array.isArray(d.items)) d.items.slice(0, BK_CHUNK).forEach((x) => x && bkSeen.add(nrKey(x.n)));
       const n = addBookItems(d.items); bkGot += Array.isArray(d.items) ? Math.min(d.items.length, BK_CHUNK) : 0;
       if (n) log(`Auftragsbuch abgeglichen: ${n} Aufträge von anderen Geräten ergänzt.`, 'debug');
@@ -1820,6 +1821,7 @@
   // Fenster, die man selbst öffnet, bleiben offen.
   const triedNrs = new Map(); // nrBase → Zeitpunkt des Doppelklicks
   let currentAcceptNr = '';
+  let lastAcceptStart = { nr: '', at: 0 }; // zuletzt begonnene Annahme (Meldungen danach ohne Nummer gehören zu ihr, nicht zur vorigen)
   const strayLogged = new WeakSet();
   function closeStrayWindows() {
     if (!triedNrs.size) return;
@@ -1939,7 +1941,7 @@
 
   // Während der Annahme merkt sich der Wächter den Auftrag, damit er dessen Fenster nicht schließt
   async function acceptOrder(order) {
-    currentAcceptNr = nrBase(order.nr);
+    currentAcceptNr = nrBase(order.nr); lastAcceptStart = { nr: currentAcceptNr, at: Date.now() };
     try { return await acceptOrderInner(order); } finally { currentAcceptNr = ''; }
   }
   async function acceptOrderInner(order) {
@@ -2105,6 +2107,7 @@
       const hit = mine().find((x) => x && up.includes(nrBase(x)));
       if (hit) return hit;
       if (msgNr || (currentAcceptNr && currentAcceptNr !== nrBase(nr))) return null; // gehört zu einem anderen Auftrag
+      if (lastAcceptStart.at > t0 && lastAcceptStart.nr !== nrBase(nr)) return null; // inzwischen lief schon die nächste Annahme (z. B. „bereits vergeben“ beim 2. Auftrag am Ort)
       return nr; // ohne Nummer: dem Hauptauftrag zuordnen
     };
     let backAt = 0, handled = false, naLogged = false;
