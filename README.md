@@ -396,6 +396,10 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.32.9 – 2026-10-08
+- MA-Management, Mail: Cc standardmäßig **alle abgewählt**; Kopfzeile der Mail nur noch **Absender** mit Auswahl (ohne „Mail an den Mitarbeiter“ / „Baustein: neue Terminvereinbarung“).
+- Schalter heißt nur noch „Stille Annahme“ (ohne „Beta“).
+
 ### 1.32.8 – 2026-10-08
 - Stille Annahme: **grüner Haken ✓** hinter „Stille Annahme“, sobald die Annahme-Anfrage gelernt ist, darunter das **Lerndatum** („gelernt am 08.10.2026, 13:16“); sonst „noch nicht gelernt – lernt bei der nächsten Annahme über die Auftragskarte“. Der Zusatz „(Beta, im Hintergrund)“ in der Reiter-Statuszeile entfällt.
 

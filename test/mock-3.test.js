@@ -370,6 +370,8 @@ describe('MA-Management (Reiter)', { skip }, () => {
 
   it('Mail: Titel „Neue Terminvereinbarung <Auftragsart> in <Ort> (x)“, Empfänger, Cc = Backoffice mit E-Mail, FIN-Spalte, Kennzeichenversand nur benannt', async () => {
     await setup();
+    assert.match(mailto(), /^mailto:mk@example\.com\?subject=/, 'Cc muss standardmäßig leer sein');
+    [...tam.document.querySelectorAll('#tamauto-ma-cc input')].forEach((i) => i.click()); // alle Backoffice-Adressen anhaken
     const m = mailto();
     assert.match(m, /^mailto:mk@example\.com\?cc=auftrag@example\.com,silke@example\.com&subject=/);
     assert.equal($('tamauto-ma-subject').value, 'Neue Terminvereinbarung Standard, Sixt Rückgabe in Köln, Dortmund (2)');
@@ -380,8 +382,10 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.match(b, /🔴 🚩 \d{2}\.\d{2}\.\d{4} \d{2}:\d{2} \(in 1 h\)/); assert.match(b, /🔴 = Reservierung läuft in ≤ 2 h aus.*🚩 = Reservierung läuft in ≤ 1 h/);
   });
 
-  it('Cc abwählbar, Absender = Backoffice-Zeilen, gemerkt (Signatur „Liebe Grüße“)', async () => {
+  it('Cc standardmäßig abgewählt und wählbar, Absender = Backoffice-Zeilen, gemerkt (Signatur „Liebe Grüße“)', async () => {
     await setup();
+    assert.ok([...tam.document.querySelectorAll('#tamauto-ma-cc input')].every((i) => !i.checked));
+    [...tam.document.querySelectorAll('#tamauto-ma-cc input')].forEach((i) => i.click());
     assert.deepEqual([...$('tamauto-ma-absender').options].map((o) => o.value), ['', 'Backoffice Postfach', 'Silke', 'Leonie Struve', 'Louis Thomee']);
     [...tam.document.querySelectorAll('#tamauto-ma-cc input')].find((i) => i.dataset.mail === 'silke@example.com').click();
     assert.doesNotMatch(mailto(), /silke@example\.com/);
@@ -408,12 +412,12 @@ describe('MA-Management (Reiter)', { skip }, () => {
     assert.equal($('tamauto-ma-unz'), null); assert.equal($('tamauto-ma-baustein'), null);
   });
 
-  it('Hinweis „keine E-Mail-Adresse“ steht in der Überschriftszeile der Mail und nennt das Kürzel', async () => {
+  it('Hinweis „keine E-Mail-Adresse“ steht in der Absender-Zeile der Mail und nennt das Kürzel', async () => {
     tam = startTam({ gm: { places: { ...KOELN, ma: [{ k: 'MK', name: 'Markus', mail: '', backoffice: false }] }, orderbook: BOOK() } });
     await tam.ready(); open();
     const st = $('tamauto-ma-mailstate');
     assert.match(st.textContent, /Keine E-Mail-Adresse für MK/);
-    assert.ok(st.previousElementSibling && /Mail an den Mitarbeiter/.test(st.previousElementSibling.textContent) || /Mail an den Mitarbeiter/.test(st.parentElement.firstElementChild.textContent), 'Hinweis nicht neben der Überschrift');
+    assert.equal(st.parentElement.firstElementChild.textContent, 'Absender', 'Hinweis nicht in der Absender-Zeile');
   });
 
   it('SLA laden: Telefon in Liste und Mail; Sixt ohne Nummer → leere Zeile', async () => {

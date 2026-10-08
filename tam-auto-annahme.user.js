@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.32.8
+// @version      1.32.9
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -2978,7 +2978,7 @@
     const cc = $('tamauto-ma-cc'), sigC = withMail.map((k) => `${k.name || k.k}|${k.mail}`).join(';');
     if (cc.dataset.sig !== sigC) {
       cc.dataset.sig = sigC;
-      cc.innerHTML = withMail.map((k) => `<label class="tamauto-chk" style="margin-right:6px"><input type="checkbox" data-mail="${escHtml(k.mail)}" checked> ${escHtml(k.name || k.k)}</label>`).join('') || '<span style="color:#555">keine Backoffice-Adresse im Blatt „MA“</span>';
+      cc.innerHTML = withMail.map((k) => `<label class="tamauto-chk" style="margin-right:6px"><input type="checkbox" data-mail="${escHtml(k.mail)}"> ${escHtml(k.name || k.k)}</label>`).join('') || '<span style="color:#555">keine Backoffice-Adresse im Blatt „MA“</span>';
       cc.querySelectorAll('input').forEach((i) => { i.onchange = renderMa; });
     }
     const ab = $('tamauto-ma-absender'), names = bo.map((k) => k.name || k.k), sigA = names.join('|');
@@ -3206,7 +3206,7 @@ Wichtig: Die Farben ändern nur die Anzeige der TAM-Oberfläche lokal in diesem 
             </div>
           </div>
           <div style="margin-top:10px;padding-top:6px;border-top:1px solid #ddd">
-            <label class="tamauto-chk"><input type="checkbox" id="tamauto-silentaccept"> <b>Stille Annahme (Beta)</b></label><span id="tamauto-sa-ok" title="Annahme-Anfrage von TAM gelernt" style="display:none;color:#2e7d32;font-weight:bold;margin-left:3px">✓</span>
+            <label class="tamauto-chk"><input type="checkbox" id="tamauto-silentaccept"> <b>Stille Annahme</b></label><span id="tamauto-sa-ok" title="Annahme-Anfrage von TAM gelernt" style="display:none;color:#2e7d32;font-weight:bold;margin-left:3px">✓</span>
             <label class="tamauto-chk" style="margin-left:8px"><input type="checkbox" id="tamauto-silentaccept-sixt"> nur Sixt + ab 150 €</label>
             <span id="tamauto-sa-info" title="Erklärung ein-/ausblenden" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#1a4d8f;color:#fff;font:italic bold 11px Georgia,serif;cursor:pointer;margin-left:6px">i</span>
             <div id="tamauto-sa-infobox" style="display:none;margin-top:4px;padding:6px 8px;background:#f3f6fb;border:1px solid #c5d3e8;border-radius:3px;line-height:1.45">
@@ -3319,10 +3319,9 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
           <div id="tamauto-ma-hint" style="color:#b36b00;margin-top:2px"></div>
           <div style="max-height:150px;overflow:auto;margin-top:4px;border:1px solid #ddd">
             <table style="border-collapse:collapse;width:100%;font-size:11px"><tbody id="tamauto-ma-rows"></tbody></table></div>
-          <div style="margin-top:8px;padding-top:6px;border-top:2px solid #1a4d8f"><b>Mail an den Mitarbeiter</b> <span id="tamauto-ma-mailstate" style="color:#b36b00;font-size:11px"></span>
-            <div class="tamauto-chk" style="gap:6px;flex-wrap:wrap;margin:4px 0">Baustein: neue Terminvereinbarung
-              <span class="tamauto-help" title="Eine Mail: Aufträge mit Pflicht zur Terminvereinbarung (ab 150 € bzw. Status „Terminvereinbarung“), die der MA mit seinem Kürzel im Zeichen übernommen hat und die noch keine Tour mit Datum haben. Cc und Absender: die Backoffice-Zeilen im Blatt „MA“. Die Zahl in Klammern beim MA und am Reiter = offene Terminvereinbarungen.">?</span>
-              Absender <select id="tamauto-ma-absender" title="Absender der Mail: die Backoffice-Einträge aus dem Excel-Blatt „MA“ (Haken „Backoffice“)"></select></div>
+          <div style="margin-top:8px;padding-top:6px;border-top:2px solid #1a4d8f">
+            <div class="tamauto-chk" style="gap:6px;flex-wrap:wrap;margin:4px 0"><b>Absender</b> <select id="tamauto-ma-absender" title="Absender der Mail: die Backoffice-Einträge aus dem Excel-Blatt „MA“ (Haken „Backoffice“)"></select>
+              <span class="tamauto-help" title="Eine Mail: Aufträge mit Pflicht zur Terminvereinbarung (ab 150 € bzw. Status „Terminvereinbarung“), die der MA mit seinem Kürzel im Zeichen übernommen hat und die noch keine Tour mit Datum haben. Cc und Absender: die Backoffice-Zeilen im Blatt „MA“. Die Zahl in Klammern beim MA und am Reiter = offene Terminvereinbarungen.">?</span> <span id="tamauto-ma-mailstate" style="color:#b36b00;font-size:11px"></span></div>
             <div style="margin:2px 0">Cc: <span id="tamauto-ma-cc"></span></div>
             <input id="tamauto-ma-subject" style="width:100%;margin:2px 0">
             <textarea id="tamauto-ma-body" style="width:100%;height:150px;font:11px monospace"></textarea>
@@ -3530,7 +3529,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
         : 'noch nicht gelernt – lernt bei der nächsten Annahme über die Auftragskarte';
     };
     $('tamauto-sa-info').onclick = () => { const b = $('tamauto-sa-infobox'); b.style.display = b.style.display === 'none' ? 'block' : 'none'; };
-    $('tamauto-silentaccept').onchange = (e) => { cfg.silentAccept = e.target.checked; GM_setValue('silentAccept', cfg.silentAccept); log(`Stille Annahme (Beta): ${cfg.silentAccept ? 'an' : 'aus'}.`, 'ok'); renderSilentAccept(); };
+    $('tamauto-silentaccept').onchange = (e) => { cfg.silentAccept = e.target.checked; GM_setValue('silentAccept', cfg.silentAccept); log(`Stille Annahme: ${cfg.silentAccept ? 'an' : 'aus'}.`, 'ok'); renderSilentAccept(); };
     $('tamauto-silentaccept-sixt').onchange = (e) => { cfg.silentAcceptSixt = e.target.checked; GM_setValue('silentAcceptSixt', cfg.silentAcceptSixt); log(`Stille Annahme: ${cfg.silentAcceptSixt ? 'nur Sixt-Aufträge und Aufträge ab 150 €' : 'alle Aufträge'}.`, 'ok'); renderSilentAccept(); };
     renderSilentAccept(); onAcceptTplChange = renderSilentAccept; // nur bei Änderung (Vorlage gelernt, Schalter)
     $('tamauto-silent-on').checked = cfg.silentOn;
