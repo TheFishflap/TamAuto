@@ -235,6 +235,30 @@ describe('Kanal-Schlüssel (geheime Kanäle)', { skip }, () => {
     assert.ok(await untilA(async () => (await posted()).some((m) => m.t === 'bk' && m.items.some((x) => x.n === 'S2112391_2')), 16000), 'nicht gesendet');
   });
 
+  it('Stille Annahme: Vorlage über den geheimen Kanal – passende wird übernommen, fremde TAM-Version und ungültige nicht; ein Gerät mit Vorlage antwortet auf „hi“ ohne Vorlage', async () => {
+    const { GWT, GWT_HEADERS } = require('./harness');
+    const { ck, ret } = await withChannelKey();
+    assert.ok(await until(() => tam.live(ret).length, 5000));
+    // TAMs Listenanfrage mit Permutation mitschneiden (wie beim ersten Refresh)
+    const x = new tam.window.XMLHttpRequest(); x.open('POST', 'https://tam.tuvsud.com/gwt-rpc/auftrag');
+    Object.entries(GWT_HEADERS).forEach(([k, v]) => x.setRequestHeader(k, v)); x.send('7|0|3|u|a|loadTeilauftraege|1|2|3|');
+    const tpl = { url: 'https://tam.tuvsud.com/gwt-rpc/workflow/agent', headers: GWT_HEADERS, body: GWT.accept(['3709951']), at: Date.now() - 3600e3, von: 'LouisMac' };
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'tpl', nrs: [], at: Date.now(), von: 'SilkeFirefox', tpl: { ...tpl, headers: { ...GWT_HEADERS, 'X-GWT-Permutation': 'ANDERE' } } }));
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'tpl', nrs: [], at: Date.now(), von: 'Böse', tpl: { ...tpl, url: 'https://evil.example/gwt-rpc/workflow/agent' } }));
+    await sleep(300);
+    assert.equal(tam.store.get('acceptTpl') || null, null, 'fremde/ungültige Vorlage übernommen');
+    assert.ok(tam.logs().some((l) => /Vorlage von Böse ungültig/.test(l)));
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'tpl', nrs: [], at: Date.now(), von: 'LouisMac', tpl }));
+    assert.ok(await until(() => tam.store.get('acceptTpl'), 3000), tam.logs().slice(-4).join('\n'));
+    assert.equal(tam.store.get('acceptTpl').body, tpl.body);
+    assert.match(tam.document.getElementById('tamauto-silentaccept-state').textContent, /übernommen von LouisMac/);
+    assert.ok(tam.document.getElementById('tamauto-sa-ok').style.display !== 'none');
+    // ein anderes Gerät startet ohne Vorlage → wir schicken unsere
+    const untilA = async (fn, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(50); } return null; };
+    tam.ntfy(ret, await K.encryptMsg(ck, { v: 1, t: 'hi', nrs: [], at: Date.now(), src: 'neu', id: 'z', p: 0, n: 1, ks: '', tpl: 0, perm: GWT_HEADERS['X-GWT-Permutation'] }));
+    assert.ok(await untilA(async () => (await Promise.all(tam.posts(ret).map((m) => K.decryptMsg(ck, m)))).some((m) => m.t === 'tpl' && m.tpl.body === tpl.body), 8000), 'Vorlage nicht geschickt');
+  });
+
   it('Auftragsbuch-Abgleich: empfangene Aufträge werden geprüft und ergänzt; ältere als 7 Tage und Fremdes auf dem öffentlichen Kanal ignoriert', async () => {
     const { ck, ret } = await withChannelKey();
     const t = Date.now(), book = () => tam.store.get('orderbook') || [];

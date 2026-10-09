@@ -350,4 +350,4 @@ function makeXlsx(sheets) {
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
 }
 
-module.exports = { makeXlsx,  startTam, fixture, hasFixtures, licenseKey, revocationList, until, sleep, INSTALL_ID };
+module.exports = { GWT, GWT_HEADERS, makeXlsx,  startTam, fixture, hasFixtures, licenseKey, revocationList, until, sleep, INSTALL_ID };

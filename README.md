@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.34.0 – 2026-10-09
+- **Stille Annahme: gelernte Vorlage wird geteilt.** Lernt ein Gerät die Annahme-Anfrage, schickt es sie verschlüsselt über den geheimen Kanal an die anderen Geräte; ein neu startendes Gerät ohne Vorlage meldet das im „hi“ und bekommt sie von einem Gerät, das sie hat. Übernommen wird nur, was zur TAM-Version des eigenen Browsers passt (sonst lernt das Gerät wie bisher selbst); die Vorlage wird streng geprüft (nur Annahme-Aufruf an tam.tuvsud.com). Anzeige: „gelernt am … (übernommen von …)“. Die Vorlage enthält keine Sitzung oder Zugangsdaten. Der Schalter „Stille Annahme“ bleibt standardmäßig aus.
+
 ### 1.33.1 – 2026-10-09
 - **Kein Aufblitzen beim Einfärben:** Neue Zeilen in „Veröffentlichte Aufträge“ werden direkt beim Einfügen eingefärbt (grün = Annahmeliste, braun = gesperrt, orange = zurückgegeben, grau = kein Treffer) – vor dem Zeichnen, nicht erst nach dem Abgleich.
 

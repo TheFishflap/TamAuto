@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.33.1
+// @version      1.34.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1085,13 +1085,15 @@
     const von = Date.now() - BK_DAYS * 864e5, k = [...new Set(GM_getValue('orderbook', []).filter((e) => e.nr && new Date(e.ts).getTime() >= von).map((e) => nrHash(e.nr)))];
     const id = Math.random().toString(36).slice(2, 8), n = Math.max(1, Math.ceil(k.length / HI_CHUNK));
     let ok = false;
-    for (let i = 0; i < n; i++) { ok = await retPostSecure(Object.assign({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID, id, p: i, n, ks: k.slice(i * HI_CHUNK, (i + 1) * HI_CHUNK).join('') }, man ? { man: 1 } : {})); if (!ok) break; if (i < n - 1) await sleep(600); }
+    for (let i = 0; i < n; i++) { ok = await retPostSecure(Object.assign({ v: 1, t: 'hi', nrs: [], at: Date.now(), src: RUN_ID, id, p: i, n, ks: k.slice(i * HI_CHUNK, (i + 1) * HI_CHUNK).join(''), tpl: acceptTpl ? 1 : 0, perm: permDiesesBrowsers() }, man ? { man: 1 } : {})); if (!ok) break; if (i < n - 1) await sleep(600); }
     if (ok) GM_setValue('lastHiAt', Date.now());
     if (ok) log(`Auftragsbuch-Abgleich angefordert: ${k.length} bekannte Aufträge gemeldet (${n} Nachricht${n > 1 ? 'en' : ''}).`, 'debug');
     return ok;
   }
   const hiPending = new Map(); // Anfrage (Gerät + Kennung) → bisher empfangene Teile
   function onHi(d) {
+    // fehlt dem neuen Gerät die Vorlage für die stille Annahme (und passt unsere zu seiner TAM-Version), schicken wir sie – höchstens einmal je Minute
+    if (d.tpl === 0 && acceptTpl && (!d.perm || d.perm === acceptTpl.headers['X-GWT-Permutation'])) setTimeout(teileVorlage, 500 + Math.random() * 4000);
     const key = `${d.src}|${d.id || ''}`, k = typeof d.ks === 'string' && /^[\w-]*$/.test(d.ks) ? (d.ks.slice(0, HI_CHUNK * 4).match(/.{4}/g) || []) : null; // ohne „ks“ (ältere Version): alles senden
     let q = hiPending.get(key);
     if (!q) { q = { known: k ? new Set() : null, got: 0, man: !!d.man, done: false }; hiPending.set(key, q); setTimeout(() => hiPending.delete(key), 120e3); }
@@ -1138,6 +1140,7 @@
     if (!d || d.v !== 1 || !Array.isArray(d.nrs) || d.nrs.length > 20) return;
     // „hi“ nur live beantworten (beim Nachholen alter Meldungen würden sonst alle Geräte erneut ihr Auftragsbuch senden); „man“ = von Hand angefordert, dann ohne Sperrzeit
     if (secure && d.t === 'hi') { if (!replay && d.src !== RUN_ID && new Date(d.at || 0).toLocaleDateString('sv-SE') === today()) { bkSeen.clear(); onHi(d); } return; }
+    if (secure && d.t === 'tpl') { uebernimmVorlage(d.tpl, String(d.von || '').slice(0, 40)); return; }
     if (secure && d.t === 'bk') {
       if (replay) return; // Antworten auf ein „hi“ kommen live; alte (vor 1.30.1 noch zwischengespeicherte) beim Nachholen nicht erneut verarbeiten
       if (Array.isArray(d.items)) d.items.slice(0, BK_CHUNK).forEach((x) => x && bkSeen.add(nrKey(x.n)));
@@ -1685,6 +1688,7 @@
             const first = !tamLoadReq;
             tamLoadReq = { url: new URL(this.__tamU, location.href).href, body: b, headers: Object.assign({}, this.__tamH) };
             if (first && cfg.silentOn) log('Silent Reload: TAM-Anfrage übernommen – Hintergrund-Abfrage aktiv.', 'ok');
+            if (first) setTimeout(pruefeWartendeVorlage, 0);
           }
         } catch (e) { /* ignore */ }
         return send.apply(this, arguments);
@@ -1950,7 +1954,39 @@
     acceptTpl = { url: t.url, headers: t.headers, body: t.body, at: Date.now() };
     GM_setValue('acceptTpl', acceptTpl); onAcceptTplChange();
     if (neu) log(`Stille Annahme: accept-Anfrage von TAM gelernt (Hash ${t.body.split('|')[1].slice(0, 8)}…, Permutation ${(t.headers['X-GWT-Permutation'] || '?').slice(0, 8)}…).`, cfg.silentAccept ? 'ok' : 'debug');
+    if (neu) teileVorlage(); // an die anderen Geräte (geheimer Kanal)
   }
+  // Vorlage über den geheimen Kanal teilen: enthält keine Sitzung/Zugangsdaten (die stecken im Cookie des jeweiligen Browsers), nur den Aufbau des
+  // Annahme-Aufrufs. Übernommen wird sie nur, wenn sie zur TAM-Version dieses Browsers passt (X-GWT-Permutation) – sonst lernt das Gerät selbst.
+  let vorlageGesendetAt = 0, vorlageWartend = null;
+  const permDiesesBrowsers = () => (tamLoadReq && tamLoadReq.headers && tamLoadReq.headers['X-GWT-Permutation']) || '';
+  function teileVorlage() {
+    if (!acceptTpl || Date.now() - vorlageGesendetAt < 60e3) return;
+    vorlageGesendetAt = Date.now();
+    const von = String((license && license.name) || '').slice(0, 40);
+    retPostSecure({ v: 1, t: 'tpl', nrs: [], at: Date.now(), von, tpl: { url: acceptTpl.url, headers: acceptTpl.headers, body: acceptTpl.body, at: acceptTpl.at, von: acceptTpl.von || von } })
+      .then((ok) => { if (ok) log('Stille Annahme: Vorlage an die anderen Geräte gesendet.', 'debug'); });
+  }
+  function pruefeVorlage(tpl) { // streng prüfen: nur TAMs Annahme-Aufruf an tam.tuvsud.com
+    if (!tpl || typeof tpl !== 'object' || typeof tpl.body !== 'string' || tpl.body.length > 3000 || !/\|accept\|/.test(tpl.body)) return null;
+    let u; try { u = new URL(String(tpl.url)); } catch (e) { return null; }
+    if (u.protocol !== 'https:' || u.hostname !== 'tam.tuvsud.com' || !/\/gwt-rpc\/workflow\/agent$/.test(u.pathname)) return null;
+    const h = tpl.headers && typeof tpl.headers === 'object' ? tpl.headers : {};
+    const headers = {}; ['Content-Type', 'X-GWT-Permutation', 'X-GWT-Module-Base'].forEach((k) => { if (typeof h[k] === 'string' && h[k].length < 200) headers[k] = h[k]; });
+    if (!headers['X-GWT-Permutation'] || !buildAcceptBody({ body: tpl.body }, ['1'])) return null;
+    return { url: u.href, headers, body: tpl.body, at: Number(tpl.at) || Date.now(), von: String(tpl.von || '').slice(0, 40) };
+  }
+  function uebernimmVorlage(tpl, quelle) {
+    const t = pruefeVorlage(tpl);
+    if (!t) { log(`Stille Annahme: Vorlage von ${quelle || 'anderem Gerät'} ungültig – ignoriert.`, 'err'); return; }
+    const perm = permDiesesBrowsers();
+    if (!perm) { vorlageWartend = { t, quelle }; return; } // TAM-Anfrage noch nicht mitgeschnitten → prüfen, sobald sie da ist
+    if (t.headers['X-GWT-Permutation'] !== perm) { log(`Stille Annahme: Vorlage von ${quelle || 'anderem Gerät'} passt nicht zu diesem Browser (andere TAM-Version) – dieses Gerät lernt selbst.`, 'debug'); return; }
+    if (acceptTpl && acceptTpl.headers['X-GWT-Permutation'] === perm) return; // schon eine passende Vorlage
+    acceptTpl = t; GM_setValue('acceptTpl', acceptTpl); onAcceptTplChange();
+    log(`Stille Annahme: Vorlage von ${quelle || 'anderem Gerät'} übernommen (gelernt am ${new Date(t.at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${t.von ? ` von ${t.von}` : ''}) – sofort bereit.`, 'ok');
+  }
+  function pruefeWartendeVorlage() { if (vorlageWartend && permDiesesBrowsers()) { const w = vorlageWartend; vorlageWartend = null; uebernimmVorlage(w.t, w.quelle); } }
   // accept-Anfrage für diese IDs aus der Vorlage bauen: Liste „<ArrayList>|n|<Long>|id|<Long>|id …“, der Rest (Transition) bleibt
   function buildAcceptBody(tpl, tids) {
     const p = String(tpl.body).split('|'), n = +p[2];
@@ -3549,7 +3585,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     // Wichtig ist nur, ob gelernt ist: grüner Haken hinter „Stille Annahme“ und das Lerndatum
     const renderSilentAccept = () => {
       $('tamauto-sa-ok').style.display = acceptTpl ? '' : 'none';
-      $('tamauto-silentaccept-state').textContent = acceptTpl ? `gelernt am ${new Date(acceptTpl.at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+      $('tamauto-silentaccept-state').textContent = acceptTpl ? `gelernt am ${new Date(acceptTpl.at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}${acceptTpl.von ? ` (übernommen von ${acceptTpl.von})` : ''}`
         : 'noch nicht gelernt – lernt bei der nächsten Annahme über die Auftragskarte';
     };
     $('tamauto-sa-info').onclick = () => { const b = $('tamauto-sa-infobox'); b.style.display = b.style.display === 'none' ? 'block' : 'none'; };
