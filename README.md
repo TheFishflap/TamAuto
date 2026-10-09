@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.33.1 – 2026-10-09
+- **Kein Aufblitzen beim Einfärben:** Neue Zeilen in „Veröffentlichte Aufträge“ werden direkt beim Einfügen eingefärbt (grün = Annahmeliste, braun = gesperrt, orange = zurückgegeben, grau = kein Treffer) – vor dem Zeichnen, nicht erst nach dem Abgleich.
+
 ### 1.33.0 – 2026-10-08
 - **Altaufträge werden bereinigt:** Beim stillen Laden von „Angenommene Aufträge“ („SLA laden“, alle 30 min) prüft das Script, ob die Aufträge des Auftragsbuchs (letzte 7 Tage, älter als 30 min) dort noch stehen. Fehlt einer (Reservierung abgelaufen oder zurückgegeben), fällt er aus dem MA-Management (Liste, Mail, Zahl am Reiter); im Auftragsbuch steht er grau durchgestrichen („nicht mehr in Angenommene Aufträge – seit …“) und zählt nicht zur Summe. Taucht er wieder auf, ist die Markierung weg. Sicherungen: keine Bereinigung, wenn die Liste voll sein könnte (≥ 495 von höchstens 500) oder unplausibel viele auf einmal fehlen würden.
 

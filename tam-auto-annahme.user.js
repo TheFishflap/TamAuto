@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.33.0
+// @version      1.33.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -3877,6 +3877,20 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     cycle('Neue Zeile');
   }
   let accScanTimer = 0;
+  // Neue Zeilen in „Veröffentlichte Aufträge“ sofort beim Einfügen einfärben: Der MutationObserver läuft, bevor der Browser zeichnet –
+  // die Zeile erscheint gleich in ihrer Farbe (grün/braun/orange/grau) statt erst nach dem Abgleich (kein Aufblitzen).
+  function faerbeNeueZeilen(panel, muts) {
+    if (!cfg.colorRows || (!places.plz.length && !places.orte.length)) return;
+    const neu = new Set();
+    muts.forEach((m) => { if (m.type !== 'childList' || !panel.contains(m.target)) return; m.addedNodes.forEach((n) => {
+      if (n.nodeType !== 1) return;
+      if (n.classList.contains('x-grid3-row')) neu.add(n); else if (n.querySelectorAll) n.querySelectorAll('.x-grid3-row').forEach((r) => neu.add(r));
+    }); });
+    if (!neu.size) return;
+    const grid = [...neu][0].closest('.x-grid3');
+    if (!grid) return;
+    try { markBlockedRows(readOrders(grid).filter((o) => neu.has(o.row)).map((o) => Object.assign(o, { key: o.nr || o.ref }))); } catch (e) { /* Einfärben ist nur Anzeige */ }
+  }
   function watchGrid() {
     new MutationObserver((muts) => {
       if (muts.some((m) => m.type === 'attributes' && m.target.tagName === 'LI' && (m.target.id || '').includes('__'))) {
@@ -3896,6 +3910,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
       }
       const panel = document.getElementById(cfg.tabPanelId);
       if (!panel) return;
+      faerbeNeueZeilen(panel, muts);
       const relevant = muts.some((m) => m.type === 'childList' && panel.contains(m.target) && m.target.closest &&
         m.target.closest('.x-grid3-body, .x-grid3-scroller'));
       const tabSwitch = muts.some((m) => m.type === 'attributes' && m.target.tagName === 'LI' &&

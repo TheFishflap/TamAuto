@@ -58,3 +58,25 @@ describe('Tabelle über stille Abfrage aktuell halten', { skip }, () => {
     assert.ok(!row('MW3180102').classList.contains('tamauto-vanished'));
   });
 });
+
+// Einfärben direkt beim Einfügen der Zeile (vor dem Zeichnen) – kein Aufblitzen
+describe('Zeilen sofort einfärben', { skip }, () => {
+  it('neue Zeile hat ihre Farbe schon im nächsten Mikrotask (vor dem Zeichnen), nicht erst nach dem Abgleich', async () => {
+    tam = startTam({ gm: { places: { ...KOELN, block: { plz: ['44141'], orte: [] } } } });
+    await tam.ready();
+    const row = (nr) => [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')].find((r) => r.textContent.includes(nr));
+    tam.addOrder({ nr: 'MW3189001', plz: '50825', ort: 'Köln' });
+    tam.addOrder({ nr: 'MW3189002', plz: '99999', ort: 'Nirgendwo' });
+    tam.addOrder({ nr: 'MW3189003', plz: '44141', ort: 'Dortmund' });
+    await Promise.resolve(); await Promise.resolve(); // MutationObserver-Rückruf (Mikrotask) – noch vor jedem Zeichnen / Timer
+    assert.ok(row('MW3189001').classList.contains('tamauto-match'), 'grün fehlt');
+    assert.ok(row('MW3189002').classList.contains('tamauto-nomatch'), 'grau fehlt');
+    assert.ok(row('MW3189003').classList.contains('tamauto-blocked'), 'braun fehlt');
+    // TAM zeichnet die Tabelle beim Aktualisieren neu (gleiche Aufträge, neue Zeilen ohne Farbe) → ebenfalls sofort eingefärbt
+    await sleep(1500);
+    const alt = row('MW3189001'), neu = alt.cloneNode(true);
+    neu.className = 'x-grid3-row'; alt.replaceWith(neu);
+    await Promise.resolve(); await Promise.resolve();
+    assert.ok(neu.classList.contains('tamauto-match'), 'neu gezeichnete Zeile nicht sofort eingefärbt');
+  });
+});
