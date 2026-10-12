@@ -36,24 +36,29 @@ describe('Excel „nicht annehmen Adresse“', { skip }, () => {
   const xlsx = makeXlsx({
     annehmen: [['PLZ', 'Ort'], ['50825', 'Köln']],
     'nicht annehmen': [['PLZ', 'Ort']],
-    'nicht annehmen Adresse': [['PLZ', 'Straße'], ['50825', 'Maarweg 241'], ['50825', 'Venloer Str.']],
+    'nicht annehmen Adresse': [['PLZ', 'Straße', 'Kommentar', 'AuftragsNr'], ['50825', 'Maarweg 241', 'Jacobsen Nutzfahrzeuge', ''], ['50825', 'Venloer Str.', '', ''], ['', '', 'Einzelauftrag', 'MW3180009']],
   });
   const xhr = (o) => o.url.includes('IQBmSNFRkXF5') ? { status: 200, responseText: revocationList() }
     : o.url.includes('IQDymsXIGo99') ? { status: 200, response: xlsx } : { error: true };
   const rowOf = (nr) => [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')].find((r) => r.textContent.includes(nr));
 
-  it('gesperrte Adresse rot und nicht angenommen, andere Adresse in derselben PLZ angenommen', async () => {
+  it('Händler-Blacklist: gesperrte Adresse schwarz und nicht angenommen (Kommentar im Hinweis), AuftragsNr gesperrt, andere Adresse in derselben PLZ angenommen', async () => {
     tam = startTam({ gm: { places: { plz: [], orte: [] } }, xhr });
     await tam.ready();
-    assert.ok(await until(() => (tam.store.get('places').blockAddr || []).length === 2, 5000), JSON.stringify(tam.store.get('places')));
+    assert.ok(await until(() => (tam.store.get('places').blockAddr || []).length === 3, 5000), JSON.stringify(tam.store.get('places')));
+    tam.addOrder({ nr: 'MW3180009', plz: '50825', ort: 'Köln', strasse: 'Irgendwo 1', onOpen: () => {} });
     tam.addOrder({ nr: 'MW3180001', plz: '50825', ort: 'Köln', strasse: 'Maarweg 241-251', onOpen: () => {} });
     tam.addOrder({ nr: 'MW3180002', plz: '50825', ort: 'Köln', strasse: 'Venloer Straße 12', onOpen: () => {} });
     tam.addOrder({ nr: 'MW3180003', plz: '50825', ort: 'Köln', strasse: 'Maarweg 24' });
     assert.ok(await until(() => tam.accepted.includes('MW3180003'), 15000), tam.logs().join('\n'));
-    assert.ok(!tam.dblclicks.includes('MW3180001') && !tam.dblclicks.includes('MW3180002'), tam.dblclicks.join());
-    assert.ok(rowOf('MW3180001').classList.contains('tamauto-blocked'));
-    assert.match(rowOf('MW3180001').title, /Maarweg 241/);
-    assert.ok(!rowOf('MW3180003').classList.contains('tamauto-blocked'));
+    assert.ok(!tam.dblclicks.includes('MW3180001') && !tam.dblclicks.includes('MW3180002') && !tam.dblclicks.includes('MW3180009'), tam.dblclicks.join());
+    assert.ok(rowOf('MW3180001').classList.contains('tamauto-haendler') && !rowOf('MW3180001').classList.contains('tamauto-blocked'));
+    assert.match(rowOf('MW3180001').title, /Händler-Blacklist: 50825 Maarweg 241 – Jacobsen Nutzfahrzeuge/);
+    assert.ok(rowOf('MW3180009').classList.contains('tamauto-haendler'));
+    assert.match(rowOf('MW3180009').title, /AuftragsNr MW3180009 – Einzelauftrag/);
+    assert.ok(!rowOf('MW3180003').classList.contains('tamauto-haendler'));
+    const line = [...tam.document.querySelectorAll('#tamauto-log div')].find((d) => /MW3180001 .*Händler-Blacklist/.test(d.textContent));
+    assert.equal(line.style.background, 'rgb(33, 33, 33)'); // schwarzer Eintrag
   });
 });
 

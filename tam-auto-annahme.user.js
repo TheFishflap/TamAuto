@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.37.0
+// @version      1.38.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -276,6 +276,7 @@
       if (level === 'debug') d.style.color = '#888';
       if (level === 'hint') d.style.color = '#1a4d8f'; // Hinweis: blau
       if (level === 'block') d.style.color = '#6d4c41'; // gesperrt: Farbe der Sperrliste (wie die gesperrte Zeile in TAM), kein Fehler
+      if (level === 'haendler') Object.assign(d.style, { color: '#fff', background: '#212121' }); // Händler-Blacklist: schwarzer Eintrag
       box.prepend(d);
       while (box.childNodes.length > 200) box.lastChild.remove();
     }
@@ -344,10 +345,13 @@
     const hIdx = rows.findIndex((r) => r.some((c) => /^(plz|postleitzahl)$/i.test(String(c).trim())));
     if (hIdx < 0) return [];
     const head = rows[hIdx].map((c) => norm(c));
-    const pc = head.findIndex((h) => /^(plz|postleitzahl)$/.test(h)), sc = head.findIndex((h) => /^(strasse|adresse|anschrift)$/.test(h));
+    const pc = head.findIndex((h) => /^(plz|postleitzahl)$/.test(h)), sc = head.findIndex((h) => /^(strasse|straße|adresse|anschrift)$/.test(h));
+    // optional: Kommentar/Name (nur Anzeige, z. B. „Jacobsen Nutzfahrzeuge“) und AuftragsNr (einzelne Aufträge sperren)
+    const kc = head.findIndex((h) => /^(kommentar|bemerkung|name|händler|haendler|notiz|hinweis)$/.test(h)), nc = head.findIndex((h) => /^(auftragsnr|auftragsnummer|auftrag)$/.test(h));
     if (pc < 0 || sc < 0) return [];
-    return rows.slice(hIdx + 1).map((r) => ({ plz: normPlz(r[pc]), str: String(r[sc] || '').trim() }))
-      .filter((x) => x.plz.length === 5 && x.str).map((x) => Object.assign(x, { key: streetKey(x.str) }));
+    const zelle = (r, i) => (i >= 0 ? String(r[i] == null ? '' : r[i]).trim() : '');
+    return rows.slice(hIdx + 1).map((r) => ({ plz: normPlz(r[pc]), str: zelle(r, sc), info: zelle(r, kc).slice(0, 80), nr: zelle(r, nc).toUpperCase() }))
+      .filter((x) => (x.plz.length === 5 && x.str) || x.nr).map((x) => Object.assign(x, { key: streetKey(x.str) }));
   }
 
   // Je Zeile: steht eine PLZ drin, gilt die PLZ-Regel; nur Zeilen ohne PLZ werden über den Ortsnamen abgeglichen.
@@ -1299,6 +1303,7 @@
       const st = document.createElement('style'); st.id = 'tamauto-blocked-style';
       st.textContent = '.x-grid3-row.tamauto-blocked, .x-grid3-row.tamauto-blocked td { background: #efebe9 !important; color: #6d4c41 !important; }' +
         '.x-grid3-row.tamauto-returned, .x-grid3-row.tamauto-returned td { background: #ffe0b2 !important; }' +
+        '.x-grid3-row.tamauto-haendler, .x-grid3-row.tamauto-haendler td { background: #212121 !important; color: #fff !important; }' +
         '.x-grid3-row.tamauto-nomatch td, .x-grid3-row.tamauto-nomatch td * { color: #9e9e9e !important; }' +
         '.x-grid3-row.tamauto-match, .x-grid3-row.tamauto-match td { background: #e8f5e9 !important; }' +
         '.x-grid3-row.tamauto-gone, .x-grid3-row.tamauto-vanished { display: none !important; }';
@@ -1307,8 +1312,10 @@
     all.forEach((o) => {
       const why = o.valid ? blocked(o) : '';
       const ret = !!dayList('returnsToday').items[nrKey(o.nr)];
+      const hd = !!why && !ret && /^Händler-Blacklist/.test(why);
       o.row.classList.toggle('tamauto-returned', !!why && ret);  // heute zurückgegeben → orange
-      o.row.classList.toggle('tamauto-blocked', !!why && !ret);  // Excel „nicht annehmen“ → braun (wie im Bedienfeld)
+      o.row.classList.toggle('tamauto-haendler', hd);            // Händler-Blacklist → schwarz
+      o.row.classList.toggle('tamauto-blocked', !!why && !ret && !hd);  // Excel „nicht annehmen“ / Stichwort → braun (wie im Bedienfeld)
       const no = !why && !(o.valid && matches(o));                  // nicht auf der Annahmeliste → grau
       o.row.classList.toggle('tamauto-nomatch', no);
       o.row.classList.toggle('tamauto-match', !why && !no);         // auf der Annahmeliste → grün
@@ -1337,8 +1344,8 @@
   // Fahrzeuge über 3,5 t (LKW, Busse, Arbeits-/Baumaschinen) nicht annehmen: Stichworte in der Dienstleistung. Standardliste plus Blatt „nicht annehmen Stichwort“.
   // Kurze Wörter (bis 3 Zeichen, z. B. „Bus“, „LKW“) nur als ganzes Wort (sonst träfe „Bus“ auch „Business“); längere auch in zusammengesetzten Wörtern
   // („Stapler“ in „Gabelstapler“). Leerzeichen sind optional, Komma oder Punkt gleich („ab 3,5t“ = „ab 3.5 t“). „bis 3,49 t“ (PKW) trifft keines.
-  // „Bus“ allein bewusst nicht (träfe „VW Bus“ = Transporter unter 3,5 t). Im Excel-Blatt schaltet „-Wort“ ein Standard-Stichwort ab (z. B. „-Nutzfahrzeug“).
-  const STICHWORTE_STANDARD = ['Truck', 'LKW', 'Nutzfahrzeug', 'NFZ', 'Sattelzug', 'Auflieger', 'Omnibus', 'Reisebus', 'Linienbus', 'Baumaschine', 'Arbeitsmaschine', 'Stapler', 'Traktor', 'Schlepper',
+  // „Bus“, „Nutzfahrzeug“, „NFZ“ bewusst nicht (träfen VW-Transporter/Caddy unter 3,5 t). Im Excel-Blatt schaltet „-Wort“ ein Standard-Stichwort ab (z. B. „-Stapler“).
+  const STICHWORTE_STANDARD = ['Truck', 'LKW', 'Sattelzug', 'Auflieger', 'Omnibus', 'Reisebus', 'Linienbus', 'Baumaschine', 'Arbeitsmaschine', 'Stapler', 'Traktor', 'Schlepper',
     'ab 3,5 t', 'über 3,5 t', '> 3,5 t'];
   const sperrStichworte = (pl = places) => {
     const extra = (pl && pl.stichworte) || [], aus = new Set(extra.filter((w) => w.startsWith('-')).map((w) => w.slice(1).trim().toLowerCase()));
@@ -1349,12 +1356,21 @@
     return String(w).trim().length <= 3 ? new RegExp(`(^|[^a-zäöüß0-9])${kern}(?![a-zäöüß])`, 'i') : new RegExp(kern, 'i');
   }
   const sperrStichwort = (text) => sperrStichworte().find((w) => stichwortRegex(w).test(String(text || ''))) || '';
+  // Händler-Blacklist (Blatt „nicht annehmen Adresse“): Standort über PLZ + Straße oder einzelner Auftrag über AuftragsNr – schwarz markiert
+  function haendlerSperre(order) {
+    const p = (order.plz || '').trim(), n = nrKey(order.nr), list = places.blockAddr || [];
+    const an = n && list.find((r) => r.nr && r.nr === n);
+    if (an) return `Händler-Blacklist: AuftragsNr ${an.nr}${an.info ? ` – ${an.info}` : ''} (Excel „${cfg.blockAddrSheet}“)`;
+    const ad = list.find((r) => !r.nr && r.plz === p && streetMatch(r, order.strasse));
+    if (ad) return `Händler-Blacklist: ${ad.plz} ${ad.str}${ad.info ? ` – ${ad.info}` : ''} (Excel „${cfg.blockAddrSheet}“)`;
+    return '';
+  }
   function blocked(order) {
     const r = dayList('returnsToday').items[nrKey(order.nr)];
     if (r) return `heute zurückgegeben (${new Date(r.at).toLocaleTimeString('de-DE')})`;
     const p = (order.plz || '').trim();
-    const ad = (places.blockAddr || []).find((r) => r.plz === p && streetMatch(r, order.strasse));
-    if (ad) return `Adresse ${ad.plz} ${ad.str} (Excel „${cfg.blockAddrSheet}“)`;
+    const hs = haendlerSperre(order);
+    if (hs) return hs;
     const xb = places.block || { plz: [], orte: [] };
     const xp = xb.plz.find((x) => p.startsWith(x));
     if (xp) return `PLZ ${xp.padEnd(5, '*')} (Excel „${cfg.blockSheet}“)`;
@@ -1381,7 +1397,7 @@
       // PLZ-Anfang (weniger als 5 Ziffern) mit Sternchen auffüllen, z. B. „525**“ – sperrt alle PLZ, die so beginnen
       const entries = [...xb.plz.map((x) => [x.padEnd(5, '*'), x.length < 5 ? `sperrt alle PLZ, die mit ${x} beginnen (${x.padEnd(5, '0')}–${x.padEnd(5, '9')})` : `PLZ ${x}`]),
         ...xb.orte.map((o) => [o, `Ort ${o}`]),
-        ...(places.blockAddr || []).map((a) => [`${a.plz} ${a.str}`, `nur diese Adresse (Blatt „${cfg.blockAddrSheet}“)`])];
+        ...(places.blockAddr || []).map((a) => [a.nr ? a.nr : `${a.plz} ${a.str}`, `${a.info ? `${a.info} · ` : ''}${a.nr ? 'nur dieser Auftrag' : 'nur diese Adresse'} (Blatt „${cfg.blockAddrSheet}“)`])];
       if (!entries.length) xl.textContent = 'Keine Einträge.';
       entries.forEach(([label, tip]) => { const c = chipEl(label, '#6d4c41', '#efebe9'); c.title = tip; xl.appendChild(c); });
     }
@@ -2517,7 +2533,7 @@
         const why = bl ? `Treffer, aber gesperrt: ${bl} → nicht angenommen`
           : matches(o) ? 'TREFFER → wird angenommen'
             : `kein Treffer (PLZ ${o.plz || '?'} und Ort "${o.ort || '?'}" nicht in Ortsliste)`;
-        log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, bl ? 'block' : matches(o) ? 'ok' : 'info');
+        log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, bl ? (/^Händler-Blacklist/.test(bl) ? 'haendler' : 'block') : matches(o) ? 'ok' : 'info');
       });
       let n = 0;
       if (hits.length > 1) log(`Reihenfolge (${prioText()}): ${hits.map((o) =>
