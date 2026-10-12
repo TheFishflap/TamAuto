@@ -193,6 +193,22 @@ describe('ntfy-Verbindung neu aufbauen (P3)', { skip }, () => {
 
 // Das Mock bildet die Annahme wie das echte TAM nach (Mitschnitt vom 07.10.2026): Karte lädt Auftrag und Dokumente, „Bestätigen“ sendet einen accept-Aufruf
 describe('Mock: Annahme wie im echten TAM', { skip }, () => {
+  it('nach einer Annahme wird „Angenommene Aufträge“ still nachgeladen (eine fetch-Abfrage an /gwt-rpc/auftrag; Warenkorb löst nur einen Nachlauf aus)', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    // TAM-Anfrage der angenommenen Liste mitschneiden (wie beim stillen Lesen) – sonst kein Nachladen möglich
+    tam.selectTab('AgentEigeneAuftraege');
+    const x = new tam.window.XMLHttpRequest(); x.open('POST', 'https://tam.tuvsud.com/gwt-rpc/auftrag'); x.send('7|0|3|u|a|loadTeilauftraege|1|2|3|');
+    tam.selectTab('AgentVeroeffentlichteAuftraege');
+    const reloads = () => tam.fetches.filter((f) => /gwt-rpc\/auftrag/.test(f.url) && f.o && /loadTeilauftraege/.test(String(f.o.body || ''))).length;
+    const before = reloads();
+    tam.addOrder({ ...ORDER, id: '3709951', nearby: [{ nr: 'MW3000001', km: 0, id: '3709952' }] }); // Warenkorb: 2 × bookAccepted
+    assert.ok(await until(() => tam.accepted.includes('MW3000001'), 15000), tam.logs().slice(-4).join('\n'));
+    assert.ok(await until(() => reloads() > before, 8000), 'angenommene Liste nicht nachgeladen');
+    await sleep(2000);
+    assert.equal(reloads(), before + 1, 'mehr als ein Nachlauf (keine Entprellung)');
+  });
+
   it('Karte ruft getTeilauftrag + listAuftragsDokumente, „Bestätigen“ genau einen accept-Aufruf mit der ID; Auftrag verschwindet, Annahme verbucht', async () => {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();

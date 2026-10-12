@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.34.0
+// @version      1.35.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -835,6 +835,7 @@
     saveDone();
     hideAcceptedRows([o.nr, ...bulkOf(o)]);
     recordOrder(o);
+    refreshAcceptedSoon(); // Liste „Angenommene Aufträge“ gleich still nachladen (SLA/Reservierung/Zeichen/Kontakte aktuell)
     const stats = hitStats();
     bulkOf(o).forEach((x) => {
       const row = rowsByNr.get(x);
@@ -2361,6 +2362,14 @@
     const t0 = Date.now(), iv = setInterval(() => { if (startTabsDone || Date.now() - t0 > 90000) clearInterval(iv); else openTabsOnStart().catch(() => {}); }, 150);
   }
   // Beim Öffnen des MA-Managements mit TAM abgleichen (TAM ist die Quelle – nicht nur der lokale Stand), höchstens alle 5 min
+  // Nach einer Annahme die Liste „Angenommene Aufträge“ still nachladen – damit SLA/Reservierungsende, Zeichen, Kontakte und die Altauftrags-Bereinigung
+  // sofort stimmen (TAM braucht einen Moment, bis der neue Auftrag dort steht; mehrere Annahmen am Ort lösen nur einen Nachlauf aus).
+  let acceptedReloadTimer = 0;
+  function refreshAcceptedSoon() {
+    if (!license || !(tamAcceptedReq || tamLoadReq)) return;
+    clearTimeout(acceptedReloadTimer);
+    acceptedReloadTimer = setTimeout(() => { GM_setValue('accSyncAt', Date.now()); ladeMaKontakte().then(renderMa).catch(() => {}); }, 4000);
+  }
   function maAutoSync() { if (Date.now() - GM_getValue('accSyncAt', 0) > 5 * 60e3) angenommenAbgleichen('MA-Management').then((ok) => { if (ok) renderMa(); }).catch(() => {}); }
 
   // ------------------------------------------------------------------ Hauptzyklus
