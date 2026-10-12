@@ -380,6 +380,33 @@ describe('MA-Management (Reiter)', { skip }, () => {
     await tam.ready(); open();
   }
 
+  it('Backoffice-Export: Umschalter „Backoffice informieren“ → Tagesübersicht an gewählte Backoffice-Personen; Zeitraum aus dem Auftragsbuch; zurückgegebene durchgestrichen', async () => {
+    const book = BOOK();
+    book[0].rueck = 1; // MW3190401 zurückgegeben
+    tam = startTam({ gm: { places: { ...KOELN, ma: MAS }, orderbook: book } });
+    await tam.ready(); open();
+    // Modus wechseln
+    const bo = [...tam.document.querySelectorAll('input[name="tamauto-ma-mode"]')].find((r) => r.value === 'bo');
+    bo.checked = true; bo.onchange();
+    assert.equal(tam.document.getElementById('tamauto-ma-cclabel').textContent, 'An (Backoffice):');
+    // zwei Backoffice-Empfänger anhaken
+    const cc = [...tam.document.querySelectorAll('#tamauto-ma-cc input')];
+    cc.forEach((i) => { if (['auftrag@example.com', 'silke@example.com'].includes(i.dataset.mail)) { i.checked = true; i.onchange(); } });
+    const subj = $('tamauto-ma-subject').value, body = $('tamauto-ma-body').value;
+    assert.match(subj, /^\d+ Auftragsannahmen? heute \(Stand \d{2}:\d{2}\)$/);
+    assert.match(body, /^Hi /);
+    assert.match(body, /FIN\s+\| PLZ \/ Ort\s+\| SLA \/ Reservierung\s+\| angenommen\s+\| Kontakt/);
+    assert.match(body, /WVWZZZ000B · zurück/); // zurückgegebener Auftrag markiert
+    assert.equal($('tamauto-ma-open').dataset.to, 'auftrag@example.com,silke@example.com');
+    assert.ok(!$('tamauto-ma-open').dataset.cc, 'kein Cc im Backoffice-Modus');
+    assert.doesNotMatch(body, /louis@example\.com/);
+    // zurück zu Terminvereinbarung
+    const tv = [...tam.document.querySelectorAll('input[name="tamauto-ma-mode"]')].find((r) => r.value === 'termin');
+    tv.checked = true; tv.onchange();
+    assert.equal(tam.document.getElementById('tamauto-ma-cclabel').textContent, 'Cc:');
+    assert.match($('tamauto-ma-subject').value, /^Neue Terminvereinbarung/);
+  });
+
   it('Liste: nur Terminpflicht (ab 150 €), Kürzel des MA im Zeichen, noch ohne Tour; nach FIN sortiert; Kennzeichenversand unter dem Hauptauftrag', async () => {
     await setup();
     const rows = $('tamauto-ma-rows').textContent;

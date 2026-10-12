@@ -7,7 +7,7 @@ const path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tam-auto-annahme.user.js'), 'utf8');
 const a = src.indexOf('// <ma-logik>'), b = src.indexOf('// </ma-logik>');
 if (a < 0 || b < 0) throw new Error('Marker <ma-logik> fehlt im Script');
-const L = new Function(`${src.slice(a, b)}; return { ampel, kontaktText, gruppiere, baueMail, istKennzeichen };`)();
+const L = new Function(`${src.slice(a, b)}; return { ampel, kontaktText, gruppiere, baueMail, baueBackofficeMail, istKennzeichen };`)();
 
 const NOW = new Date(2026, 9, 6, 15, 0); // 06.10.2026 15:00
 const MA = [{ k: 'MK', name: 'Markus Kirschbaum', mail: 'mk@x.de', gebiet: ['44', '45'] }, { k: 'PM', name: 'Petra M.', mail: 'pm@x.de', gebiet: ['45', '46'] }, { k: 'XX', name: 'Ohne', mail: '', gebiet: [] }];
@@ -107,5 +107,35 @@ describe('Mail „neue Terminvereinbarung“', () => {
   it('Anrede und Signatur; ohne Absender keine Namenszeile', () => {
     assert.match(mail.body, /^Hallo Markus,/); assert.match(mail.body, /Liebe Grüße\nLeonie Struve$/);
     assert.doesNotMatch(L.baueMail({ ma: MA[0], orders, absender: '', cc: [], now: NOW }).body, /Liebe Grüße\n\S/);
+  });
+});
+
+describe('Backoffice-Tagesübersicht (baueBackofficeMail)', () => {
+  const BO = [{ name: 'Silke Crome', mail: 'silke@bo.de' }, { name: 'Leonie Struve', mail: 'leonie@bo.de' }];
+  const ord = (ref, extra = {}) => ({ nr: 'MW' + ref, ref, plz: '50825', ort: 'Köln', dienst: 'Standard', sla: '', resEnde: '', ts: new Date(2026, 9, 6, 9, 30).toISOString(), zurueck: false, kontakt: null, ...extra });
+  it('Empfänger (mehrere, Komma), Betreff mit Anzahl voraus, Anrede mit Vornamen, Spalten FIN·Ort·SLA·angenommen·Kontakt', () => {
+    const m = L.baueBackofficeMail({ empfaenger: BO, absender: 'Silke Crome', orders: [ord('WVW1', { resEnde: '06.10.2026 16:00', kontakt: { name: 'Fr. A', telefon: '0221 1', mail: '' } })], zeit: { wann: 'heute', standHeute: true, einTag: true }, now: NOW });
+    assert.equal(m.to, 'silke@bo.de,leonie@bo.de');
+    assert.match(m.subject, /^1 Auftragsannahme heute \(Stand \d{2}:\d{2}\)$/);
+    assert.match(m.body, /^Hi Silke, Leonie,/);
+    assert.match(m.body, /FIN\s+\| PLZ \/ Ort\s+\| SLA \/ Reservierung\s+\| angenommen\s+\| Kontakt/);
+    assert.match(m.body, /WVW1\s+\| 50825 Köln\s+\| 🔴 06\.10\.2026 16:00 \(in 1 h\)\s+\| 09:30\s+\| Fr\. A, Tel\. 0221 1/);
+    assert.match(m.body, /Liebe Grüße\nSilke Crome$/);
+  });
+  it('zurückgegeben: durchgestrichen (HTML) und „· zurück“ hinter der FIN', () => {
+    const m = L.baueBackofficeMail({ empfaenger: BO, orders: [ord('WVW9', { zurueck: true })], zeit: { wann: 'heute', standHeute: true, einTag: true }, now: NOW });
+    assert.match(m.body, /WVW9 · zurück/);
+    assert.match(m.html, /text-decoration:line-through[^>]*>.*WVW9 · zurück/s);
+  });
+  it('mehrtägiger Zeitraum: Datum + Wochentag in der Spalte „angenommen“, Betreff ohne „Stand“', () => {
+    const m = L.baueBackofficeMail({ empfaenger: BO, orders: [ord('WVW2', { ts: new Date(2026, 9, 12, 9, 30).toISOString() })], zeit: { wann: 'der letzten 7 Tage', standHeute: false, einTag: false }, now: NOW });
+    assert.match(m.subject, /^1 Auftragsannahme der letzten 7 Tage$/);
+    assert.match(m.body, /Mo\., 12\.10\. 09:30/);
+  });
+  it('keine Empfänger → Anrede „Hi zusammen“; leere Liste → Hinweis', () => {
+    const m = L.baueBackofficeMail({ empfaenger: [], orders: [], zeit: { wann: 'heute', standHeute: true, einTag: true }, now: NOW });
+    assert.match(m.body, /^Hi zusammen,/);
+    assert.match(m.body, /keine angenommenen Aufträge im Zeitraum/);
+    assert.equal(m.to, '');
   });
 });

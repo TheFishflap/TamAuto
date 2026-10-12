@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.36.0 – 2026-10-12
+- **Backoffice-Export im MA-Management** (Umschalter „Terminvereinbarung | Backoffice informieren“): Tagesübersicht der angenommenen Aufträge als Mail für Backoffice-Kollegen ohne Tool. Zeitraum = Auswahl im Reiter „Auftragsbuch“ (heute / gestern / … mit Datum und Wochentag). Empfänger = eine oder mehrere Backoffice-Personen (Haken), Absender/Signatur über das Dropdown. Spalten: FIN · PLZ/Ort · SLA mit Ampel (🔴/🟡) · angenommen (Uhrzeit, bei mehreren Tagen mit Datum) · Kontakt. Zurückgegebene Aufträge durchgestrichen mit „zurück“. Betreff mit Anzahl voraus. Analog zum bestehenden Baustein: Text + HTML-Tabelle zum Einfügen, „Mail öffnen“.
+
 ### 1.35.0 – 2026-10-12
 - **Nach einer Annahme wird „Angenommene Aufträge“ sofort still nachgeladen** (rund 4 s danach, mehrere Annahmen am selben Ort lösen nur einen Nachlauf aus): SLA/Reservierungsende, Zeichen (Kürzel/Tour), Kontakte und die Altauftrags-Bereinigung sind damit gleich aktuell, nicht erst beim 30-Minuten-Lauf. Ohne Reiterwechsel.
 

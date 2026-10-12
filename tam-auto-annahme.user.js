@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.35.0
+// @version      1.36.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -706,7 +706,9 @@
     const breite = kopf.map((h, c) => Math.max(h.length, ...rows.map((r) => r[c].length)));
     const zeile = (r) => r.map((x, c) => (c === r.length - 1 ? x : x.padEnd(breite[c]))).join(' | ').trimEnd();
     const legende = rows.some((r) => /🔴|🟡|🚩/.test(r[4])) ? '🔴 = Reservierung läuft in ≤ 2 h aus oder ist abgelaufen · 🟡 = in ≤ 24 h · 🚩 = Reservierung läuft in ≤ 1 h aus' : '';
-    const lines = list.length ? [zeile(kopf), breite.slice(0, -1).map((w) => '-'.repeat(w)).join('-+-') + '-+-' + '-'.repeat(Math.max(breite[breite.length - 1], 7)), ...rows.map(zeile), ...(legende ? ['', legende] : [])] : [];
+    const sepLine = breite.slice(0, -1).map((w) => '-'.repeat(w)).join('-+-') + '-+-' + '-'.repeat(Math.max(breite[breite.length - 1], 7));
+    const tabelleText = list.length ? [zeile(kopf), sepLine, ...rows.map(zeile)].join('\n') : '';
+    const lines = list.length ? [zeile(kopf), sepLine, ...rows.map(zeile), ...(legende ? ['', legende] : [])] : [];
     const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const tabelle = list.length ? `<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><tr>${kopf.map((h) => `<th align="left" style="background:#e8f0fb">${esc(h)}</th>`).join('')}</tr>${rows.map((r) => `<tr>${r.map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</table>${legende ? `<p style="font-size:11px;color:#555">${esc(legende)}</p>` : ''}` : '';
     const vor = String(ma.name || '').split(/\s+/)[0] || ma.k;
@@ -720,7 +722,47 @@
     // Titel: Neue Terminvereinbarung <Auftragsart> in <Ort> (Anzahl)
     const kurz = (a) => (a.length > 3 ? `${a.slice(0, 3).join(', ')} …` : a.join(', '));
     const subject = `Neue Terminvereinbarung${list.length ? ` ${kurz(uniq(list.map((o) => o.dienst)))} in ${kurz(uniq(list.map((o) => o.ort)))}` : ''} (${list.length})`;
-    return { to: ma.mail || '', cc: [...cc], subject, body, html, tabelle };
+    return { to: ma.mail || '', cc: [...cc], subject, body, html, tabelle, tabelleText };
+  }
+  // Backoffice-Tagesübersicht: angenommene Aufträge (aus dem Auftragsbuch-Zeitraum), zurückgegebene durchgestrichen mit „zurück“.
+  // Für Backoffice ohne Tool: FIN zum Auffinden, SLA mit Ampel, Uhrzeit, Kontakt. Empfänger = eine oder mehrere Backoffice-Personen.
+  // orders tragen zusätzlich: ts (ISO, Annahmezeit) und zurueck (bool). zeit = { wann, standHeute, einTag } liefert der Aufrufer (Zeitraum aus dem Auftragsbuch).
+  function baueBackofficeMail({ empfaenger = [], absender = '', orders = [], zeit = {}, now = new Date() }) {
+    const einTag = zeit.einTag !== false, wann = zeit.wann || 'heute';
+    const uhr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    const wochentag = (d) => d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
+    const list = [...orders].sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0)); // neueste oben, wie im Auftragsbuch
+    const rows = list.map((o) => {
+      const e = endeStr(o), amp = ampel(e, now), h = stundenBis(e, now), d = new Date(o.ts);
+      return [
+        `${o.ref || '–'}${o.zurueck ? ' · zurück' : ''}`,
+        `${o.plz || ''} ${o.ort || ''}`.trim() || '–',
+        e ? `${{ rot: '🔴', gelb: '🟡' }[amp] || ''} ${e}${h !== null ? ` (in ${h} h)` : ''}`.trim() : '–',
+        einTag ? d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : wochentag(d) + ' ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }),
+        kontaktText(o) || '',
+      ];
+    });
+    const kopf = ['FIN', 'PLZ / Ort', 'SLA / Reservierung', 'angenommen', 'Kontakt'];
+    const breite = kopf.map((hd, c) => Math.max(hd.length, ...rows.map((r) => r[c].length), 1));
+    const zeile = (r) => r.map((x, c) => (c === r.length - 1 ? x : x.padEnd(breite[c]))).join(' | ').trimEnd();
+    const rot = rows.some((r) => /🔴/.test(r[2])), gelb = rows.some((r) => /🟡/.test(r[2]));
+    const legende = rot || gelb ? ['🔴 = Reservierung läuft in ≤ 2 h aus oder ist abgelaufen · 🟡 = in ≤ 24 h'] : [];
+    const sepLine = breite.slice(0, -1).map((w) => '-'.repeat(w)).join('-+-') + '-+-' + '-'.repeat(Math.max(breite[breite.length - 1], 7));
+    const tabelleText = list.length ? [zeile(kopf), sepLine, ...rows.map(zeile)].join('\n') : '';
+    const lines = list.length ? [zeile(kopf), sepLine, ...rows.map(zeile), '', ...legende] : ['(keine angenommenen Aufträge im Zeitraum)'];
+    const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const tabelle = list.length ? `<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><tr>${kopf.map((hd) => `<th align="left" style="background:#e8f0fb">${esc(hd)}</th>`).join('')}</tr>${list.map((o, i) => `<tr${o.zurueck ? ' style="text-decoration:line-through;color:#888"' : ''}>${rows[i].map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>` : '<p>(keine angenommenen Aufträge im Zeitraum)</p>';
+    const vornamen = uniq(empfaenger.map((e) => String(e.name || '').split(/\s+/)[0]).filter(Boolean));
+    const anrede = `Hi ${vornamen.length ? vornamen.join(', ') : 'zusammen'},`;
+    const einleitung = (einTag && wann === 'heute'
+      ? `hier der Tagesüberblick – Stand heute, ${uhr} Uhr.`
+      : `hier die Auftragsannahmen ${wann}.`) + (rot ? ' Rot markierte laufen bald aus der Reservierung, die bitte zuerst terminieren:' : ' Die rote/gelbe Ampel zeigt, wie dringend die Reservierung ist:');
+    const fuss = ['', 'Liebe Grüße', ...(absender ? [absender] : [])];
+    const kopfText = [anrede, '', einleitung, ''];
+    const body = [...kopfText, ...lines, ...fuss].join('\n');
+    const html = `<div style="font-family:Arial,sans-serif;font-size:13px"><p>${esc(anrede)}</p><p>${esc(einleitung)}</p>${tabelle}${legende.length ? `<p style="color:#555">${esc(legende[0])}</p>` : ''}<p>${fuss.slice(1).map(esc).join('<br>')}</p></div>`;
+    const subject = `${list.length} Auftragsannahme${list.length === 1 ? '' : 'n'} ${wann}${zeit.standHeute ? ` (Stand ${uhr})` : ''}`;
+    return { to: uniq(empfaenger.map((e) => e.mail).filter(Boolean)).join(','), cc: [], subject, body, html, tabelle, tabelleText };
   }
   // </ma-logik>
   // Rote Flagge 🚩 (nur MA-Management und Mail): die Reservierung (z. B. Sixt, „Ende: 02.10.2026 15:13“ im Terminfenster oder „Reserviert bis“ in
@@ -3013,6 +3055,30 @@
     const n = [...offenProMa(maOrders(), maListe()).values()].reduce((a, c) => a + c, 0);
     b.textContent = n ? `MA-Management (${n})` : 'MA-Management'; b.title = n ? `${n} Aufträge mit offener Terminvereinbarung (ab 150 €)` : '';
   }
+  // Zeitraum des Auftragsbuch-Reiters (für den Backoffice-Export): dieselben Werte wie die Auswahl „Zeitraum“.
+  function buchZeitraum(range, now = new Date()) {
+    const day0 = new Date(new Date(now).setHours(0, 0, 0, 0)), dayN = (n) => new Date(day0.getFullYear(), day0.getMonth(), day0.getDate() - n);
+    const nTage = /^d\d$/.test(range) ? +range.slice(1) : -1;
+    const from = nTage > 0 ? dayN(nTage) : ({ today: day0, week: new Date(now.getTime() - 7 * 864e5), month: new Date(now.getFullYear(), now.getMonth(), 1), all: new Date(0) }[range] || day0);
+    const bis = nTage > 0 ? dayN(nTage - 1) : null;
+    const lang = (d) => d.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+    const einTag = range === 'today' || nTage > 0;
+    let wann = 'heute', standHeute = false;
+    if (range === 'today') { wann = 'heute'; standHeute = true; }
+    else if (nTage === 1) wann = `von gestern (${lang(dayN(1))})`;
+    else if (nTage === 2) wann = `von vorgestern (${lang(dayN(2))})`;
+    else if (nTage > 2) wann = `vom ${lang(dayN(nTage))}`;
+    else if (range === 'week') wann = 'der letzten 7 Tage';
+    else if (range === 'month') wann = 'dieses Monats';
+    else if (range === 'all') wann = '(gesamt)';
+    return { from, bis, einTag, wann, standHeute };
+  }
+  // Angenommene Aufträge des Zeitraums für den Backoffice-Export (Kontakt aus der still geladenen Liste, zurückgegebene markiert)
+  function buchAuftraege(range, now = new Date()) {
+    const z = buchZeitraum(range, now);
+    return GM_getValue('orderbook', []).filter((e) => e.nr && new Date(e.ts) >= z.from && (!z.bis || new Date(e.ts) < z.bis))
+      .map((e) => Object.assign({}, e, { zurueck: istZurueck(e), kontakt: maKontakte.map.get(nrKey(e.nr)) || e.kontakt || null }));
+  }
   function renderMa() {
     const $ = (id) => document.getElementById(id);
     const page = $('tamauto-page-ma'), sel = $('tamauto-ma-sel');
@@ -3056,12 +3122,22 @@
       ab.innerHTML = `<option value="">${names.length ? '– Backoffice wählen –' : '(keine Backoffice-Einträge im Blatt „MA“)'}</option>` + names.map((n) => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
       const last = GM_getValue('maSender', ''); if (names.includes(last)) ab.value = last;
     }
-    // Mail-Entwurf
-    const ccList = [...cc.querySelectorAll('input')].filter((i) => i.checked).map((i) => i.dataset.mail);
+    // Mail-Entwurf – zwei Modi: „Terminvereinbarung“ (an den MA) oder „Backoffice informieren“ (Tagesübersicht an Backoffice)
+    const mode = (document.querySelector('input[name="tamauto-ma-mode"]:checked') || {}).value || 'termin';
+    const checkedMails = [...cc.querySelectorAll('input')].filter((i) => i.checked).map((i) => i.dataset.mail);
+    const clabel = $('tamauto-ma-cclabel'); if (clabel) clabel.textContent = mode === 'bo' ? 'An (Backoffice):' : 'Cc:';
     updateMaBadge();
-    const mail = m ? baueMail({ ma: m, orders: mine, absender: ab.value, cc: ccList, now: new Date() }) : { to: '', cc: [], subject: '', body: '' };
+    let mail;
+    if (mode === 'bo') {
+      const empf = withMail.filter((k) => checkedMails.includes(k.mail));
+      const range = (document.getElementById('tamauto-ob-range') || {}).value || 'today';
+      mail = baueBackofficeMail({ empfaenger: empf, absender: ab.value, orders: buchAuftraege(range), zeit: buchZeitraum(range), now: new Date() });
+    } else {
+      mail = m ? baueMail({ ma: m, orders: mine, absender: ab.value, cc: checkedMails, now: new Date() }) : { to: '', cc: [], subject: '', body: '', html: '', tabelle: '', tabelleText: '' };
+    }
     $('tamauto-ma-subject').value = mail.subject; $('tamauto-ma-body').value = mail.body;
-    $('tamauto-ma-open').dataset.ma = m ? m.k : ''; $('tamauto-ma-open').dataset.to = mail.to; $('tamauto-ma-open').dataset.cc = mail.cc.join(','); $('tamauto-ma-open').dataset.html = mail.html || ''; $('tamauto-ma-open').dataset.tabelle = mail.tabelle || '';
+    const oa = $('tamauto-ma-open');
+    oa.dataset.ma = mode === 'bo' ? 'Backoffice' : (m ? m.k : ''); oa.dataset.to = mail.to; oa.dataset.cc = (mail.cc || []).join(','); oa.dataset.html = mail.html || ''; oa.dataset.tabelle = mail.tabelle || ''; oa.dataset.tabelletext = mail.tabelleText || '';
     updateMaLink();
   }
   const TABELLE_PLATZHALTER = '[Tabelle hier einfügen: Strg+V (Mac: Cmd+V)]';
@@ -3071,7 +3147,9 @@
     const q = (t) => encodeURIComponent(t);
     const base = `mailto:${a.dataset.to || ''}?${a.dataset.cc ? `cc=${a.dataset.cc}&` : ''}subject=${q($('tamauto-ma-subject').value)}`;
     // mailto kann kein HTML: die Tabelle liegt beim Klick in der Zwischenablage, im Mailtext steht an ihrer Stelle ein Platzhalter
-    const body = a.dataset.tabelle ? $('tamauto-ma-body').value.replace(/^Auftrag +\| FIN[^\n]*\n(?:[^\n]*(?:\||-\+-)[^\n]*\n?)*/m, `${TABELLE_PLATZHALTER}\n`) : $('tamauto-ma-body').value;
+    const bodyRaw = $('tamauto-ma-body').value;
+    const body = a.dataset.tabelle && a.dataset.tabelletext && bodyRaw.includes(a.dataset.tabelletext) ? bodyRaw.replace(a.dataset.tabelletext, TABELLE_PLATZHALTER)
+      : a.dataset.tabelle ? bodyRaw.replace(/^(Auftrag|FIN) +\|[^\n]*\n(?:[^\n]*(?:\||-\+-)[^\n]*\n?)*/m, `${TABELLE_PLATZHALTER}\n`) : bodyRaw;
     const full = `${base}&body=${q(body)}`;
     const zuLang = full.length > 1900; // Mailprogramme/Browser kürzen sehr lange Links
     a.href = zuLang ? base : full;
@@ -3082,6 +3160,7 @@
     $('tamauto-ma-sel').onchange = (e) => { GM_setValue('maSel', e.target.value); renderMa(); };
     
     $('tamauto-ma-absender').onchange = (e) => { GM_setValue('maSender', e.target.value); renderMa(); };
+    document.querySelectorAll('input[name="tamauto-ma-mode"]').forEach((r) => { r.checked = r.value === GM_getValue('maMailMode', 'termin'); r.onchange = () => { GM_setValue('maMailMode', r.value); renderMa(); }; });
     $('tamauto-ma-subject').oninput = updateMaLink; $('tamauto-ma-body').oninput = updateMaLink;
     $('tamauto-ma-open').addEventListener('click', (ev) => {
       const a = $('tamauto-ma-open'), n = ($('tamauto-ma-body').value.match(/^MW|^[A-Z0-9][\w-]+\s+\|/gm) || []).length;
@@ -3389,9 +3468,14 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
           <div style="max-height:150px;overflow:auto;margin-top:4px;border:1px solid #ddd">
             <table style="border-collapse:collapse;width:100%;font-size:11px"><tbody id="tamauto-ma-rows"></tbody></table></div>
           <div style="margin-top:8px;padding-top:6px;border-top:2px solid #1a4d8f">
+            <div class="tamauto-chk" style="gap:12px;margin:0 0 4px">
+              <label class="tamauto-chk"><input type="radio" name="tamauto-ma-mode" value="termin" checked> <b>Terminvereinbarung</b></label>
+              <label class="tamauto-chk"><input type="radio" name="tamauto-ma-mode" value="bo"> <b>Backoffice informieren</b></label>
+              <span class="tamauto-help" title="Backoffice informieren: Tagesübersicht der angenommenen Aufträge (Zeitraum aus dem Reiter „Auftragsbuch“) an eine oder mehrere Backoffice-Personen. FIN zum Auffinden, SLA mit Ampel, Uhrzeit, Kontakt. Zurückgegebene durchgestrichen.">?</span>
+            </div>
             <div class="tamauto-chk" style="gap:6px;flex-wrap:wrap;margin:4px 0"><b>Absender</b> <select id="tamauto-ma-absender" title="Absender der Mail: die Backoffice-Einträge aus dem Excel-Blatt „MA“ (Haken „Backoffice“)"></select>
               <span class="tamauto-help" title="Eine Mail: Aufträge mit Pflicht zur Terminvereinbarung (ab 150 € bzw. Status „Terminvereinbarung“), die der MA mit seinem Kürzel im Zeichen übernommen hat und die noch keine Tour mit Datum haben. Cc und Absender: die Backoffice-Zeilen im Blatt „MA“. Die Zahl in Klammern beim MA und am Reiter = offene Terminvereinbarungen.">?</span> <span id="tamauto-ma-mailstate" style="color:#b36b00;font-size:11px"></span></div>
-            <div style="margin:2px 0">Cc: <span id="tamauto-ma-cc"></span></div>
+            <div style="margin:2px 0"><span id="tamauto-ma-cclabel">Cc:</span> <span id="tamauto-ma-cc"></span></div>
             <input id="tamauto-ma-subject" style="width:100%;margin:2px 0">
             <textarea id="tamauto-ma-body" style="width:100%;height:150px;font:11px monospace"></textarea>
             <div class="tamauto-chk" style="gap:6px;margin-top:4px"><a id="tamauto-ma-open" href="#" target="_blank" rel="noopener noreferrer" style="padding:3px 8px;border:1px solid #1a4d8f;border-radius:3px;background:#e8f0fb;color:#000;text-decoration:none">✉ Mail öffnen</a>
