@@ -183,3 +183,20 @@ describe('Excel nach Update sofort neu laden', { skip }, () => {
     assert.ok(!tam.requests.some((o) => o.url.includes('IQDymsXIGo99')), 'lud unnötig neu');
   });
 });
+
+describe('Excel „nicht annehmen Stichwort“', { skip }, () => {
+  const { makeXlsx, revocationList } = require('./harness');
+  const xlsx = makeXlsx({
+    annehmen: [['PLZ', 'Ort'], ['50825', 'Köln']],
+    'nicht annehmen': [['PLZ', 'Ort']],
+    'nicht annehmen Stichwort': [['Stichwort'], ['Kehrmaschine'], ['-Nutzfahrzeug'], ['']],
+  });
+  const xhr = (o) => o.url.includes('IQBmSNFRkXF5') ? { status: 200, responseText: revocationList() } : o.url.includes('IQDymsXIGo99') ? { status: 200, response: xlsx } : { error: true };
+  it('Blatt wird gelesen (Kopfzeile übersprungen, leere Zeilen weg), Anzahl im Log', async () => {
+    tam = startTam({ gm: { places: { plz: [], orte: [] } }, xhr });
+    await tam.ready();
+    assert.ok(await until(() => (tam.store.get('places').stichworte || []).length, 5000), JSON.stringify(tam.store.get('places')));
+    assert.deepEqual(tam.store.get('places').stichworte, ['Kehrmaschine', '-Nutzfahrzeug']);
+    assert.ok(tam.logs().some((l) => /Sperr-Stichworte: \d+ \(davon 2 aus "nicht annehmen Stichwort"\)/.test(l)), tam.logs().slice(-4).join('\n'));
+  });
+});

@@ -92,3 +92,30 @@ describe('Bereits bearbeitet / done (P1 Sixt)', { skip }, () => {
     assert.ok(info.exp > Date.now() && info.exp - Date.now() <= 15 * MIN);
   });
 });
+
+// Sperr-Stichworte: Fahrzeuge über 3,5 t / Arbeitsmaschinen nicht annehmen (Dienstleistung)
+describe('Sperr-Stichworte (über 3,5 t)', { skip }, () => {
+  it('LKW ab 3,5t und Arbeitsmaschine werden nicht angenommen (braun im Log), PKW bis 3,49t schon', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    tam.addOrder({ nr: 'MW3216949', plz: '50825', ort: 'Köln', dienst: 'Volvo - Rücknahme LKW ab 3,5t dezentral' });
+    tam.addOrder({ nr: 'MW3209605', plz: '50825', ort: 'Köln', dienst: 'Raiffeisen-IMPULS Finance & Lease GmbH - Rücknahme allg. Arbeitsmaschine' });
+    tam.addOrder({ nr: 'MW3214331', plz: '50825', ort: 'Köln', dienst: 'CA Auto Bank - Verwertung - Wertgutachten PKW bis 3,49t' });
+    assert.ok(await until(() => tam.accepted.includes('MW3214331'), 15000), tam.logs().slice(-6).join('\n'));
+    await sleep(1500);
+    assert.ok(!tam.accepted.includes('MW3216949') && !tam.accepted.includes('MW3209605'), 'Sperr-Stichwort angenommen');
+    const line = (nr) => [...tam.document.querySelectorAll('#tamauto-log div')].find((d) => d.textContent.includes(nr) && /Treffer, aber gesperrt: Stichwort/.test(d.textContent));
+    assert.match(line('MW3216949').textContent, /Stichwort „LKW“/);
+    assert.match(line('MW3209605').textContent, /Stichwort „Arbeitsmaschine“/);
+    assert.equal(line('MW3216949').style.color, 'rgb(109, 76, 65)'); // Sperrlisten-Farbe
+  });
+  it('Excel-Blatt ergänzt Stichworte; „-Wort“ schaltet ein Standard-Stichwort ab', async () => {
+    tam = startTam({ gm: { places: { ...KOELN, stichworte: ['Kehrmaschine', '-LKW'] } } });
+    await tam.ready();
+    tam.addOrder({ nr: 'MW3189101', plz: '50825', ort: 'Köln', dienst: 'Rücknahme Kehrmaschine' });
+    tam.addOrder({ nr: 'MW3189102', plz: '50825', ort: 'Köln', dienst: 'Rücknahme LKW' });
+    assert.ok(await until(() => tam.accepted.includes('MW3189102'), 15000), tam.logs().slice(-6).join('\n'));
+    await sleep(1500);
+    assert.ok(!tam.accepted.includes('MW3189101'), 'Stichwort aus Excel nicht gesperrt');
+  });
+});

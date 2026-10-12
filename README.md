@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.37.0 – 2026-10-13
+- **Sperr-Stichworte (über 3,5 t / Arbeitsmaschinen):** Aufträge, deren Dienstleistung ein Stichwort enthält, werden nicht angenommen – wie bei der Sperrliste braun in Tabelle und Log („Treffer, aber gesperrt: Stichwort „LKW“ in der Dienstleistung …“). Standard: Truck, LKW, Nutzfahrzeug, NFZ, Sattelzug, Auflieger, Omnibus, Reisebus, Linienbus, Baumaschine, Arbeitsmaschine, Stapler, Traktor, Schlepper, „ab 3,5 t“, „über 3,5 t“, „> 3,5 t“ (Leerzeichen optional, Komma/Punkt gleich; „bis 3,49 t“ trifft nicht). Optionales Excel-Blatt **„nicht annehmen Stichwort“** (eine Spalte): weitere Stichworte ergänzen, „-Wort“ schaltet ein Standard-Stichwort ab. Anzahl steht im Log beim Laden der Ortslisten.
+
 ### 1.36.0 – 2026-10-12
 - **Backoffice-Export im MA-Management** (Umschalter „Terminvereinbarung | Backoffice informieren“): Tagesübersicht der angenommenen Aufträge als Mail für Backoffice-Kollegen ohne Tool. Zeitraum = Auswahl im Reiter „Auftragsbuch“ (heute / gestern / … mit Datum und Wochentag). Empfänger = eine oder mehrere Backoffice-Personen (Haken), Absender/Signatur über das Dropdown. Spalten: FIN · PLZ/Ort · SLA mit Ampel (🔴/🟡) · angenommen (Uhrzeit, bei mehreren Tagen mit Datum) · Kontakt. Zurückgegebene Aufträge durchgestrichen mit „zurück“. Betreff mit Anzahl voraus. Analog zum bestehenden Baustein: Text + HTML-Tabelle zum Einfügen, „Mail öffnen“.
 

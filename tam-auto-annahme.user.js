@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.36.0
+// @version      1.37.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -48,6 +48,7 @@
     // Autohaus-Regeln: einzelne Adressen sperren (PLZ + Straße [+ Hausnr.]), nicht die ganze PLZ. Eigenes Blatt, damit
     // ältere Versionen (lesen nur „nicht annehmen“ und würden daraus die ganze PLZ sperren) unberührt bleiben.
     blockAddrSheet: 'nicht annehmen Adresse',
+    keywordSheet: 'nicht annehmen Stichwort', // optional: weitere Sperr-Stichworte (eine Spalte), ergänzen die Standard-Stichworte
     maSheet: 'MA',            // Mitarbeiter: Kürzel | Name | E-Mail | Backoffice (Haken = Backoffice: Absender und Cc der Mails)
     placesReloadMin: 30,          // Excel alle 30 min neu laden (Sperrliste zeitnah aktuell)
     enabled: false,
@@ -335,6 +336,10 @@
       k: String(r[ck] || '').trim().toUpperCase(), name: cn >= 0 ? String(r[cn] || '').trim() : '', mail: cm >= 0 ? String(r[cm] || '').trim() : '',
       backoffice: cb >= 0 && String(r[cb] == null ? '' : r[cb]).trim() !== '' && !/^(nein|n|no|0|false|aus|-)$/i.test(String(r[cb]).trim()) })).filter((x) => x.k);
   }
+  // Sperr-Stichworte aus dem Blatt „nicht annehmen Stichwort“: alle Texte der ersten Spalte (Kopfzeile „Stichwort“/„Begriff“ wird übersprungen)
+  function extractStichworte(rows) {
+    return [...new Set(rows.map((r) => String((r && r[0]) == null ? '' : r[0]).trim()).filter((t) => t.length >= 2 && t.length <= 60 && !/^(stichw|begriff|schlagw)/i.test(t)))];
+  }
   function extractAddr(rows) {
     const hIdx = rows.findIndex((r) => r.some((c) => /^(plz|postleitzahl)$/i.test(String(c).trim())));
     if (hIdx < 0) return [];
@@ -432,11 +437,14 @@
             p.blockAddr = ba ? extractAddr(ba.rows) : [];
             const ma = await readXlsxSheet(res.response, cfg.maSheet, true);
             p.ma = ma ? extractMa(ma.rows) : [];
-            const changed = JSON.stringify([p.plz, p.orte, p.block, p.blockAddr, p.ma]) !== JSON.stringify([places.plz, places.orte, places.block, places.blockAddr, places.ma]);
+            const kw = await readXlsxSheet(res.response, cfg.keywordSheet, true);
+            p.stichworte = kw ? extractStichworte(kw.rows) : [];
+            const changed = JSON.stringify([p.plz, p.orte, p.block, p.blockAddr, p.ma, p.stichworte]) !== JSON.stringify([places.plz, places.orte, places.block, places.blockAddr, places.ma, places.stichworte]);
             places = p; GM_setValue('places', places);
             const summary = `Ortsliste "${name}": ${places.plz.length} PLZ, ${places.orte.length} Orte · ` +
               `Sperrliste "${cfg.blockSheet}": ${b.plz.length} PLZ, ${b.orte.length} Orte` + (bl ? '' : ' (Blatt nicht gefunden)') +
               (ba ? ` · "${cfg.blockAddrSheet}": ${p.blockAddr.length} Adressen` : '') +
+              ` · Sperr-Stichworte: ${sperrStichworte(p).length}${kw ? ` (davon ${p.stichworte.length} aus "${cfg.keywordSheet}")` : ''}` +
               ` · MA: ${ma ? `${p.ma.length} Mitarbeiter (${p.ma.filter((x) => x.mail).length} mit E-Mail, ${p.ma.filter((x) => x.backoffice).length} Backoffice)` : 'Blatt fehlt'}`;
             if (changed) log(`Ortslisten aktualisiert – ${summary}`, 'ok');
             else log(`Ortslisten unverändert – ${summary}`, manual ? 'ok' : 'debug');
@@ -1326,6 +1334,21 @@
     const n = document.getElementById('tamauto-ret-count'); if (n) n.textContent = `(${items.length})`;
   }
 
+  // Fahrzeuge über 3,5 t (LKW, Busse, Arbeits-/Baumaschinen) nicht annehmen: Stichworte in der Dienstleistung. Standardliste plus Blatt „nicht annehmen Stichwort“.
+  // Kurze Wörter (bis 3 Zeichen, z. B. „Bus“, „LKW“) nur als ganzes Wort (sonst träfe „Bus“ auch „Business“); längere auch in zusammengesetzten Wörtern
+  // („Stapler“ in „Gabelstapler“). Leerzeichen sind optional, Komma oder Punkt gleich („ab 3,5t“ = „ab 3.5 t“). „bis 3,49 t“ (PKW) trifft keines.
+  // „Bus“ allein bewusst nicht (träfe „VW Bus“ = Transporter unter 3,5 t). Im Excel-Blatt schaltet „-Wort“ ein Standard-Stichwort ab (z. B. „-Nutzfahrzeug“).
+  const STICHWORTE_STANDARD = ['Truck', 'LKW', 'Nutzfahrzeug', 'NFZ', 'Sattelzug', 'Auflieger', 'Omnibus', 'Reisebus', 'Linienbus', 'Baumaschine', 'Arbeitsmaschine', 'Stapler', 'Traktor', 'Schlepper',
+    'ab 3,5 t', 'über 3,5 t', '> 3,5 t'];
+  const sperrStichworte = (pl = places) => {
+    const extra = (pl && pl.stichworte) || [], aus = new Set(extra.filter((w) => w.startsWith('-')).map((w) => w.slice(1).trim().toLowerCase()));
+    return [...new Set([...STICHWORTE_STANDARD, ...extra.filter((w) => !w.startsWith('-'))])].filter((w) => !aus.has(w.toLowerCase()));
+  };
+  function stichwortRegex(w) {
+    const kern = String(w).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*').replace(/[,]|\\\./g, '[,.]');
+    return String(w).trim().length <= 3 ? new RegExp(`(^|[^a-zäöüß0-9])${kern}(?![a-zäöüß])`, 'i') : new RegExp(kern, 'i');
+  }
+  const sperrStichwort = (text) => sperrStichworte().find((w) => stichwortRegex(w).test(String(text || ''))) || '';
   function blocked(order) {
     const r = dayList('returnsToday').items[nrKey(order.nr)];
     if (r) return `heute zurückgegeben (${new Date(r.at).toLocaleTimeString('de-DE')})`;
@@ -1336,6 +1359,8 @@
     const xp = xb.plz.find((x) => p.startsWith(x));
     if (xp) return `PLZ ${xp.padEnd(5, '*')} (Excel „${cfg.blockSheet}“)`;
     if (xb.orte.includes(norm(order.ort))) return `Ort ${order.ort} (Excel „${cfg.blockSheet}“)`;
+    const sw = sperrStichwort(order.dienst);
+    if (sw) return `Stichwort „${sw}“ in der Dienstleistung (über 3,5 t / Arbeitsmaschine)`;
     return '';
   }
 
