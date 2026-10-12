@@ -59,6 +59,10 @@ describe('Excel „nicht annehmen Adresse“', { skip }, () => {
     assert.ok(!rowOf('MW3180003').classList.contains('tamauto-haendler'));
     const line = [...tam.document.querySelectorAll('#tamauto-log div')].find((d) => /MW3180001 .*Händler-Blacklist/.test(d.textContent));
     assert.equal(line.style.background, 'rgb(33, 33, 33)'); // schwarzer Eintrag
+    const hl = tam.document.getElementById('tamauto-hl-excel');
+    assert.match(hl.textContent, /50825 Maarweg 241 · Jacobsen Nutzfahrzeuge/); assert.match(hl.textContent, /MW3180009 · Einzelauftrag/);
+    assert.doesNotMatch(tam.document.getElementById('tamauto-bl-excel').textContent, /Maarweg/); // nicht mehr in der braunen Sperrliste
+    assert.match(tam.document.getElementById('tamauto-sw-list').textContent, /Arbeitsmaschine/);
   });
 });
 

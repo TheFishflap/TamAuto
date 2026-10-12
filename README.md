@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.38.1 – 2026-10-13
+- Hauptreiter: eigene Abschnitte **„Händler-Blacklist“** (schwarze Einträge mit Kommentar, Blatt „nicht annehmen Adresse“) und **„Sperr-Stichworte“** (Standard + Excel) unter der Sperrliste.
+
 ### 1.38.0 – 2026-10-13
 - **Händler-Blacklist (schwarz):** Das Blatt „nicht annehmen Adresse“ (PLZ + Straße) sperrt einen Standort jetzt als **schwarzen Eintrag** in Tabelle und Log („Händler-Blacklist: 53881 Odendorfer Weg 75 – Jacobsen Nutzfahrzeuge“). Neu: optionale Spalte **Kommentar/Name** (nur Anzeige) und **AuftragsNr** (einzelne Aufträge sperren, z. B. MW3218995).
 - Sperr-Stichworte: „Nutzfahrzeug“ und „NFZ“ sind nicht mehr Standard (trafen VW-Transporter/Caddy unter 3,5 t); bei Bedarf im Blatt „nicht annehmen Stichwort“ eintragen.

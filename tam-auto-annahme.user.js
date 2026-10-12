@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.38.0
+// @version      1.38.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1397,9 +1397,25 @@
       // PLZ-Anfang (weniger als 5 Ziffern) mit Sternchen auffüllen, z. B. „525**“ – sperrt alle PLZ, die so beginnen
       const entries = [...xb.plz.map((x) => [x.padEnd(5, '*'), x.length < 5 ? `sperrt alle PLZ, die mit ${x} beginnen (${x.padEnd(5, '0')}–${x.padEnd(5, '9')})` : `PLZ ${x}`]),
         ...xb.orte.map((o) => [o, `Ort ${o}`]),
-        ...(places.blockAddr || []).map((a) => [a.nr ? a.nr : `${a.plz} ${a.str}`, `${a.info ? `${a.info} · ` : ''}${a.nr ? 'nur dieser Auftrag' : 'nur diese Adresse'} (Blatt „${cfg.blockAddrSheet}“)`])];
+      ];
       if (!entries.length) xl.textContent = 'Keine Einträge.';
       entries.forEach(([label, tip]) => { const c = chipEl(label, '#6d4c41', '#efebe9'); c.title = tip; xl.appendChild(c); });
+    }
+    // Händler-Blacklist (Blatt „nicht annehmen Adresse“) – schwarz, Kommentar als Text daneben
+    const hl = document.getElementById('tamauto-hl-excel');
+    if (hl) {
+      hl.innerHTML = '';
+      const list = places.blockAddr || [];
+      if (!list.length) hl.textContent = 'Keine Einträge.';
+      list.forEach((a) => { const c = chipEl(`${a.nr ? a.nr : `${a.plz} ${a.str}`}${a.info ? ` · ${a.info}` : ''}`, '#fff', '#212121'); c.title = `${a.nr ? 'nur dieser Auftrag' : 'dieser Standort'} (Blatt „${cfg.blockAddrSheet}“)`; hl.appendChild(c); });
+      const hc = document.getElementById('tamauto-hl-count'); if (hc) hc.textContent = list.length ? `(${list.length})` : '';
+    }
+    // Sperr-Stichworte (Standard + Blatt „nicht annehmen Stichwort“)
+    const sl = document.getElementById('tamauto-sw-list');
+    if (sl) {
+      sl.innerHTML = '';
+      const extra = new Set((places.stichworte || []).filter((w) => !w.startsWith('-')));
+      sperrStichworte().forEach((w) => { const c = chipEl(w, '#6d4c41', '#efebe9'); c.title = extra.has(w) ? `aus Blatt „${cfg.keywordSheet}“` : 'Standard'; sl.appendChild(c); });
     }
     // Ortsliste (Blatt „annehmen“) genauso auflisten, grün
     const ol = document.getElementById('tamauto-ol-excel');
@@ -3535,6 +3551,14 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
               <span class="tamauto-help" title="PLZ aus dem Excel-Blatt „nicht annehmen“. Diese PLZ werden NIE angenommen – dauerhaft, solange sie im Excel stehen. Ändern nur im Excel, danach „Neu laden“.">?</span>
               <span style="color:#555">– Blatt „nicht annehmen“</span></div>
             <div id="tamauto-bl-excel" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
+            <div style="margin-top:8px"><b>Händler-Blacklist <span id="tamauto-hl-count"></span></b>
+              <span class="tamauto-help" title="Standorte (PLZ + Straße) oder einzelne AuftragsNr aus dem Excel-Blatt „nicht annehmen Adresse“ – werden nie angenommen und schwarz markiert. Spalte „Kommentar“ erscheint hier neben dem Eintrag.">?</span>
+              <span style="color:#555">– Blatt „nicht annehmen Adresse“</span></div>
+            <div id="tamauto-hl-excel" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
+            <div style="margin-top:8px"><b>Sperr-Stichworte</b>
+              <span class="tamauto-help" title="Aufträge, deren Dienstleistung eines dieser Wörter enthält (über 3,5 t / Arbeitsmaschinen), werden nicht angenommen. Ergänzen im Excel-Blatt „nicht annehmen Stichwort“, „-Wort“ schaltet ein Standard-Stichwort ab.">?</span>
+              <span style="color:#555">– Standard + Blatt „nicht annehmen Stichwort“</span></div>
+            <div id="tamauto-sw-list" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
             <div style="margin-top:8px"><b>Heute zurückgegeben <span id="tamauto-ret-count"></span></b>
               <span class="tamauto-help" title="Aufträge, die von einem Gerät der IB Thomée angenommen und danach zurückgegeben wurden (oder „XX zurück“ im Zeichen haben) (wieder in „Veröffentlichte Aufträge“). Sie werden auf allen Geräten 48 Stunden lang nicht angenommen (auch über Mitternacht, z. B. bei Nachtarbeit). Klick auf einen Eintrag gibt ihn auf diesem Gerät wieder frei.">?</span>
               <span style="color:#555">– auf allen Geräten, 48 Stunden</span></div>
