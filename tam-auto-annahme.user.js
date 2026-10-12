@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.39.0
+// @version      1.39.1
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1413,7 +1413,7 @@
     const sl = document.getElementById('tamauto-sw-list');
     if (sl) {
       sl.innerHTML = '';
-      const ausExcel = stichworteAusExcel().length > 0;
+      const ausExcel = stichworteAusExcel().length > 0, swc = document.getElementById('tamauto-sw-count'); if (swc) swc.textContent = `(${sperrStichworte().length})`;
       sperrStichworte().forEach((w) => { const c = chipEl(w, '#6d4c41', '#efebe9'); c.title = ausExcel ? `aus Blatt „${cfg.keywordSheet}“` : `Ersatzliste (Blatt „${cfg.keywordSheet}“ fehlt oder ist leer)`; sl.appendChild(c); });
     }
     // Ortsliste (Blatt „annehmen“) genauso auflisten, grün
@@ -3211,6 +3211,21 @@
     a.href = zuLang ? base : full;
     $('tamauto-ma-mailstate').textContent = !a.dataset.to ? `Keine E-Mail-Adresse für ${a.dataset.ma || 'diesen MA'} (Blatt „MA“).` : zuLang ? '⚠ Text zu lang für den Link – „Text kopieren“ nutzen und in die Mail einfügen.' : '';
   }
+  // Listen im Reiter „Bedienung“ ein-/ausklappbar (Klick auf die Überschrift); Zustand je Liste gemerkt. Standard: Excel-Listen zu, Rückgaben offen.
+  const LISTEN_KLAPPBAR = [['tamauto-ol-excel', true], ['tamauto-bl-excel', true], ['tamauto-hl-excel', true], ['tamauto-sw-list', true], ['tamauto-ret', false]];
+  function initListenKlappen() {
+    const zu = GM_getValue('listenZu', {});
+    LISTEN_KLAPPBAR.forEach(([id, standardZu]) => {
+      const box = document.getElementById(id), kopf = box && box.previousElementSibling, b = kopf && kopf.querySelector('b');
+      if (!b || b.dataset.klapp) return;
+      b.dataset.klapp = id;
+      const pfeil = document.createElement('span'); pfeil.className = 'tamauto-klapp'; pfeil.style.cssText = 'display:inline-block;width:12px;color:#1a4d8f';
+      b.prepend(pfeil); b.style.cursor = 'pointer'; b.title = 'Liste ein-/ausklappen';
+      const setze = (geschlossen) => { box.style.display = geschlossen ? 'none' : 'flex'; pfeil.textContent = geschlossen ? '▸' : '▾'; };
+      setze(id in zu ? zu[id] : standardZu);
+      b.addEventListener('click', () => { const g = box.style.display !== 'none'; setze(g); const z = GM_getValue('listenZu', {}); z[id] = g; GM_setValue('listenZu', z); });
+    });
+  }
   function initMa() {
     const $ = (id) => document.getElementById(id);
     $('tamauto-ma-sel').onchange = (e) => { GM_setValue('maSel', e.target.value); renderMa(); };
@@ -3554,7 +3569,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
               <span class="tamauto-help" title="Standorte (PLZ + Straße) oder einzelne AuftragsNr aus dem Excel-Blatt „nicht annehmen Adresse“ – werden nie angenommen und schwarz markiert. Spalte „Kommentar“ erscheint hier neben dem Eintrag.">?</span>
               <span style="color:#555">– Blatt „nicht annehmen Adresse“</span></div>
             <div id="tamauto-hl-excel" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
-            <div style="margin-top:8px"><b>Sperr-Stichworte</b>
+            <div style="margin-top:8px"><b>Sperr-Stichworte <span id="tamauto-sw-count"></span></b>
               <span class="tamauto-help" title="Aufträge, deren Dienstleistung eines dieser Wörter enthält (über 3,5 t / Arbeitsmaschinen), werden nicht angenommen. Gepflegt im Excel-Blatt „nicht annehmen Stichwort“ (eine Spalte). Fehlt das Blatt oder ist es leer, gilt eine eingebaute Ersatzliste.">?</span>
               <span style="color:#555">– Blatt „nicht annehmen Stichwort“</span></div>
             <div id="tamauto-sw-list" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
@@ -3633,6 +3648,7 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     p.querySelectorAll('.tamauto-tabbtn').forEach((b) => { b.onclick = () => showPage(b.dataset.page); });
     showPage('tamauto-page-main');
     initMa();
+    initListenKlappen();
     renderBlacklist();
 
     // Verzögerung: Checkbox + Slider 1,0–5,0 s (0,1-s-Schritte) + Randomizer (Streuung nicht angezeigt)
