@@ -109,13 +109,15 @@ describe('Sperr-Stichworte (über 3,5 t)', { skip }, () => {
     assert.match(line('MW3209605').textContent, /Stichwort „Arbeitsmaschine“/);
     assert.equal(line('MW3216949').style.color, 'rgb(109, 76, 65)'); // Sperrlisten-Farbe
   });
-  it('Excel-Blatt ergänzt Stichworte; „-Wort“ schaltet ein Standard-Stichwort ab', async () => {
-    tam = startTam({ gm: { places: { ...KOELN, stichworte: ['Kehrmaschine', '-LKW'] } } });
+  it('Excel-Blatt ist maßgeblich: nur die Stichworte dort gelten (LKW nicht mehr drin → angenommen, Kehrmaschine drin → gesperrt)', async () => {
+    tam = startTam({ gm: { places: { ...KOELN, stichworte: ['Kehrmaschine', 'Arbeitsmaschine'] } } });
     await tam.ready();
     tam.addOrder({ nr: 'MW3189101', plz: '50825', ort: 'Köln', dienst: 'Rücknahme Kehrmaschine' });
     tam.addOrder({ nr: 'MW3189102', plz: '50825', ort: 'Köln', dienst: 'Rücknahme LKW' });
     assert.ok(await until(() => tam.accepted.includes('MW3189102'), 15000), tam.logs().slice(-6).join('\n'));
     await sleep(1500);
     assert.ok(!tam.accepted.includes('MW3189101'), 'Stichwort aus Excel nicht gesperrt');
+    assert.match(tam.document.getElementById('tamauto-sw-list').textContent, /^KehrmaschineArbeitsmaschine$/);
   });
+
 });

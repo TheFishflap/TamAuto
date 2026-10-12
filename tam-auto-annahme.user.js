@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.38.1
+// @version      1.39.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -48,7 +48,7 @@
     // Autohaus-Regeln: einzelne Adressen sperren (PLZ + Straße [+ Hausnr.]), nicht die ganze PLZ. Eigenes Blatt, damit
     // ältere Versionen (lesen nur „nicht annehmen“ und würden daraus die ganze PLZ sperren) unberührt bleiben.
     blockAddrSheet: 'nicht annehmen Adresse',
-    keywordSheet: 'nicht annehmen Stichwort', // optional: weitere Sperr-Stichworte (eine Spalte), ergänzen die Standard-Stichworte
+    keywordSheet: 'nicht annehmen Stichwort', // Sperr-Stichworte (eine Spalte); fehlt das Blatt oder ist es leer, gilt die eingebaute Ersatzliste
     maSheet: 'MA',            // Mitarbeiter: Kürzel | Name | E-Mail | Backoffice (Haken = Backoffice: Absender und Cc der Mails)
     placesReloadMin: 30,          // Excel alle 30 min neu laden (Sperrliste zeitnah aktuell)
     enabled: false,
@@ -448,7 +448,7 @@
             const summary = `Ortsliste "${name}": ${places.plz.length} PLZ, ${places.orte.length} Orte · ` +
               `Sperrliste "${cfg.blockSheet}": ${b.plz.length} PLZ, ${b.orte.length} Orte` + (bl ? '' : ' (Blatt nicht gefunden)') +
               (ba ? ` · "${cfg.blockAddrSheet}": ${p.blockAddr.length} Adressen` : '') +
-              ` · Sperr-Stichworte: ${sperrStichworte(p).length}${kw ? ` (davon ${p.stichworte.length} aus "${cfg.keywordSheet}")` : ''}` +
+              ` · Sperr-Stichworte: ${sperrStichworte(p).length} ${stichworteAusExcel(p).length ? `aus "${cfg.keywordSheet}"` : `(Ersatzliste – Blatt "${cfg.keywordSheet}" ${kw ? 'leer' : 'fehlt'})`}` +
               ` · MA: ${ma ? `${p.ma.length} Mitarbeiter (${p.ma.filter((x) => x.mail).length} mit E-Mail, ${p.ma.filter((x) => x.backoffice).length} Backoffice)` : 'Blatt fehlt'}`;
             if (changed) log(`Ortslisten aktualisiert – ${summary}`, 'ok');
             else log(`Ortslisten unverändert – ${summary}`, manual ? 'ok' : 'debug');
@@ -1344,13 +1344,12 @@
   // Fahrzeuge über 3,5 t (LKW, Busse, Arbeits-/Baumaschinen) nicht annehmen: Stichworte in der Dienstleistung. Standardliste plus Blatt „nicht annehmen Stichwort“.
   // Kurze Wörter (bis 3 Zeichen, z. B. „Bus“, „LKW“) nur als ganzes Wort (sonst träfe „Bus“ auch „Business“); längere auch in zusammengesetzten Wörtern
   // („Stapler“ in „Gabelstapler“). Leerzeichen sind optional, Komma oder Punkt gleich („ab 3,5t“ = „ab 3.5 t“). „bis 3,49 t“ (PKW) trifft keines.
-  // „Bus“, „Nutzfahrzeug“, „NFZ“ bewusst nicht (träfen VW-Transporter/Caddy unter 3,5 t). Im Excel-Blatt schaltet „-Wort“ ein Standard-Stichwort ab (z. B. „-Stapler“).
+  // Maßgeblich ist das Excel-Blatt „nicht annehmen Stichwort“: Steht dort mindestens ein Stichwort, gelten nur diese. Fehlt das Blatt oder ist es leer,
+  // greift diese Ersatzliste (damit LKW & Co. nie versehentlich angenommen werden). „Bus“, „Nutzfahrzeug“, „NFZ“ bewusst nicht (träfen VW-Transporter/Caddy).
   const STICHWORTE_STANDARD = ['Truck', 'LKW', 'Sattelzug', 'Auflieger', 'Omnibus', 'Reisebus', 'Linienbus', 'Baumaschine', 'Arbeitsmaschine', 'Stapler', 'Traktor', 'Schlepper',
     'ab 3,5 t', 'über 3,5 t', '> 3,5 t'];
-  const sperrStichworte = (pl = places) => {
-    const extra = (pl && pl.stichworte) || [], aus = new Set(extra.filter((w) => w.startsWith('-')).map((w) => w.slice(1).trim().toLowerCase()));
-    return [...new Set([...STICHWORTE_STANDARD, ...extra.filter((w) => !w.startsWith('-'))])].filter((w) => !aus.has(w.toLowerCase()));
-  };
+  const stichworteAusExcel = (pl = places) => ((pl && pl.stichworte) || []).filter((w) => !w.startsWith('-'));
+  const sperrStichworte = (pl = places) => { const x = stichworteAusExcel(pl); return x.length ? [...new Set(x)] : STICHWORTE_STANDARD; };
   function stichwortRegex(w) {
     const kern = String(w).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*').replace(/[,]|\\\./g, '[,.]');
     return String(w).trim().length <= 3 ? new RegExp(`(^|[^a-zäöüß0-9])${kern}(?![a-zäöüß])`, 'i') : new RegExp(kern, 'i');
@@ -1414,8 +1413,8 @@
     const sl = document.getElementById('tamauto-sw-list');
     if (sl) {
       sl.innerHTML = '';
-      const extra = new Set((places.stichworte || []).filter((w) => !w.startsWith('-')));
-      sperrStichworte().forEach((w) => { const c = chipEl(w, '#6d4c41', '#efebe9'); c.title = extra.has(w) ? `aus Blatt „${cfg.keywordSheet}“` : 'Standard'; sl.appendChild(c); });
+      const ausExcel = stichworteAusExcel().length > 0;
+      sperrStichworte().forEach((w) => { const c = chipEl(w, '#6d4c41', '#efebe9'); c.title = ausExcel ? `aus Blatt „${cfg.keywordSheet}“` : `Ersatzliste (Blatt „${cfg.keywordSheet}“ fehlt oder ist leer)`; sl.appendChild(c); });
     }
     // Ortsliste (Blatt „annehmen“) genauso auflisten, grün
     const ol = document.getElementById('tamauto-ol-excel');
@@ -3556,8 +3555,8 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
               <span style="color:#555">– Blatt „nicht annehmen Adresse“</span></div>
             <div id="tamauto-hl-excel" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
             <div style="margin-top:8px"><b>Sperr-Stichworte</b>
-              <span class="tamauto-help" title="Aufträge, deren Dienstleistung eines dieser Wörter enthält (über 3,5 t / Arbeitsmaschinen), werden nicht angenommen. Ergänzen im Excel-Blatt „nicht annehmen Stichwort“, „-Wort“ schaltet ein Standard-Stichwort ab.">?</span>
-              <span style="color:#555">– Standard + Blatt „nicht annehmen Stichwort“</span></div>
+              <span class="tamauto-help" title="Aufträge, deren Dienstleistung eines dieser Wörter enthält (über 3,5 t / Arbeitsmaschinen), werden nicht angenommen. Gepflegt im Excel-Blatt „nicht annehmen Stichwort“ (eine Spalte). Fehlt das Blatt oder ist es leer, gilt eine eingebaute Ersatzliste.">?</span>
+              <span style="color:#555">– Blatt „nicht annehmen Stichwort“</span></div>
             <div id="tamauto-sw-list" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
             <div style="margin-top:8px"><b>Heute zurückgegeben <span id="tamauto-ret-count"></span></b>
               <span class="tamauto-help" title="Aufträge, die von einem Gerät der IB Thomée angenommen und danach zurückgegeben wurden (oder „XX zurück“ im Zeichen haben) (wieder in „Veröffentlichte Aufträge“). Sie werden auf allen Geräten 48 Stunden lang nicht angenommen (auch über Mitternacht, z. B. bei Nachtarbeit). Klick auf einen Eintrag gibt ihn auf diesem Gerät wieder frei.">?</span>

@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.39.0 – 2026-10-13
+- **Sperr-Stichworte werden in der Excel gepflegt:** Maßgeblich ist das Blatt „nicht annehmen Stichwort“ (eine Spalte, alle Stichworte dort, ergänzen und streichen direkt im Blatt). Fehlt das Blatt oder ist es leer, gilt eine eingebaute Ersatzliste, damit LKW & Co. nie versehentlich angenommen werden. Das Log beim Laden zeigt, woher die Stichworte kommen.
+
 ### 1.38.1 – 2026-10-13
 - Hauptreiter: eigene Abschnitte **„Händler-Blacklist“** (schwarze Einträge mit Kommentar, Blatt „nicht annehmen Adresse“) und **„Sperr-Stichworte“** (Standard + Excel) unter der Sperrliste.
 
