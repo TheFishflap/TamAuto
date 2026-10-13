@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.39.2 – 2026-10-13
+- **Update auch im minimierten Bedienfeld:** Ist eine neue Version da, erscheint im eingeklappten Bedienfeld (Standard) ein grüner Knopf „⬆ Update x installieren (läuft: y)“ – bisher war der Hinweis nur aufgeklappt sichtbar, eine alte Version konnte so unbemerkt weiterlaufen.
+
 ### 1.39.1 – 2026-10-13
 - Reiter „Bedienung“: Listen **einklappbar** (Klick auf die Überschrift, ▸/▾, wird gemerkt). Standard: Ortsliste, Sperrliste, Händler-Blacklist und Sperr-Stichworte zugeklappt (Anzahl in Klammern bleibt sichtbar), „Heute zurückgegeben“ offen.
 

@@ -221,6 +221,20 @@ describe('Neuladen nach Update: beim Zurückkommen aus Tampermonkey', { skip }, 
   const reloadLog = () => tam.logs().some((l) => /Zurück aus Tampermonkey – Seite wird neu geladen/.test(l));
   const btn = () => tam.document.getElementById('tamauto-upd');
 
+  it('minimiertes Bedienfeld zeigt den Update-Knopf; Klick öffnet die Installation und lädt beim Zurückkommen neu', async () => {
+    tam = startTam({ gm: { places: KOELN, minimizedV2: true }, xhr });
+    const opened = []; tam.window.open = (u) => { opened.push(u); return null; };
+    await tam.ready();
+    const mu = () => tam.document.getElementById('tamauto-mini-upd');
+    assert.ok(await until(() => mu().style.display !== 'none' && /Update 99\.0\.0 installieren/.test(mu().textContent), 5000), mu().outerHTML);
+    assert.equal(tam.document.getElementById('tamauto-body').style.display, 'none', 'nicht minimiert');
+    mu().click();
+    assert.equal(opened.length, 1);
+    await sleep(1600);
+    tam.window.dispatchEvent(new tam.window.Event('focus'));
+    assert.ok(await until(reloadLog, 2000), tam.logs().slice(-4).join('\n'));
+  });
+
   it('ohne Klick auf „Update installieren“ lädt nichts neu – auch nicht bei Fokuswechsel', async () => {
     tam = startTam({ gm: { places: KOELN }, xhr });
     await tam.ready();

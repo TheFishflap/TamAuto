@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.39.1
+// @version      1.39.2
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -1519,6 +1519,13 @@
     b.textContent = `⬆ Update ${ver} installieren`;
     b.title = `Neue Version ${ver} verfügbar (installiert: ${VERSION}) – klicken öffnet die Installation in Tampermonkey`;
     Object.assign(b.style, { color: '#fff', background: '#2e7d32', borderColor: '#2e7d32', fontWeight: 'bold' });
+    // auch im minimierten Bedienfeld (Standard) sichtbar – sonst läuft eine alte Version unbemerkt weiter
+    const mu = document.getElementById('tamauto-mini-upd');
+    if (mu) { mu.textContent = `⬆ Update ${ver} installieren (läuft: ${VERSION})`; mu.title = b.title; mu.style.display = ''; }
+  }
+  function installiereUpdate() {
+    updateGeklicktAt = Date.now(); window.open(updateLink, '_blank');
+    log(`Update ${pendingUpdate}: Installation in Tampermonkey geöffnet – nach „Aktualisieren“ dort lädt sich diese Seite beim Zurückkehren neu.`);
   }
 
   // Eine offene Seite behält den alten Code, bis sie neu geladen wird; TAM fragt beim Verlassen nach („Seite verlassen?“).
@@ -3279,6 +3286,7 @@
       <div id="tamauto-mini" style="display:none;margin-top:2px;line-height:1.4;font-size:11px">
         <div><span id="tamauto-mini-state" style="font-weight:bold"></span> · <span id="tamauto-mini-next"></span></div>
         <div style="color:#555"><span id="tamauto-mini-last"></span> · <span id="tamauto-mini-rate"></span></div>
+        <button id="tamauto-mini-upd" style="display:none;margin-top:3px;padding:2px 8px;color:#fff;background:#2e7d32;border:1px solid #2e7d32;border-radius:3px;font-weight:bold;cursor:pointer"></button>
       </div>
       <div id="tamauto-body">
         <a id="tamauto-update" href="${UPDATE_URL}" target="_blank" style="display:none;font-weight:bold;color:#1a4d8f;margin:4px 0"></a>
@@ -3623,9 +3631,10 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
     };
     // Ohne gefundenes Update: nach Updates suchen. Mit Update: als Link die Installation öffnen.
     $('tamauto-upd').onclick = () => {
-      if (pendingUpdate) { updateGeklicktAt = Date.now(); window.open(updateLink, '_blank'); log(`Update ${pendingUpdate}: Installation in Tampermonkey geöffnet – nach „Aktualisieren“ dort lädt sich diese Seite beim Zurückkehren neu.`); return; }
+      if (pendingUpdate) { installiereUpdate(); return; }
       checkUpdate(true);
     };
+    $('tamauto-mini-upd').onclick = () => { if (pendingUpdate) installiereUpdate(); };
     if (pendingUpdate) markUpdateButton(pendingUpdate); // Update wurde schon vor dem Aufbau des Bedienfelds gefunden
 
     // Reiter im Bedienfeld
