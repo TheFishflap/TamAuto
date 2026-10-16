@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.39.2
+// @version      1.39.3
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -2557,7 +2557,7 @@
             : `kein Treffer (PLZ ${o.plz || '?'} und Ort "${o.ort || '?'}" nicht in Ortsliste)`;
         log(`${o.key} · ${o.plz} ${o.ort} · ${o.dienst.slice(0, 40)} → ${why}`, bl ? (/^Händler-Blacklist/.test(bl) ? 'haendler' : 'block') : matches(o) ? 'ok' : 'info');
       });
-      let n = 0;
+      let n = 0, nachVergeben = false;
       if (hits.length > 1) log(`Reihenfolge (${prioText()}): ${hits.map((o) =>
         `${o.nr || o.ref} (${grp(o).n > 1 ? `${grp(o).n} am Ort, zus. ${fmtEuro(grp(o).sum)}, ` : ''}${o.preis || 'ohne Preis'})`).join(' → ')}`);
       for (const o of hits) {
@@ -2591,10 +2591,13 @@
           log(`Annahme fehlgeschlagen: ${desc}`, 'err'); merkeVerloren(o.nr || o.key);
           notify('TAM: Annahme fehlgeschlagen', desc);
           markDone(o.key, `Annahme fehlgeschlagen${o.failReason ? ` (${o.failReason})` : ''}`, FAIL_RETRY_MS); // nicht sofort erneut versuchen
+          if (o.failReason === 'vergeben') { hideAcceptedRows([o.nr]); nachVergeben = true; } // schon vergeben: Zeile sofort weg, Tabelle danach abgleichen
         }
         await sleep(1500);
       }
       saveDone();
+      // Nach „bereits vergeben“: TAM gleich nochmal fragen – vergebene Zeilen verschwinden (stille Abfrage), sonst einmal echt aktualisieren
+      if (nachVergeben) { log('Vergeben – Zeile ausgeblendet, Tabelle wird mit TAM abgeglichen.', 'debug'); setTimeout(() => silentCheck('Nach vergebenem Auftrag').catch(() => {}), 1200); }
     } catch (e) {
       log(`Fehler: ${e.message}`, 'err');
     } finally { releaseBusy(); }

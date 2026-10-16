@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.39.3 – 2026-10-16
+- **Nach „bereits vergeben“ wird die Tabelle aufgeräumt:** Die Zeile verschwindet sofort, und das Script fragt TAM gleich danach still ab (vergebene Zeilen weg; ohne mitgeschnittene Anfrage einmal echt aktualisieren) – bisher blieben die Zeilen bis zum nächsten Refresh stehen.
+
 ### 1.39.2 – 2026-10-13
 - **Update auch im minimierten Bedienfeld:** Ist eine neue Version da, erscheint im eingeklappten Bedienfeld (Standard) ein grüner Knopf „⬆ Update x installieren (läuft: y)“ – bisher war der Hinweis nur aufgeklappt sichtbar, eine alte Version konnte so unbemerkt weiterlaufen.
 

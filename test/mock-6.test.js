@@ -76,6 +76,18 @@ describe('Nach der Annahme sofort zurück (P2 Tabwechsel)', { skip }, () => {
     assert.ok(Date.now() - jumpedAt < 500, `Rückkehr nach ${Date.now() - jumpedAt} ms`);
   });
 
+  it('nach „bereits vergeben“: Zeile sofort ausgeblendet und Tabelle gleich mit TAM abgeglichen', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    const B = { nr: 'MW3153895', plz: '50825', ort: 'Köln', onOpen: (t) => setTimeout(() => t.showMessage('Auftrag bereits vergeben!', 'Sie können die Auftragskarte nicht mehr anzeigen lassen da der Auftrag bereits vergeben wurde.'), 50) };
+    tam.addOrder(B);
+    const row = () => [...tam.document.querySelectorAll('#AgentVeroeffentlichteAuftraege .x-grid3-row')].find((r) => r.textContent.includes(B.nr));
+    assert.ok(await until(() => tam.logs().some((l) => /Annahme fehlgeschlagen: MW3153895/.test(l)), 15000), tam.logs().slice(-6).join('\n'));
+    assert.ok(row().classList.contains('tamauto-gone'), 'Zeile steht noch');
+    const r0 = tam.refreshes;
+    assert.ok(await until(() => tam.refreshes > r0, 5000), 'Tabelle nicht abgeglichen'); // ohne mitgeschnittene Anfrage: einmal echt aktualisiert
+  });
+
   it('„bereits vergeben“ beim 2. Auftrag am Ort (Meldung ohne Nummer) wird nicht dem 1., angenommenen Auftrag zugeordnet', async () => {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();
