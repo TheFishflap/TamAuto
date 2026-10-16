@@ -76,6 +76,37 @@ describe('Nach der Annahme sofort zurück (P2 Tabwechsel)', { skip }, () => {
     assert.ok(Date.now() - jumpedAt < 500, `Rückkehr nach ${Date.now() - jumpedAt} ms`);
   });
 
+  it('von Hand angenommen: „bereits vergeben“ gesehen, dann in „Angenommene Aufträge“ ohne Auftragsbuch-Eintrag → ✋ im Auftragsbuch; später neu dazugekommene ebenso; Gerätemeldung ersetzt ✋', async () => {
+    tam = startTam({ gm: { places: KOELN } });
+    await tam.ready();
+    const B = { nr: 'MW3230133', plz: '50825', ort: 'Köln', dienst: 'Choice - Minderwertgutachten', preis: '62,05 €', onOpen: (t) => setTimeout(() => t.showMessage('Auftrag bereits vergeben!', 'Sie können die Auftragskarte nicht mehr anzeigen lassen da der Auftrag bereits vergeben wurde.'), 50) };
+    tam.addOrder(B);
+    assert.ok(await until(() => tam.logs().some((l) => /Annahme fehlgeschlagen: MW3230133/.test(l)), 15000), tam.logs().slice(-6).join('\n'));
+    // angenommene Liste mitschneiden
+    tam.selectTab('AgentEigeneAuftraege');
+    const x = new tam.window.XMLHttpRequest(); x.open('POST', 'https://tam.tuvsud.com/gwt-rpc/auftrag'); x.send('7|0|3|u|a|loadTeilauftraege|1|2|3|');
+    tam.selectTab('AgentVeroeffentlichteAuftraege');
+    const liste = (nrs) => { const all = [...nrs, ...Array.from({ length: 25 }, (_, i) => `MW31998${String(i).padStart(2, '0')}`)];
+      return '//OK[' + all.map((_, i) => `1,${i + 2}`).join(',') + ',' + JSON.stringify(['x.model.auftraege.Teilauftrag/1', ...all]) + ',0,7]'; };
+    const book = () => tam.store.get('orderbook') || [];
+    tam.rpc = liste(['MW3230133']);
+    tam.document.getElementById('tamauto-ma-load').click();
+    assert.ok(await until(() => book().some((e) => e.nr === 'MW3230133' && e.hand), 4000), JSON.stringify(book()));
+    const e = book().find((x) => x.nr === 'MW3230133');
+    assert.equal(e.by, '✋ von Hand'); assert.equal(e.ort, 'Köln'); assert.equal(e.preis, 62.05);
+    assert.ok(!book().some((x) => /^MW31998/.test(x.nr)), 'alte Aufträge der Liste beim ersten Laden eingetragen');
+    assert.ok(tam.logs().some((l) => /Von Hand angenommen .*MW3230133/.test(l)));
+    assert.equal(tam.store.get('hitstats').MW3230133.s, 'hand');
+    // nächster Lauf: ein neuer Auftrag in der Liste, den kein Gerät gemeldet hat → ✋
+    tam.rpc = liste(['MW3230133', 'MW3230200']);
+    tam.document.getElementById('tamauto-ma-load').click();
+    assert.ok(await until(() => book().some((x) => x.nr === 'MW3230200' && x.hand), 4000), JSON.stringify(book().map((x) => x.nr)));
+    // ein Gerät meldet die Annahme später → ✋ ersetzt
+    tam.ntfy('tamret-', { v: 1, t: 'acc', nrs: ['MW3230200'], by: 'LouisOnePlus', at: Date.now() });
+    assert.ok(await until(() => (book().find((x) => x.nr === 'MW3230200') || {}).by === 'LouisOnePlus', 3000), JSON.stringify(book().find((x) => x.nr === 'MW3230200')));
+    assert.ok(!book().find((x) => x.nr === 'MW3230200').hand);
+  });
+
   it('nach „bereits vergeben“: Zeile sofort ausgeblendet und Tabelle gleich mit TAM abgeglichen', async () => {
     tam = startTam({ gm: { places: KOELN } });
     await tam.ready();

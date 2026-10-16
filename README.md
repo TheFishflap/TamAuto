@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.41.0 – 2026-10-16
+- **Von Hand angenommene Aufträge im Auftragsbuch (✋):** Nimmt jemand einen Auftrag direkt in TAM an (nicht über das Script), erkennt das Script ihn beim stillen Laden von „Angenommene Aufträge“ (nach jeder Annahme, alle 30 min, „SLA laden“) und trägt ihn mit „✋ von Hand“ ein – Daten aus „Angenommene Aufträge“ bzw. der zuletzt gesehenen Zeile. Auch heute schon gesehene Aufträge (z. B. erst „bereits vergeben“, dann von Hand angenommen) werden nachgetragen. Meldet später ein Gerät die Annahme, steht dort das Gerät. Trefferquote: „davon n von Hand“.
+
 ### 1.40.0 – 2026-10-16
 - **„Zurückgegebene Aufträge“** (bisher „Heute zurückgegeben“ / Tages-Blacklist): zurückgegebene Aufträge werden jetzt **2 Wochen** lang nicht angenommen (statt 48 h). Liste neueste zuerst, Hinweis mit Rückgabedatum und „gesperrt bis“; standardmäßig zugeklappt (Anzahl sichtbar). Im Log: „zurückgegeben am TT.MM. hh:mm (2 Wochen gesperrt)“.
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.40.0
+// @version      1.41.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -507,7 +507,12 @@
   // Tabellenzeilen des letzten Abgleichs nach AuftragsNr – um mit angenommene Warenkorb-Aufträge (PLZ, Ort,
   // Preis) nachschlagen zu können, auch wenn sie nach der Annahme aus der Tabelle verschwunden sind
   let rowsByNr = new Map();
-  const rememberRows = (rows) => { rowsByNr = new Map(rows.filter((r) => r.nr).map((r) => [r.nr.toUpperCase(), r])); };
+  const gesehen = new Map(); // Nr → Daten der Zeile aus „Veröffentlichte Aufträge“ (bleibt nach dem Verschwinden erhalten, für von Hand angenommene)
+  const rememberRows = (rows) => {
+    rowsByNr = new Map(rows.filter((r) => r.nr).map((r) => [r.nr.toUpperCase(), r]));
+    rows.filter((r) => r.nr && r.valid).forEach((r) => gesehen.set(r.nr.toUpperCase(), { plz: r.plz, ort: r.ort, strasse: r.strasse || '', dienst: r.dienst || '', preis: parseEuro(r.preis), ref: r.ref || '', at: Date.now() }));
+    if (gesehen.size > 500) [...gesehen.keys()].slice(0, gesehen.size - 500).forEach((k) => gesehen.delete(k));
+  };
 
   // Mit dem Hauptauftrag gemeinsam angenommen: alle angehakten Warenkorb-Einträge (Fallback: 0-km-Liste)
   const bulkOf = (o) => o.bulk || o.extra || [];
@@ -929,10 +934,11 @@
     const c = (s) => rows.filter((e) => e.s === s).length;
     const passend = rows.length - c('gesperrt');           // veröffentlicht, PLZ stimmt (ohne gesperrte)
     const intern = c('intern');                            // hier verloren, aber von einem eigenen Gerät angenommen
-    const angenommen = c('angenommen') + intern;
+    const hand = c('hand');                                // von Hand in TAM angenommen
+    const angenommen = c('angenommen') + intern + hand;
     const vergeben = c('vergeben');                        // war beim Öffnen schon vergeben (an ein anderes Büro)
     const verfuegbar = passend - vergeben - c('passend');  // tatsächlich verfügbar = versucht und nicht schon vergeben
-    el.innerHTML = `<b>Trefferquote</b> · ${passend} passend (PLZ stimmt) · <b style="color:#2e7d32">${angenommen} angenommen</b>${intern ? ` (davon ${intern} von eigenen Geräten)` : ''} · ` +
+    el.innerHTML = `<b>Trefferquote</b> · ${passend} passend (PLZ stimmt) · <b style="color:#2e7d32">${angenommen} angenommen</b>${intern || hand ? ` (davon ${[intern ? `${intern} von eigenen Geräten` : '', hand ? `${hand} von Hand` : ''].filter(Boolean).join(', ')})` : ''} · ` +
       `${vergeben} bereits vergeben · ${c('fehler')} Fehler` + (c('gesperrt') ? ` · ${c('gesperrt')} gesperrt` : '') +
       `<br>Angenommen von passenden: <b>${pct(angenommen, passend)}</b> · von tatsächlich verfügbaren: <b>${pct(angenommen, verfuegbar)}</b>`;
   }
@@ -1094,6 +1100,9 @@
       [['plz', 'plz'], ['ort', 'ort'], ['strasse', 'strasse'], ['dienst', 'dienst'], ['ref', 'ref']].forEach(([k, f]) => { if (!e[k] && d[f]) { e[k] = d[f]; filled++; } });
       if (e.preis == null && d.preis != null) { e.preis = d.preis; filled++; }
     });
+    // ✋ von Hand eingetragen, aber ein Gerät meldet die Annahme → das Gerät eintragen
+    let hand = 0; book.filter((e) => e.hand && nrs.includes(nrKey(e.nr))).forEach((e) => { e.by = by || 'anderes Gerät'; delete e.hand; hand++; });
+    if (hand) filled++;
     const add = nrs.filter((x) => !have.has(x));
     if (!add.length) { if (filled) { GM_setValue('orderbook', book); renderOrderbook(); } return; }
     const who = by || 'anderes Gerät';
@@ -3077,6 +3086,31 @@
     if (neu.length) log(`Nicht mehr in „Angenommene Aufträge“ (abgelaufen oder zurückgegeben): ${neu.join(', ')} – aus dem MA-Management genommen, im Auftragsbuch durchgestrichen.`, 'info', 'MA-Management');
     if (wieder.length) log(`Wieder in „Angenommene Aufträge“: ${wieder.join(', ')} – Markierung aufgehoben.`, 'info', 'MA-Management');
   }
+  // Von Hand angenommen (in TAM, nicht vom Script): Steht ein Auftrag neu in „Angenommene Aufträge“, aber in keinem Auftragsbuch, wird er mit ✋ eingetragen.
+  // Neu = seit dem letzten Laden hinzugekommen (Merkliste der Liste) oder heute in „Veröffentlichte Aufträge“ gesehen (z. B. „bereits vergeben“, dann von Hand
+  // angenommen). Daten aus der Zeile in „Angenommene Aufträge“, sonst aus der zuletzt gesehenen veröffentlichten Zeile. Meldet später ein Gerät die Annahme,
+  // wird ✋ durch das Gerät ersetzt. Beim allerersten Laden wird nur die Merkliste angelegt (ältere Aufträge sind nicht „neu“).
+  function erkenneHandannahmen(liste) {
+    if (!liste || liste.size < 20 || liste.size >= LISTE_VOLL) return;
+    const book = GM_getValue('orderbook', []), imBuch = new Set(book.map((e) => nrKey(e.nr))), snap = GM_getValue('accSnapshot', null);
+    const heute0 = new Date().setHours(0, 0, 0, 0), stats = hitStats();
+    const kandidaten = [...liste.keys()].filter((k) => !imBuch.has(k) && ((snap && !snap.includes(k)) || (stats[k] && new Date(stats[k].ts).getTime() >= heute0) || gesehen.has(k)));
+    GM_setValue('accSnapshot', [...liste.keys()]);
+    if (!kandidaten.length) return;
+    const accGrid = document.getElementById(cfg.acceptedTabId) && document.getElementById(cfg.acceptedTabId).querySelector('.x-grid3');
+    const accRows = new Map(); if (accGrid) { try { readOrders(accGrid).forEach((o) => { if (o.nr) accRows.set(nrKey(o.nr), o); }); } catch (e) { /* nur Daten */ } }
+    const jetzt = new Date().toISOString();
+    kandidaten.forEach((k) => {
+      const r = accRows.get(k), g = gesehen.get(k) || {}, st = stats[k] || {};
+      book.push({ ts: jetzt, nr: k, plz: (r && r.plz) || g.plz || st.plz || '', ort: (r && r.ort) || g.ort || '', strasse: (r && r.strasse) || g.strasse || '', dienst: (r && r.dienst) || g.dienst || '',
+        preis: r && r.preis ? parseEuro(r.preis) : g.preis != null ? g.preis : null, ref: (r && r.ref) || g.ref || '', by: '✋ von Hand', hand: 1 });
+      markDone(k, 'von Hand angenommen');
+      if (stats[k]) { stats[k].s = 'hand'; }
+    });
+    GM_setValue('hitstats', stats); saveDone();
+    GM_setValue('orderbook', pruneBook(book)); renderOrderbook();
+    log(`Von Hand angenommen (in TAM, nicht vom Script): ${kandidaten.join(', ')} – mit ✋ im Auftragsbuch eingetragen.`, 'ok', 'Auftragsbuch');
+  }
   async function ladeMaKontakte() {
     // Anfrage: die mitgeschnittene der angenommenen Liste, sonst aus der der „Veröffentlichten“ abgeleitet (kein Reiterwechsel nötig)
     const abgeleitet = !tamAcceptedReq && tamLoadReq ? acceptedBodyFromPublished(tamLoadReq.body) : null;
@@ -3088,6 +3122,7 @@
     const bekannt = new Set(GM_getValue('orderbook', []).map((e) => String(e.nr || '').toUpperCase()).filter(Boolean));
     maKontakte = { map: parseListeKontakte(txt, bekannt), at: Date.now() };
     bereinigeAltauftraege(maKontakte.map);
+    erkenneHandannahmen(maKontakte.map);
     const nz = wendeListenZeichenAn(parseListeZeichen(txt, (places.ma || []).map((m) => m.k), bekannt));
     if (nz) log(`Angenommene Aufträge (still gelesen): ${nz} Zeichen im Auftragsbuch ergänzt.`, 'debug');
     const v = [...maKontakte.map.values()], buch = maOrders();
