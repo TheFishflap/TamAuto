@@ -281,10 +281,10 @@ describe('Stille Annahme (Beta)', { skip }, () => {
     assert.match(tam.document.getElementById('tamauto-silentaccept-state').textContent, /^gelernt am \d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}$/);
   });
 
-  it('Bedienung: Listen einklappbar (Excel-Listen standardmäßig zu, Rückgaben offen), Zustand gemerkt', async () => {
+  it('Bedienung: Listen einklappbar (standardmäßig zu), Zustand gemerkt', async () => {
     tam = startTam({ gm: { places: KOELN } }); await tam.ready();
     const box = (id) => tam.document.getElementById(id), kopf = (id) => box(id).previousElementSibling.querySelector('b');
-    assert.equal(box('tamauto-bl-excel').style.display, 'none'); assert.equal(box('tamauto-ret').style.display, 'flex');
+    assert.equal(box('tamauto-bl-excel').style.display, 'none'); assert.equal(box('tamauto-ret').style.display, 'none');
     assert.match(kopf('tamauto-bl-excel').textContent, /^▸/);
     kopf('tamauto-bl-excel').click();
     assert.equal(box('tamauto-bl-excel').style.display, 'flex'); assert.match(kopf('tamauto-bl-excel').textContent, /^▾/);

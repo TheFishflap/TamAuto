@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TAM Auto-Annahme (IB Thomée GmbH)
 // @namespace    ib-thomee
-// @version      1.39.3
+// @version      1.40.0
 // @author       IB Thomée GmbH
 // @copyright    2026, IB Thomée GmbH
 // @license      Proprietär – alle Rechte vorbehalten, siehe LICENSE
@@ -124,7 +124,7 @@
     const i = doneInfo[k];
     if (i && i.exp && i.exp <= Date.now()) { done.delete(k); delete doneInfo[k]; return false; }
     // Früher (an einem anderen Tag) angenommen und jetzt wieder veröffentlicht: Läuft die Reservierung ab (Ende laut Terminfenster, sonst 24 h nach der
-    // Annahme), gibt TAM den Auftrag selbst zurück → direkt wieder annehmen. Kommt er früher zurück, hat ihn jemand aktiv zurückgegeben → 48 h sperren
+    // Annahme), gibt TAM den Auftrag selbst zurück → direkt wieder annehmen. Kommt er früher zurück, hat ihn jemand aktiv zurückgegeben → 2 Wochen sperren
     // (wie bei „XX zurück“). Heute Angenommenes bleibt gesperrt (die Zeile steht bis zum Refresh noch).
     const heute0 = new Date().setHours(0, 0, 0, 0);
     if (i && /^angenommen/.test(i.why || '') && (i.at || 0) < heute0) {
@@ -132,7 +132,7 @@
       const abgelaufen = re !== null ? Date.now() >= re - 30 * 60e3 : Date.now() - (i.at || 0) >= 23 * 3600e3;
       done.delete(k); delete doneInfo[k];
       if (!abgelaufen && addToday('returnsToday', [k], {})) {
-        log(`${k}: früher angenommen (${new Date(i.at).toLocaleString('de-DE')}), Reservierung noch nicht abgelaufen – wieder da = aktiv zurückgegeben → 48 h gesperrt.`, 'ok');
+        log(`${k}: früher angenommen (${new Date(i.at).toLocaleString('de-DE')}), Reservierung noch nicht abgelaufen – wieder da = aktiv zurückgegeben → 2 Wochen gesperrt.`, 'ok');
         retPost('ret', [k]);
       }
       return false;
@@ -834,7 +834,7 @@
     GM_setValue('orderbook', book);
     renderOrderbook();
   }
-  // „zurück …“ im Zeichen = Rückgabe: bei den Rückgaben eintragen (48 h nicht erneut annehmen) und den anderen Geräten melden
+  // „zurück …“ im Zeichen = Rückgabe: bei den zurückgegebenen Aufträgen eintragen (2 Wochen nicht erneut annehmen) und den anderen Geräten melden
   function verarbeiteRueckgaben(book) {
     const known = (places.ma || []).map((m) => m.k), neuRet = [];
     let changed = 0;
@@ -937,7 +937,7 @@
       `<br>Angenommen von passenden: <b>${pct(angenommen, passend)}</b> · von tatsächlich verfügbaren: <b>${pct(angenommen, verfuegbar)}</b>`;
   }
 
-  // Zurückgegeben = auf der Rückgabe-Liste (48 h), als zurückgegeben vorgemerkt oder „… zurück“ im Zeichen
+  // Zurückgegeben = auf der Liste „Zurückgegebene Aufträge“ (2 Wochen), als zurückgegeben vorgemerkt oder „… zurück“ im Zeichen
   const istZurueck = (e) => !!e.rueck || !!dayList('returnsToday').items[nrKey(e.nr)] || (!!e.zeichen && /\bzur(ü|ue)ck\b/i.test(e.zeichen) && parseTourzeichen(e.zeichen, (places.ma || []).map((m) => m.k)).status === 'rueckgabe');
   function renderOrderbook() {
     const tbody = document.getElementById('tamauto-ob-rows');
@@ -989,11 +989,12 @@
   // ---- Rückgaben (geräteübergreifend): Jedes Gerät meldet seine Annahmen (nur Auftragsnummern) an einen eigenen
   // ntfy-Kanal; alle Geräte merken sich „heute von IB Thomée angenommen“. Verschwindet so ein Auftrag aus
   // „Veröffentlichte Aufträge“ (mind. 60 s – direkt nach der Annahme steht die Zeile noch, bis TAM neu lädt) und
-  // taucht wieder auf, wurde er zurückgegeben → Tages-Blacklist (48 Stunden nicht annehmen) und Meldung an alle.
+  // taucht wieder auf, wurde er zurückgegeben → „Zurückgegebene Aufträge“ (2 Wochen nicht annehmen) und Meldung an alle.
   const RET_TOPIC = 'tamret-ptau8ux3h4rq2ncm2jctcbb7a2al';
   const RET_MIN_GONE_MS = GM_getValue('retMinGoneSec', 60) * 1000;
-  // „accToday“ = Kalendertag; die Rückgabe-Sperre („Tages-Blacklist“) gilt 48 Stunden rollierend – wer nachts arbeitet, verliert sie nicht um Mitternacht
-  const RET_KEEP_MS = 48 * 3600 * 1000;
+  // „accToday“ = Kalendertag; die Rückgabe-Sperre („Zurückgegebene Aufträge“) gilt 2 Wochen rollierend
+  const RET_KEEP_MS = 14 * 864e5;
+  const RET_CATCHUP_MS = 48 * 3600 * 1000; // erstes Nachholen bei ntfy (hält Meldungen ohnehin nur ~12 h)
   const dayList = (key) => {
     const v = GM_getValue(key, null);
     if (key !== 'returnsToday') return v && v.date === today() ? v : { date: today(), items: {} };
@@ -1007,7 +1008,7 @@
     const neu = [];
     nrs.filter(Boolean).forEach((x) => { const k = nrKey(x); if (!l.items[k]) { l.items[k] = Object.assign({ at: Date.now() }, info); added++; neu.push(k); } });
     if (added) GM_setValue(key, l);
-    if (neu.length && key === 'returnsToday') { // zurückgegebene Aufträge im Auftragsbuch dauerhaft vormerken (rausgestrichen), auch nach den 48 h
+    if (neu.length && key === 'returnsToday') { // zurückgegebene Aufträge im Auftragsbuch dauerhaft vormerken (rausgestrichen), auch nach den 2 Wochen
       const book = GM_getValue('orderbook', []);
       let n = 0; book.forEach((e) => { if (!e.rueck && neu.includes(nrKey(e.nr))) { e.rueck = 1; n++; } });
       if (n) { GM_setValue('orderbook', book); renderOrderbook(); }
@@ -1204,13 +1205,13 @@
       clearTimeout(onRetMessage.bkT); onRetMessage.bkT = setTimeout(() => { if (bkGot) log(`Auftragsbuch-Abgleich: ${bkGot} Einträge von anderen Geräten empfangen.`, 'debug'); bkGot = 0; }, 15000);
       return;
     }
-    if (d.t === 'ret' ? !(Date.now() - d.at <= RET_KEEP_MS && d.at <= Date.now() + 60e3) : new Date(d.at || 0).toLocaleDateString('sv-SE') !== today()) return; // Rückgaben 48 h, übrige Meldungen nur von heute
+    if (d.t === 'ret' ? !(Date.now() - d.at <= RET_KEEP_MS && d.at <= Date.now() + 60e3) : new Date(d.at || 0).toLocaleDateString('sv-SE') !== today()) return; // Rückgaben 2 Wochen, übrige Meldungen nur von heute
     const nrs = d.nrs.map(nrKey).filter((x) => RET_NR.test(x));
     const info = { at: +d.at };
     if (d.t === 'acc') { addToday('accToday', nrs, info); addRemoteAccepts(nrs, String(d.by || '').slice(0, 40), +d.at, secure ? cleanDetails(d.det, nrs) : {}); }
     const known = dayList('accToday').items;
     if (d.t === 'ret' && addToday('returnsToday', nrs.filter((x) => known[x] || secure), info)) {
-      log(`Rückgabe gemeldet: ${nrs.filter((x) => known[x] || secure).join(', ')} – 48 h nicht annehmen.`, 'ok');
+      log(`Rückgabe gemeldet: ${nrs.filter((x) => known[x] || secure).join(', ')} – 2 Wochen nicht annehmen.`, 'ok');
       renderReturns();
       if (cfg.enabled) scheduleCheck('Rückgabe gemeldet'); // Tabelle sofort einfärben
     }
@@ -1228,7 +1229,7 @@
       handle(raw, replay);
     };
     const catchUp = () => {
-      const since = lastId || Math.floor((Date.now() - RET_KEEP_MS) / 1000); // erstes Mal: Rückgaben 48 h; Annahmen filtert onRetMessage auf heute
+      const since = lastId || Math.floor((Date.now() - RET_CATCHUP_MS) / 1000); // erstes Mal: 48 h; Annahmen filtert onRetMessage auf heute
       licFetch(`${LIC_NTFY}/${topic}/json?poll=1&since=${since}`).then((r) => r.text())
         .then((t) => t.split('\n').filter(Boolean).forEach((x) => take(x, true))).catch(() => {});
     };
@@ -1275,11 +1276,11 @@
     });
     if (!ret.length) return;
     ret.forEach((o) => addToday('returnsToday', [o.nr], { plz: o.plz, ort: o.ort }));
-    log(`Zurückgegeben (heute von IB Thomée angenommen, jetzt wieder veröffentlicht): ${ret.map((o) => `${o.nr} · ${o.plz} ${o.ort}`).join(', ')} – 48 h nicht annehmen, an alle Geräte gemeldet.`, 'err');
+    log(`Zurückgegeben (heute von IB Thomée angenommen, jetzt wieder veröffentlicht): ${ret.map((o) => `${o.nr} · ${o.plz} ${o.ort}`).join(', ')} – 2 Wochen nicht annehmen, an alle Geräte gemeldet.`, 'err');
     retPost('ret', ret.map((o) => o.nr));
     renderReturns();
   }
-  // Aufträge in der TAM-Tabelle markieren: Excel „nicht annehmen“ braun, heute zurückgegeben orange, nicht auf der
+  // Aufträge in der TAM-Tabelle markieren: Excel „nicht annehmen“ braun, zurückgegeben (2 Wochen) orange, nicht auf der
   // Annahmeliste grau, auf der Annahmeliste grün; Grund als Tooltip
   const ROW_MARKS = ['tamauto-blocked', 'tamauto-returned', 'tamauto-nomatch', 'tamauto-match', 'tamauto-gone', 'tamauto-vanished'];
   // Gerade angenommene Aufträge stehen bis zum nächsten TAM-Refresh noch in der Tabelle → lokal ausblenden
@@ -1313,7 +1314,7 @@
       const why = o.valid ? blocked(o) : '';
       const ret = !!dayList('returnsToday').items[nrKey(o.nr)];
       const hd = !!why && !ret && /^Händler-Blacklist/.test(why);
-      o.row.classList.toggle('tamauto-returned', !!why && ret);  // heute zurückgegeben → orange
+      o.row.classList.toggle('tamauto-returned', !!why && ret);  // zurückgegeben (2 Wochen) → orange
       o.row.classList.toggle('tamauto-haendler', hd);            // Händler-Blacklist → schwarz
       o.row.classList.toggle('tamauto-blocked', !!why && !ret && !hd);  // Excel „nicht annehmen“ / Stichwort → braun (wie im Bedienfeld)
       const no = !why && !(o.valid && matches(o));                  // nicht auf der Annahmeliste → grau
@@ -1327,12 +1328,12 @@
   function renderReturns() {
     const el = document.getElementById('tamauto-ret');
     if (!el) return;
-    const items = Object.entries(dayList('returnsToday').items);
+    const items = Object.entries(dayList('returnsToday').items).sort((a, b) => (b[1].at || 0) - (a[1].at || 0)); // neueste zuerst
     el.innerHTML = '';
     if (!items.length) el.textContent = 'Keine Einträge.';
     items.forEach(([nr, i]) => {
       const c = chipEl(nr, '#b26a00', '#fff3e0');
-      c.title = `zurückgegeben · ${new Date(i.at).toLocaleTimeString('de-DE')}` +
+      c.title = `zurückgegeben am ${new Date(i.at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · gesperrt bis ${new Date((i.at || 0) + RET_KEEP_MS).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}` +
         `${i.plz ? ` · ${i.plz} ${i.ort || ''}` : ''}\nKlicken = auf diesem Gerät wieder freigeben`;
       c.style.cursor = 'pointer';
       c.onclick = () => { const l = dayList('returnsToday'); delete l.items[nr]; GM_setValue('returnsToday', l); log(`${nr}: Rückgabe-Sperre auf diesem Gerät aufgehoben.`); renderReturns(); scheduleCheck('Rückgabe freigegeben'); };
@@ -1366,7 +1367,7 @@
   }
   function blocked(order) {
     const r = dayList('returnsToday').items[nrKey(order.nr)];
-    if (r) return `heute zurückgegeben (${new Date(r.at).toLocaleTimeString('de-DE')})`;
+    if (r) return `zurückgegeben am ${new Date(r.at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} (2 Wochen gesperrt)`;
     const p = (order.plz || '').trim();
     const hs = haendlerSperre(order);
     if (hs) return hs;
@@ -3221,8 +3222,8 @@
     a.href = zuLang ? base : full;
     $('tamauto-ma-mailstate').textContent = !a.dataset.to ? `Keine E-Mail-Adresse für ${a.dataset.ma || 'diesen MA'} (Blatt „MA“).` : zuLang ? '⚠ Text zu lang für den Link – „Text kopieren“ nutzen und in die Mail einfügen.' : '';
   }
-  // Listen im Reiter „Bedienung“ ein-/ausklappbar (Klick auf die Überschrift); Zustand je Liste gemerkt. Standard: Excel-Listen zu, Rückgaben offen.
-  const LISTEN_KLAPPBAR = [['tamauto-ol-excel', true], ['tamauto-bl-excel', true], ['tamauto-hl-excel', true], ['tamauto-sw-list', true], ['tamauto-ret', false]];
+  // Listen im Reiter „Bedienung“ ein-/ausklappbar (Klick auf die Überschrift); Zustand je Liste gemerkt. Standard: alle zu (Anzahl in Klammern bleibt sichtbar).
+  const LISTEN_KLAPPBAR = [['tamauto-ol-excel', true], ['tamauto-bl-excel', true], ['tamauto-hl-excel', true], ['tamauto-sw-list', true], ['tamauto-ret', true]];
   function initListenKlappen() {
     const zu = GM_getValue('listenZu', {});
     LISTEN_KLAPPBAR.forEach(([id, standardZu]) => {
@@ -3584,9 +3585,9 @@ Standard: aus. Kanal der IB Thomée ist voreingestellt. Test: in der App „Test
               <span class="tamauto-help" title="Aufträge, deren Dienstleistung eines dieser Wörter enthält (über 3,5 t / Arbeitsmaschinen), werden nicht angenommen. Gepflegt im Excel-Blatt „nicht annehmen Stichwort“ (eine Spalte). Fehlt das Blatt oder ist es leer, gilt eine eingebaute Ersatzliste.">?</span>
               <span style="color:#555">– Blatt „nicht annehmen Stichwort“</span></div>
             <div id="tamauto-sw-list" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
-            <div style="margin-top:8px"><b>Heute zurückgegeben <span id="tamauto-ret-count"></span></b>
-              <span class="tamauto-help" title="Aufträge, die von einem Gerät der IB Thomée angenommen und danach zurückgegeben wurden (oder „XX zurück“ im Zeichen haben) (wieder in „Veröffentlichte Aufträge“). Sie werden auf allen Geräten 48 Stunden lang nicht angenommen (auch über Mitternacht, z. B. bei Nachtarbeit). Klick auf einen Eintrag gibt ihn auf diesem Gerät wieder frei.">?</span>
-              <span style="color:#555">– auf allen Geräten, 48 Stunden</span></div>
+            <div style="margin-top:8px"><b>Zurückgegebene Aufträge <span id="tamauto-ret-count"></span></b>
+              <span class="tamauto-help" title="Aufträge, die von einem Gerät der IB Thomée angenommen und danach zurückgegeben wurden (oder „XX zurück“ im Zeichen haben) (wieder in „Veröffentlichte Aufträge“). Sie werden auf allen Geräten 2 Wochen lang nicht angenommen. Klick auf einen Eintrag gibt ihn auf diesem Gerät wieder frei.">?</span>
+              <span style="color:#555">– auf allen Geräten, 2 Wochen</span></div>
             <div id="tamauto-ret" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"></div>
           </div>
           <div style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px solid #ddd">

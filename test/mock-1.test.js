@@ -33,11 +33,11 @@ describe('Bereits bearbeitet / done (P1 Sixt)', { skip }, () => {
 
   // Uhr auf 12:30 festgelegt: „gestern 23:00“ ist dann 13,5 h her (Reservierung noch nicht abgelaufen)
   const gestern23 = () => new Date().setHours(0, 0, 0, 0) - 3600e3;
-  it('gestern angenommen, nach 13 h wieder da (Reservierung läuft noch) = aktiv zurückgegeben → 48 h gesperrt, den anderen Geräten gemeldet', async () => {
+  it('gestern angenommen, nach 13 h wieder da (Reservierung läuft noch) = aktiv zurückgegeben → 2 Wochen gesperrt, den anderen Geräten gemeldet', async () => {
     tam = startTam({ fakeHour: 12, gm: { places: KOELN, doneRefs: [SIXT.nr], doneInfo: { [SIXT.nr]: { at: gestern23(), why: 'angenommen' } } } });
     await tam.ready();
     tam.addOrder(SIXT);
-    assert.ok(await until(() => tam.logs().some((l) => /aktiv zurückgegeben → 48 h gesperrt/.test(l)), 6000), tam.logs().slice(-4).join('\n'));
+    assert.ok(await until(() => tam.logs().some((l) => /aktiv zurückgegeben → 2 Wochen gesperrt/.test(l)), 6000), tam.logs().slice(-4).join('\n'));
     assert.ok((tam.store.get('returnsToday').items || {})[SIXT.nr]);
     await sleep(1500);
     assert.deepEqual(tam.dblclicks, []);

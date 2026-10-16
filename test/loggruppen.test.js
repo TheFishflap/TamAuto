@@ -25,7 +25,7 @@ describe('Log-Gruppen', () => {
     ['Abbruch vor 1002692551: Reiter gewechselt (jetzt „Angenommene Aufträge“) – keine Annahme, neu prüfen.', 'Annahme'],
     ['Angenommen: MW3217075 · 51063 Köln · Toyota Kinto · 69,35 € · per Silent Reload gefunden · im Hintergrund (anderer Reiter offen)', 'Annahme'],
     ['Stille Annahme MW1: sende accept (ID 1 = B)', 'Stille Annahme'],
-    ['Rückgabe gemeldet: MW1 – 48 h nicht annehmen.', 'Rückgabe'],
+    ['Rückgabe gemeldet: MW1 – 2 Wochen nicht annehmen.', 'Rückgabe'],
     ['Ortslisten unverändert – Ortsliste "annehmen": 35 PLZ', 'Ortsliste'],
     ['Kein Update – 1.29.1 ist aktuell (geprüft: GitHub).', 'Update'],
     ['Lizenz per Fernfreischaltung aktualisiert: gültig bis 01.01.2027.', 'Lizenz'],

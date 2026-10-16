@@ -68,13 +68,15 @@ describe('„XX zurück“, Start und stilles Laden', { skip }, () => {
     assert.ok(await until(() => (tam.store.get('orderbook').find((e) => e.nr === 'MW3190803') || {}).zeichen === 'GS 12.10 10:00 T', 15000), tam.logs().slice(-5).join('\n'));
   });
 
-  it('Tages-Blacklist gilt 48 Stunden rollierend (über Mitternacht), danach fällt der Eintrag weg', async () => {
+  it('Zurückgegebene Aufträge: 2 Wochen gesperrt (rollierend), danach fällt der Eintrag weg', async () => {
     const h = (n) => Date.now() - n * 3600e3, yesterday = new Date(Date.now() - 864e5).toLocaleDateString('sv-SE');
-    tam = startTam({ gm: { places: KOELN, returnsToday: { date: yesterday, items: { MW3190810: { at: h(30) }, MW3190811: { at: h(50) } } } } });
+    tam = startTam({ gm: { places: KOELN, returnsToday: { date: yesterday, items: { MW3190810: { at: h(50) }, MW3190812: { at: h(13 * 24) }, MW3190811: { at: h(15 * 24) } } } } });
     await tam.ready();
     const chips = () => tam.document.getElementById('tamauto-ret').textContent;
-    assert.match(chips(), /MW3190810/); assert.doesNotMatch(chips(), /MW3190811/);
+    assert.match(chips(), /MW3190810/); assert.match(chips(), /MW3190812/); assert.doesNotMatch(chips(), /MW3190811/);
+    assert.match(tam.document.getElementById('tamauto-ret').previousElementSibling.textContent, /Zurückgegebene Aufträge \(2\)/);
   });
+
 
   it('Start: „Angenommene Aufträge“ wird geöffnet (Zeichen abgleichen), danach wieder „Veröffentlichte Aufträge“', async () => {
     tam = startTam({ gm: { startTabs: true, places: KOELN, orderbook: [{ ts: new Date().toISOString(), nr: 'MW3190820', plz: '44141', ort: 'Dortmund', tid: '3706820', zeichen: '' }] } });

@@ -396,6 +396,9 @@ Im Bedienfeld steht dieselbe Erklärung aufklappbar unter den drei Stufen.
 
 ## Changelog
 
+### 1.40.0 – 2026-10-16
+- **„Zurückgegebene Aufträge“** (bisher „Heute zurückgegeben“ / Tages-Blacklist): zurückgegebene Aufträge werden jetzt **2 Wochen** lang nicht angenommen (statt 48 h). Liste neueste zuerst, Hinweis mit Rückgabedatum und „gesperrt bis“; standardmäßig zugeklappt (Anzahl sichtbar). Im Log: „zurückgegeben am TT.MM. hh:mm (2 Wochen gesperrt)“.
+
 ### 1.39.3 – 2026-10-16
 - **Nach „bereits vergeben“ wird die Tabelle aufgeräumt:** Die Zeile verschwindet sofort, und das Script fragt TAM gleich danach still ab (vergebene Zeilen weg; ohne mitgeschnittene Anfrage einmal echt aktualisieren) – bisher blieben die Zeilen bis zum nächsten Refresh stehen.
 
